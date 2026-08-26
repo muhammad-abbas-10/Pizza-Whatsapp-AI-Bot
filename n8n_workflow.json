@@ -204,8 +204,8 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
       "position": [
-        1328,
-        96
+        1360,
+        80
       ],
       "id": "94f41edc-a915-478f-b875-9808b7a2605c",
       "name": "Google Gemini Chat Model",
@@ -224,10 +224,218 @@
       "typeVersion": 1.3,
       "position": [
         1504,
-        96
+        80
       ],
       "id": "4eab162d-7dc8-4da5-9c38-f0966ad3f55c",
       "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.intent }}",
+                    "rightValue": "greeting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "024bf238-11cf-4e07-8a54-e26f47e2617c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "greeting"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "594c9eb9-c7da-4818-812f-4e14b6446860",
+                    "leftValue": "={{ $json.output.human_handoff }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "human_handoff"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "21a68a2b-d71f-4118-9ccf-01f3983a3aa4",
+                    "leftValue": "={{ $json.output.clarification_needed }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "clarification"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c69e64ad-0b18-49b6-95eb-62e4071c153b",
+                    "leftValue": "={{ $json.output.items.length }}",
+                    "rightValue": 0,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "update_cart"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e2237584-a965-48c1-866e-42ae3a7f4be9",
+                    "leftValue": "={{ $json.output.confirmation }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "confirm_order"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1696,
+        -160
+      ],
+      "id": "48c4c707-261a-456c-83b0-fffafb304f5f",
+      "name": "Route by Intent"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ae7f247a-697c-4a0a-b0d8-d875dcc78587",
+              "name": "reply_text",
+              "value": "=Hi! Welcome to {{ $json.restaurant_name }} 🍕 Would you like to see our menu, or do you already know what you'd like to order?",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2240,
+        -192
+      ],
+      "id": "addff1cd-5700-43cc-a235-00d21b8d1277",
+      "name": "Greeting Reply"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT restaurant_name, currency, delivery_charge, opening_hours\nFROM restaurant_settings\nWHERE id = 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2016,
+        -192
+      ],
+      "id": "c27c79d4-0126-4c5d-bc67-1247967152b2",
+      "name": "Get Restaurant Settings",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1328729090313034",
+        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
+        "textBody": "={{ $json.reply_text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        -192
+      ],
+      "id": "74d654b0-bd46-4292-9781-7f47acde8581",
+      "name": "Send message",
+      "webhookId": "1fea8904-076e-4e13-aa6e-f8c7696c9cf9",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dqMKIC3trqbrRPNF",
+          "name": "WhatsApp account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -319,6 +527,50 @@
           }
         ]
       ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Get Restaurant Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Greeting Reply": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Restaurant Settings": {
+      "main": [
+        [
+          {
+            "node": "Greeting Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -326,7 +578,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "f0ca121e-ef3b-4354-9193-fa89d3dfcb61",
+  "versionId": "caf0dc18-e9f4-4524-897f-728aba01f850",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "eee05c2433f62ab6a4653896bfc44c5d1e3b780090d02e70c183a215588f3b98"
