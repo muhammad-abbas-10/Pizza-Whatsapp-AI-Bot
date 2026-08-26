@@ -1,0 +1,140 @@
+{
+  "name": "pizza",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ec3424f9-ca03-440e-a00f-b71baf8fd4a8",
+      "name": "WhatsApp Trigger",
+      "webhookId": "ec5004de-7569-4c9b-8c00-65f777a69200",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "K6jPiXJMYOY3bBGn",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b78e0b39-c29a-453f-afbe-691743ce4bb5",
+              "name": "customer_name",
+              "value": "={{ $json.contacts[0].profile.name }}",
+              "type": "string"
+            },
+            {
+              "id": "952d1914-a434-4feb-8481-3a4fc05faec8",
+              "name": "customer_phone",
+              "value": "={{ $json.messages[0].from }}",
+              "type": "string"
+            },
+            {
+              "id": "3cda0a0e-e107-40a2-8800-e426f96827d1",
+              "name": "message_id",
+              "value": "={{ $json.messages[0].id }}",
+              "type": "string"
+            },
+            {
+              "id": "2b83028e-5e67-49fc-809e-7a1c98a78613",
+              "name": "message_text",
+              "value": "={{ $json.messages[0].text.body }}",
+              "type": "string"
+            },
+            {
+              "id": "2dc5921c-a6eb-464b-9a8b-9d9ed7329f24",
+              "name": "message_type",
+              "value": "={{ $json.messages[0].type }}",
+              "type": "string"
+            },
+            {
+              "id": "7b24daf6-28ad-4cc5-9d1a-7a7c27a570f2",
+              "name": "message_timestamp",
+              "value": "={{ $json.messages[0].timestamp }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "4fed7395-05de-47d3-91dc-0dbb1fddeddc",
+      "name": "Normalize Incoming Message"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT NOW() AS database_time, current_database() AS database_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        432,
+        0
+      ],
+      "id": "52042a86-17ef-4247-b659-eaa8e528b5ce",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Incoming Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Incoming Message": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "977be175-b598-432a-8df8-8e388931bf3e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "eee05c2433f62ab6a4653896bfc44c5d1e3b780090d02e70c183a215588f3b98"
+  },
+  "nodeGroups": [],
+  "id": "vH3S8L2QoqpKZ3IY",
+  "tags": []
+}
