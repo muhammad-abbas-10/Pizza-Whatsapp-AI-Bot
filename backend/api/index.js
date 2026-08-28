@@ -117,14 +117,15 @@ app.get("/health", async (req, res) => {
       success: true,
       database: "connected",
     });
-  } catch (error) {
-    console.error("Database health check error:", error);
+} catch (error) {
+  console.error("Image retrieval error:", error);
 
-    return res.status(500).json({
-      success: false,
-      database: "disconnected",
-    });
-  }
+  return res.status(500).json({
+    success: false,
+    message: "Failed to retrieve image",
+    error: error.message,
+  });
+}
 });
 
 // --------------------------------------------------
