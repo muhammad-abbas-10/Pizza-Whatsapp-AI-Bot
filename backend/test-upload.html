@@ -1,0 +1,74 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Multiple Image Upload Test</title>
+</head>
+
+<body>
+  <h2>Upload 2–3 Images to Neon</h2>
+
+  <input
+    type="file"
+    id="images"
+    accept="image/*"
+    multiple
+  >
+
+  <br><br>
+
+  <button onclick="uploadImages()">
+    Upload Images
+  </button>
+
+  <br><br>
+
+  <pre id="result"></pre>
+
+  <script>
+    async function uploadImages() {
+      const input = document.getElementById("images");
+      const result = document.getElementById("result");
+
+      const files = input.files;
+
+      if (files.length < 2 || files.length > 3) {
+        result.textContent = "Please select 2 or 3 images.";
+        return;
+      }
+
+      const formData = new FormData();
+
+      for (const file of files) {
+        formData.append("images", file);
+      }
+
+      result.textContent = "Uploading...";
+
+      try {
+        const response = await fetch(
+          "http://localhost:3000/images/upload",
+          {
+            method: "POST",
+            body: formData
+          }
+        );
+
+        // Read the response as plain text first.
+        // This lets us see the real server response
+        // even if the server returns HTML instead of JSON.
+        const text = await response.text();
+
+        result.textContent =
+          `HTTP Status: ${response.status}\n\n` +
+          text;
+
+      } catch (error) {
+        result.textContent =
+          "Upload failed:\n\n" + error.message;
+      }
+    }
+  </script>
+</body>
+</html>
+```
