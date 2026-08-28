@@ -359,7 +359,9 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "fallbackOutput": "extra"
+        }
       },
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
@@ -387,8 +389,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        2272,
-        -272
+        2384,
+        -544
       ],
       "id": "addff1cd-5700-43cc-a235-00d21b8d1277",
       "name": "Greeting Reply"
@@ -402,8 +404,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2064,
-        -272
+        2048,
+        -544
       ],
       "id": "c27c79d4-0126-4c5d-bc67-1247967152b2",
       "name": "Get Restaurant Settings",
@@ -425,8 +427,8 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1.1,
       "position": [
-        2640,
-        -16
+        3024,
+        -208
       ],
       "id": "74d654b0-bd46-4292-9781-7f47acde8581",
       "name": "Send message",
@@ -449,8 +451,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2080,
-        48
+        2096,
+        144
       ],
       "id": "6660b90e-044d-48e7-aa5c-91a7eecd2576",
       "name": "Update Cart",
@@ -478,11 +480,185 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        2336,
-        48
+        2256,
+        144
       ],
       "id": "255162af-79c0-4021-8d98-69971a5f7f70",
       "name": "Build Cart Summary"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "095b4599-dc72-430e-826f-6627c8ea1fbc",
+              "name": "reply_text",
+              "value": "=  {{ $json.output.clarification_reason || \"Sorry, could you clarify what you'd like to order?\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2224,
+        -160
+      ],
+      "id": "9f0f820f-7359-4d63-be1f-ca0424ac6328",
+      "name": "Build Clarification Reply"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "  UPDATE conversation_sessions\n  SET awaiting_human = true\n  WHERE customer_id = $1\n  RETURNING *;",
+        "options": {
+          "queryReplacement": "=  ={{ [ $('Upsert Customer and Session').item.json.customer_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2048,
+        -320
+      ],
+      "id": "3cd95d2e-30be-49f7-8204-6bc47af164c6",
+      "name": "Mark Human Handoff",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "badd0a33-90a5-4f90-a0d8-bc482f65c15a",
+              "name": "reply_text",
+              "value": "=    {{ \"Thanks for reaching out! One of our team members will get back to you shortly.\" }}",
+              "type": "string"
+            },
+            {
+              "id": "ac3e2ab6-4eb9-409a-a725-82124d36529e",
+              "name": "staff_text",
+              "value": "=    {{ \"🙋 Human handoff needed\\nCustomer: \" + $('Normalize Incoming Message').item.json.customer_phone + \"\\nMessage: \" + $('Normalize Incoming Message').item.json.message_text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2384,
+        -320
+      ],
+      "id": "e88a8c53-7b34-4eb1-9728-b08d4996560d",
+      "name": "Build Handoff Messages"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1328729090313034",
+        "recipientPhoneNumber": "+923340098147",
+        "textBody": "={{ $json.kitchen_text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        2976,
+        128
+      ],
+      "id": "1055dca4-b488-436c-b376-709bd2c9f2b6",
+      "name": "Notify Admin",
+      "webhookId": "dd6fcfd1-2af5-4ad1-8bbf-fbc151ecae5e",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dqMKIC3trqbrRPNF",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "accd8daa-9b4f-49bc-a221-8c2581b3f870",
+              "name": "reply_text",
+              "value": "=    {{ \"Sorry, I didn't quite catch that. You can ask me about our menu, place an order, or ask to speak to someone from our team.\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2240,
+        0
+      ],
+      "id": "affeaab1-0956-43e4-9b37-245d476a6ae2",
+      "name": "Build Fallback Reply"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_sessions\nSET awaiting_delivery_info = true\nWHERE customer_id = $1\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id ] }}"
+        }
+      },
+      "name": "Mark Awaiting Delivery Info",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2016,
+        640
+      ],
+      "id": "6d86f57b-9d01-4b5d-8146-64dcf9ce4b71",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "reply-text-field",
+              "name": "reply_text",
+              "type": "string",
+              "value": "={{ \"Great! Could you share your name and full delivery address so we can get your order out?\" }}"
+            },
+            {
+              "id": "a25bd46c-021e-473e-816d-d6df522cc0d9",
+              "name": "",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Request Delivery Info",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2608,
+        160
+      ],
+      "id": "0411a04d-c089-4e2b-9abd-94000c1a0942"
     },
     {
       "parameters": {
@@ -495,11 +671,11 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2080,
-        240
+        2192,
+        384
       ],
       "id": "59944d53-10bb-4343-a723-a8ec490a9596",
-      "name": "Place Order",
+      "name": "cart",
       "credentials": {
         "postgres": {
           "id": "dw4LfSY4r5SsxibM",
@@ -530,35 +706,73 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        2336,
-        240
+        2768,
+        432
       ],
       "id": "e239f13d-ea68-4304-97c5-9ba4e16ef031",
-      "name": "Build Order Confirmation"
+      "name": "order confirmation"
     },
     {
       "parameters": {
-        "operation": "send",
-        "phoneNumberId": "1328729090313034",
-        "recipientPhoneNumber": "+923340098147",
-        "textBody": "={{ $json.kitchen_text }}",
-        "additionalFields": {}
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.confirmation_response }}",
+                    "rightValue": "=confirm",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1d15b342-324f-47a3-a441-50e6ef654aed"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "62938f57-4c1d-4219-ac67-761e49857589",
+                    "leftValue": "",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
       },
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
       "position": [
-        2560,
-        240
+        2416,
+        144
       ],
-      "id": "1055dca4-b488-436c-b376-709bd2c9f2b6",
-      "name": "Notify Kitchen",
-      "webhookId": "dd6fcfd1-2af5-4ad1-8bbf-fbc151ecae5e",
-      "credentials": {
-        "whatsAppApi": {
-          "id": "dqMKIC3trqbrRPNF",
-          "name": "WhatsApp account"
-        }
-      }
+      "id": "9eea533c-64b1-4127-a408-c5a260e6e1d0",
+      "name": "order confirmation handler"
     }
   ],
   "pinData": {},
@@ -671,8 +885,20 @@
             "index": 0
           }
         ],
-        [],
-        [],
+        [
+          {
+            "node": "Mark Human Handoff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Clarification Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Update Cart",
@@ -682,7 +908,14 @@
         ],
         [
           {
-            "node": "Place Order",
+            "node": "cart",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Fallback Reply",
             "type": "main",
             "index": 0
           }
@@ -724,6 +957,11 @@
     },
     "Build Cart Summary": {
       "main": [
+        []
+      ]
+    },
+    "Build Clarification Reply": {
+      "main": [
         [
           {
             "node": "Send message",
@@ -733,22 +971,70 @@
         ]
       ]
     },
-    "Place Order": {
+    "Mark Human Handoff": {
       "main": [
         [
           {
-            "node": "Build Order Confirmation",
+            "node": "Build Handoff Messages",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build Order Confirmation": {
+    "Build Handoff Messages": {
       "main": [
         [
           {
-            "node": "Notify Kitchen",
+            "node": "Notify Admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Fallback Reply": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Awaiting Delivery Info": {
+      "main": [
+        []
+      ]
+    },
+    "Request Delivery Info": {
+      "main": [
+        []
+      ]
+    },
+    "cart": {
+      "main": [
+        [
+          {
+            "node": "order confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "order confirmation": {
+      "main": [
+        [
+          {
+            "node": "Notify Admin",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send message",
             "type": "main",
             "index": 0
           }
@@ -761,7 +1047,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "6a406a9f-8ccf-4506-af38-ff349d977562",
+  "versionId": "9d42ab9d-a840-48e4-abea-210be6b914ae",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "eee05c2433f62ab6a4653896bfc44c5d1e3b780090d02e70c183a215588f3b98"
