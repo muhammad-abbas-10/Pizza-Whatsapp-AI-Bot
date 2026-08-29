@@ -1,0 +1,793 @@
+{
+  "name": "final workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1136,
+        144
+      ],
+      "id": "2b7bcc44-5222-446d-886d-eaca121a1be5",
+      "name": "WhatsApp Trigger",
+      "webhookId": "ec5004de-7569-4c9b-8c00-65f777a69200",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "K6jPiXJMYOY3bBGn",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a42d67d0-c80c-4983-8ec9-4c127176c17c",
+              "name": "customer_name",
+              "value": "={{ $json.contacts[0].profile.name }}",
+              "type": "string"
+            },
+            {
+              "id": "d0fe8702-7b22-4249-9656-2fa6464e8609",
+              "name": "customer_phone",
+              "value": "={{ $json.messages[0].from }}",
+              "type": "string"
+            },
+            {
+              "id": "67d8220a-d140-4e7b-ae27-55d6c0a56dc5",
+              "name": "message_id",
+              "value": "={{ $json.messages[0].id }}",
+              "type": "string"
+            },
+            {
+              "id": "5866fd63-b24d-4261-b6be-caabbd3bc938",
+              "name": "message_text",
+              "value": "={{ $json.messages[0].text.body }}",
+              "type": "string"
+            },
+            {
+              "id": "49a5cc19-2ad0-4066-943a-cc086cf0d5cc",
+              "name": "message_type",
+              "value": "={{ $json.messages[0].type }}",
+              "type": "string"
+            },
+            {
+              "id": "357d1852-01a2-4b6c-9411-69b7337ed3dc",
+              "name": "message_timestamp",
+              "value": "={{ $json.messages[0].timestamp }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -896,
+        144
+      ],
+      "id": "777d25aa-7b38-456b-a77e-3f2df972d52a",
+      "name": "Normalize Incoming Message"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS processed_messages (\n  message_id TEXT PRIMARY KEY,\n  customer_phone TEXT,\n  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS recent_messages JSONB NOT NULL DEFAULT '[]'::jsonb;\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS order_status TEXT NOT NULL DEFAULT 'draft';\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS active_order_id BIGINT;\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS awaiting_human BOOLEAN NOT NULL DEFAULT FALSE;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -672,
+        144
+      ],
+      "id": "2374f763-81a1-484c-9441-13ad6111a930",
+      "name": "Ensure Schema",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT EXISTS (\n    SELECT 1 FROM processed_messages WHERE message_id = $1\n) AS already_processed;",
+        "options": {
+          "queryReplacement": "={{ [$('Normalize Incoming Message').item.json.message_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -448,
+        144
+      ],
+      "id": "0e96236e-c5d6-48eb-8a29-10b5f3a690cf",
+      "name": "Check Duplicate Message",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e97eb087-0798-4bed-a67e-cf6916339064",
+              "leftValue": "={{ $json.already_processed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -224,
+        144
+      ],
+      "id": "20a9fbe0-c2ff-4d92-a347-690400b032df",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH customer AS (\n    INSERT INTO customers (\n        whatsapp_phone,\n        name,\n        updated_at\n    )\n    VALUES ($1, $2, NOW())\n    ON CONFLICT (whatsapp_phone)\n    DO UPDATE SET\n        name = EXCLUDED.name,\n        updated_at = NOW()\n    RETURNING id, whatsapp_phone, name\n),\nsession AS (\n    INSERT INTO conversation_sessions (customer_id)\n    SELECT id FROM customer\n    ON CONFLICT (customer_id)\n    DO UPDATE SET updated_at = NOW()\n    RETURNING *\n)\nSELECT\n    customer.id AS customer_id,\n    customer.whatsapp_phone,\n    customer.name,\n    session.id AS session_id,\n    session.cart,\n    session.order_type,\n    session.delivery_address,\n    session.awaiting_confirmation,\n    session.awaiting_human,\n    session.delivery_name,\n    session.recent_messages,\n    session.order_status,\n    session.active_order_id\nFROM customer\nJOIN session ON session.customer_id = customer.id;",
+        "options": {
+          "queryReplacement": "={{ [   $('Normalize Incoming Message').item.json.customer_phone,   $('Normalize Incoming Message').item.json.customer_name ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        0,
+        144
+      ],
+      "id": "cf2cdd87-d181-4eef-ad83-97eaddd8a48f",
+      "name": "Upsert Customer and Session",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    COALESCE(\n        (SELECT JSONB_AGG(TO_JSONB(m) ORDER BY m.sort_order, m.id)\n         FROM active_restaurant_menu_for_ai m),\n        '[]'::JSONB\n    ) AS menu,\n    COALESCE(\n        (SELECT JSONB_OBJECT_AGG(r.rule_key, r.rule_value)\n         FROM restaurant_menu_rules r\n         WHERE r.active = TRUE),\n        '{}'::JSONB\n    ) AS menu_rules;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        224,
+        144
+      ],
+      "id": "0c8f2568-b392-460c-9a0c-c486ed81fb22",
+      "name": "Load Active Menu",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT restaurant_name, currency, delivery_charge, opening_hours\nFROM restaurant_settings\nWHERE id = 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        448,
+        144
+      ],
+      "id": "e548d5f4-4776-4d6f-a82e-430da0b8a51a",
+      "name": "Get Restaurant Settings",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH new_items_raw AS (\n  SELECT elem FROM jsonb_array_elements($1::jsonb) AS elem\n),\nnew_menu_items AS (\n  SELECT\n    (elem->>'menu_item_id')::bigint AS menu_item_id,\n    (elem->>'variant_id')::bigint AS variant_id,\n    COALESCE((elem->>'quantity')::int, 1) AS quantity\n  FROM new_items_raw\n  WHERE elem->>'record_type' = 'menu_item'\n),\nvalidated_menu_items AS (\n  SELECT\n    'menu_item'::text AS record_type,\n    ni.menu_item_id,\n    v.id AS variant_id,\n    NULL::bigint AS deal_id,\n    mi.name AS item_name,\n    mi.category,\n    v.variant_label AS size,\n    ni.quantity,\n    v.price,\n    '[]'::jsonb AS selected_components\n  FROM new_menu_items ni\n  JOIN restaurant_menu_variants v ON v.id = ni.variant_id AND v.menu_item_id = ni.menu_item_id AND v.active = TRUE\n  JOIN restaurant_menu_items mi ON mi.id = ni.menu_item_id AND mi.active = TRUE\n),\nnew_deal_items AS (\n  SELECT\n    (elem->>'deal_id')::bigint AS deal_id,\n    COALESCE((elem->>'quantity')::int, 1) AS quantity,\n    COALESCE(elem->'selected_components', '[]'::jsonb) AS selected_components\n  FROM new_items_raw\n  WHERE elem->>'record_type' = 'deal'\n),\nvalidated_deal_items AS (\n  SELECT\n    'deal'::text AS record_type,\n    NULL::bigint AS menu_item_id,\n    NULL::bigint AS variant_id,\n    d.id AS deal_id,\n    d.name AS item_name,\n    d.category,\n    NULL::text AS size,\n    ndi.quantity,\n    d.price,\n    ndi.selected_components\n  FROM new_deal_items ndi\n  JOIN restaurant_deals d ON d.id = ndi.deal_id AND d.active = TRUE\n),\nvalidated_items AS (\n  SELECT * FROM validated_menu_items\n  UNION ALL\n  SELECT * FROM validated_deal_items\n),\ncurrent_cart AS (\n  SELECT COALESCE(cart->'items', '[]'::jsonb) AS items\n  FROM conversation_sessions WHERE customer_id = $2\n),\nexisting_items AS (\n  SELECT\n    existing->>'record_type' AS record_type,\n    (existing->>'menu_item_id')::bigint AS menu_item_id,\n    (existing->>'variant_id')::bigint AS variant_id,\n    (existing->>'deal_id')::bigint AS deal_id,\n    existing->>'item_name' AS item_name,\n    existing->>'category' AS category,\n    existing->>'size' AS size,\n    (existing->>'quantity')::int AS quantity,\n    (existing->>'price')::numeric AS price,\n    COALESCE(existing->'selected_components', '[]'::jsonb) AS selected_components\n  FROM current_cart cc, LATERAL jsonb_array_elements(cc.items) AS existing\n),\nmerged_items AS (\n  SELECT\n    COALESCE(ei.record_type, vi.record_type) AS record_type,\n    COALESCE(ei.menu_item_id, vi.menu_item_id) AS menu_item_id,\n    COALESCE(ei.variant_id, vi.variant_id) AS variant_id,\n    COALESCE(ei.deal_id, vi.deal_id) AS deal_id,\n    COALESCE(vi.item_name, ei.item_name) AS item_name,\n    COALESCE(vi.category, ei.category) AS category,\n    COALESCE(vi.size, ei.size) AS size,\n    COALESCE(ei.quantity, 0) + COALESCE(vi.quantity, 0) AS quantity,\n    COALESCE(vi.price, ei.price) AS price,\n    COALESCE(vi.selected_components, ei.selected_components, '[]'::jsonb) AS selected_components\n  FROM existing_items ei\n  FULL OUTER JOIN validated_items vi\n    ON ei.record_type IS NOT DISTINCT FROM vi.record_type\n   AND ei.menu_item_id IS NOT DISTINCT FROM vi.menu_item_id\n   AND ei.variant_id IS NOT DISTINCT FROM vi.variant_id\n   AND ei.deal_id IS NOT DISTINCT FROM vi.deal_id\n   AND ei.selected_components::text IS NOT DISTINCT FROM vi.selected_components::text\n),\nfinal_items AS (\n  SELECT record_type, menu_item_id, variant_id, deal_id, item_name, category, size, quantity, price, selected_components,\n    (price * quantity) AS line_total\n  FROM merged_items WHERE quantity > 0\n),\nupdated AS (\n  UPDATE conversation_sessions\n  SET cart = jsonb_build_object('items', (SELECT COALESCE(jsonb_agg(to_jsonb(fi)), '[]'::jsonb) FROM final_items fi)),\n      order_status = 'draft',\n      updated_at = NOW()\n  WHERE customer_id = $2\n  RETURNING cart\n)\nSELECT * FROM updated;",
+        "options": {
+          "queryReplacement": "={{ [ $fromAI('items_json', 'JSON array string of items to add/update/remove, see tool description', 'string'), $('Upsert Customer and Session').item.json.customer_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        464,
+        560
+      ],
+      "id": "904c6a8f-1752-4bdc-933e-8532603dae02",
+      "name": "Update Cart",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_sessions SET order_type = $2, updated_at = NOW() WHERE customer_id = $1 RETURNING order_type;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $fromAI('order_type', \"Exactly 'delivery' or 'pickup'\", 'string') ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        688,
+        560
+      ],
+      "id": "78229729-cff3-421b-8694-9010ae1c7594",
+      "name": "Set Order Type",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_sessions\nSET delivery_name = COALESCE(NULLIF($2, ''), delivery_name),\n    delivery_address = COALESCE(NULLIF($3, ''), delivery_address),\n    updated_at = NOW()\nWHERE customer_id = $1\nRETURNING delivery_name, delivery_address;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $fromAI('delivery_name', 'Delivery name given this turn, or empty string', 'string'), $fromAI('delivery_address', 'Delivery address given this turn, or empty string', 'string') ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        912,
+        560
+      ],
+      "id": "74aa2317-8e41-43e6-a31f-e5c4fb5e0c36",
+      "name": "Set Delivery Info",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH lock_customer AS (\n  SELECT pg_advisory_xact_lock(hashtext('order_create:' || $1::text))\n),\nsession_data AS (\n  SELECT customer_id, cart, order_type, delivery_address, delivery_name\n  FROM conversation_sessions WHERE customer_id = $1\n),\ncart_totals AS (\n  SELECT customer_id, cart, order_type, delivery_address, delivery_name,\n    COALESCE((SELECT SUM((item->>'line_total')::numeric) FROM jsonb_array_elements(cart->'items') AS item), 0) AS subtotal\n  FROM session_data\n),\nsettings AS (SELECT delivery_charge FROM restaurant_settings WHERE id = 1),\nnew_order AS (\n  INSERT INTO orders (customer_id, items, order_type, delivery_address, delivery_name, subtotal, delivery_charge, total)\n  SELECT ct.customer_id, ct.cart->'items', ct.order_type, ct.delivery_address, ct.delivery_name, ct.subtotal,\n    CASE WHEN ct.order_type = 'delivery' THEN s.delivery_charge ELSE 0 END,\n    ct.subtotal + CASE WHEN ct.order_type = 'delivery' THEN s.delivery_charge ELSE 0 END\n  FROM cart_totals ct, settings s\n  WHERE jsonb_array_length(ct.cart->'items') > 0\n    AND ct.order_type IN ('delivery', 'pickup')\n    AND ( ct.order_type = 'pickup'\n          OR ( ct.order_type = 'delivery'\n               AND ct.delivery_name IS NOT NULL AND TRIM(ct.delivery_name) <> ''\n               AND ct.delivery_address IS NOT NULL AND TRIM(ct.delivery_address) <> '' ) )\n  RETURNING *\n),\ncleared_session AS (\n  UPDATE conversation_sessions\n  SET cart = '{\"items\": []}'::jsonb, order_type = NULL, delivery_address = NULL, delivery_name = NULL,\n      order_status = 'placed', active_order_id = (SELECT id FROM new_order)\n  WHERE customer_id = $1 AND EXISTS (SELECT 1 FROM new_order)\n  RETURNING 1\n)\nSELECT (SELECT COUNT(*) FROM new_order) > 0 AS order_created, no.*\nFROM (SELECT 1) AS _one LEFT JOIN new_order no ON TRUE;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        1136,
+        560
+      ],
+      "id": "0e78246c-966a-4d33-8e6a-ead99663af84",
+      "name": "Place Order",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_sessions\nSET cart = CASE WHEN order_status = 'draft' THEN '{\"items\": []}'::jsonb ELSE cart END,\n    order_type = CASE WHEN order_status = 'draft' THEN NULL ELSE order_type END,\n    delivery_address = CASE WHEN order_status = 'draft' THEN NULL ELSE delivery_address END,\n    delivery_name = CASE WHEN order_status = 'draft' THEN NULL ELSE delivery_name END,\n    updated_at = NOW()\nWHERE customer_id = $1\nRETURNING order_status, (order_status = 'draft') AS cancelled;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        1344,
+        560
+      ],
+      "id": "9a041d03-b6d5-4de5-b41b-3e6afdbf28a9",
+      "name": "Cancel Order",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_sessions SET awaiting_human = TRUE, updated_at = NOW() WHERE customer_id = $1 RETURNING awaiting_human;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        1568,
+        560
+      ],
+      "id": "0e9f3e7b-32a9-4e05-bc7f-3269aa755f7d",
+      "name": "Escalate To Human",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "=1328729090313034",
+        "recipientPhoneNumber": "=+923135928082",
+        "textBody": "={{ $fromAI('message', 'Exact message text to send to the restaurant team', 'string') }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTool",
+      "typeVersion": 1.1,
+      "position": [
+        1792,
+        560
+      ],
+      "id": "8f00c06f-5883-40c9-ae13-be762911de2a",
+      "name": "Notify Admin",
+      "webhookId": "da86d03c-6b36-4583-8167-a26606d62d98",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dqMKIC3trqbrRPNF",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1328729090313034",
+        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
+        "messageType": "image",
+        "mediaLink": "https://pizza-whatsapp-ai-bot.vercel.app/images/1",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTool",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        560
+      ],
+      "id": "aeb1c8c6-6aaf-4d08-b76f-2bfe736d7a33",
+      "name": "Send Menu Image 1",
+      "webhookId": "698dbc04-cf65-4ffb-a183-59e65c77c6d5",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dqMKIC3trqbrRPNF",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1328729090313034",
+        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
+        "messageType": "image",
+        "mediaLink": "https://pizza-whatsapp-ai-bot.vercel.app/images/2",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTool",
+      "typeVersion": 1.1,
+      "position": [
+        2224,
+        560
+      ],
+      "id": "6cb5f876-50d5-4b93-9ff6-de4dba473201",
+      "name": "Send Menu Image 2",
+      "webhookId": "786532ff-f2fb-4f33-8ac6-3d442d524104",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dqMKIC3trqbrRPNF",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {
+          "maxOutputTokens": 4096,
+          "temperature": 0.15
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        592,
+        752
+      ],
+      "id": "6bf8f3dd-b98a-449e-b55d-72d834851d32",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uqkFR8zZancmAMMv",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Normalize Incoming Message').item.json.message_text }}",
+        "options": {
+          "systemMessage": "=You are the WhatsApp ordering assistant for {{ $('Get Restaurant Settings').item.json.restaurant_name }}, a pizza restaurant. You chat naturally in whichever language/style the customer uses — English, Urdu, or Roman Urdu — and you decide for yourself what to do each turn. There is no fixed menu of commands: read what the customer actually wants and act accordingly.\n\nCONTEXT GIVEN TO YOU EACH TURN\n- RESTAURANT_SETTINGS: {{ JSON.stringify($('Get Restaurant Settings').item.json) }}\n- MENU_DATA (source of truth for every item/deal/price/id — never invent one): {{ JSON.stringify($('Load Active Menu').item.json.menu) }}\n- MENU_RULES (sizes, crust availability, deal-selection policy, hours, contact info, etc.): {{ JSON.stringify($('Load Active Menu').item.json.menu_rules) }}\n- CURRENT_SESSION (cart, order_type, delivery info, order_status, awaiting_human): {{ JSON.stringify($('Upsert Customer and Session').item.json) }}\n- RECENT_MESSAGES (last turns of this conversation, oldest first): {{ JSON.stringify($('Upsert Customer and Session').item.json.recent_messages) }}\n- Customer's new message: \"{{ $('Normalize Incoming Message').item.json.message_text }}\"\n\nHOW TO ANSWER QUESTIONS\nAny question about the menu, a specific deal's contents, prices, sizes, crusts, hours, or policies should be answered directly from MENU_DATA / MENU_RULES / RESTAURANT_SETTINGS above — you do not need a tool for that, you already have the data.\n\nGROUNDING RULE (read this before every reply that mentions a product):\n- Before naming ANY item, sauce, deal, price, size, or component in your reply, you must be able to point to the exact record in MENU_DATA (or the exact rule in MENU_RULES) that it came from. Names and prices must match MENU_DATA byte-for-byte — not \"close enough\", not a plausible-sounding variant, not something a typical pizza place might have.\n- If the customer asks about a category (e.g. \"what sauces/dips do you have\") first find every MENU_DATA record where category or item_type matches that category, and list only those exact names and prices. If you find none, say plainly that you don't see that on the current menu and offer to check with the team — never fill the gap with an invented item.\n- Never invent an item, price, id, component, flavor, or rule that isn't literally present in MENU_DATA/MENU_RULES. If you're not fully sure something is on the menu, treat it as NOT on the menu rather than guessing.\n- When a deal has selectable components (selection_group with selectable:true) and the customer hasn't said which flavor/type they want, ask; fixed (selectable:false) components should never be asked about.\n\nWHEN TO USE TOOLS\nOnly call a tool when you need to change something or take a real-world action:\n- Update Cart — whenever the cart should change (add, change quantity, or remove by setting quantity 0). Use the exact ids from MENU_DATA. After calling it, tell the customer their updated cart + total in a short, clear summary, in their language.\n- Set Order Type — only once the customer has explicitly said \"delivery\" or \"pickup\" in this conversation. Never default or assume.\n- Set Delivery Info — once the customer gives their delivery name and/or address.\n- Place Order — only after you've shown the customer a cart summary with total and they've clearly confirmed, AND order_type is set, AND (if delivery) name+address are saved. If the tool reports order_created=false, something above is still missing — figure out what and ask, don't claim the order went through. After a successful Place Order, call Notify Admin with a clear kitchen ticket (items, sizes, qty, order type, delivery info if any, total, customer phone), then tell the customer their order is confirmed.\n- Cancel Order — when the customer wants to cancel. If the result says cancelled=false, the order was already placed and can't be cancelled this way; apologize, and use Escalate To Human + Notify Admin so the team can help.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number.\n- Send Menu Image 1 / Send Menu Image 2 — when the customer wants to see the menu visually (call both, in order), then still describe in text how to order from it. Before calling these, check RECENT_MESSAGES: if one of your own earlier replies in this conversation already mentions sending/showing the menu, you've already sent the photos — don't call these tools again, just answer their new question directly (e.g. from a fresh menu request point them back to the photos you already sent, or just answer with text/MENU_DATA).\n\nSTYLE\n- Keep replies short, warm, and WhatsApp-appropriate; light emoji is fine, don't overdo it.\n- Never claim an action (cart updated, order placed, order cancelled, team notified) happened unless the matching tool result actually confirms it.\n- Never make up prices, item names, ids, delivery times, or policies that aren't in the data you were given.\n- Only your final reply to the customer should be plain conversational text — no JSON, no markdown code fences.\n- If MENU_DATA above is empty or missing for this turn, say you're having trouble pulling up the menu right now and offer to have the team follow up — do NOT answer menu questions from general knowledge of what pizza places typically sell.",
+          "maxIterations": 8
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        704,
+        144
+      ],
+      "id": "94e3b733-af3f-4f8f-af86-f333713190d1",
+      "name": "Pizza Ordering Agent"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b3673a01-dc58-42f5-b754-9c870350a090",
+              "name": "reply_text",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        944,
+        144
+      ],
+      "id": "da4909a2-dfda-4acd-bbea-77da25b76e15",
+      "name": "Reply Text"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "=1328729090313034",
+        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
+        "textBody": "={{ $json.reply_text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        144
+      ],
+      "id": "15b3deef-14e1-400d-aefa-cedf3c470c25",
+      "name": "Send message",
+      "webhookId": "29fe3281-5477-4f75-96e5-6d2c9a3b945d",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dqMKIC3trqbrRPNF",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH appended AS (\n  SELECT COALESCE(recent_messages, '[]'::jsonb)\n         || jsonb_build_array(\n              jsonb_build_object('role','customer','text',$2::text),\n              jsonb_build_object('role','bot','text',$3::text)\n            ) AS msgs\n  FROM conversation_sessions WHERE customer_id = $1\n),\ntrimmed AS (\n  SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb) AS msgs\n  FROM appended, LATERAL jsonb_array_elements(appended.msgs) WITH ORDINALITY AS t(elem, idx)\n  WHERE idx > (SELECT jsonb_array_length(msgs) FROM appended) - 12\n)\nUPDATE conversation_sessions cs\nSET recent_messages = (SELECT msgs FROM trimmed), updated_at = NOW()\nWHERE cs.customer_id = $1\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Normalize Incoming Message').item.json.message_text || '', $('Reply Text').item.json.reply_text || '' ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1392,
+        144
+      ],
+      "id": "de4baced-dc91-4342-bdf9-e96bd62b889f",
+      "name": "Persist Conversation Turn",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Incoming Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Incoming Message": {
+      "main": [
+        [
+          {
+            "node": "Ensure Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Schema": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate Message": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Upsert Customer and Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Customer and Session": {
+      "main": [
+        [
+          {
+            "node": "Load Active Menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Active Menu": {
+      "main": [
+        [
+          {
+            "node": "Get Restaurant Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Restaurant Settings": {
+      "main": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pizza Ordering Agent": {
+      "main": [
+        [
+          {
+            "node": "Reply Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply Text": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message": {
+      "main": [
+        [
+          {
+            "node": "Persist Conversation Turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cart": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Order Type": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Delivery Info": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Place Order": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Order": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate To Human": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Admin": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Menu Image 1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Menu Image 2": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0dd0c8dc-f839-4283-80ee-c8ef65fdc1f2",
+  "meta": {
+    "instanceId": "eee05c2433f62ab6a4653896bfc44c5d1e3b780090d02e70c183a215588f3b98"
+  },
+  "nodeGroups": [],
+  "id": "2XOV5R2We6SiQckg",
+  "tags": []
+}

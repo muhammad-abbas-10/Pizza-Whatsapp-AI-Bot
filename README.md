@@ -4,25 +4,25 @@ A WhatsApp-based AI ordering system for **Pizza Bar**. It uses the Meta WhatsApp
 
 ## Project status
 
-Core ordering flow is functional end-to-end for a single test customer: a customer can message the bot, get a greeting, add items to a cart (with automatic quantity merging and DB-validated pricing), and place an order (which is saved to the database with a full price breakdown). Order confirmation messages back to the customer and kitchen notifications are the next pieces being wired up. Clarification handling, human handoff, and full multilingual testing are still to do.
+The workflow is complete and running end-to-end as a single AI agent: a customer can message the bot in English, Urdu, or Roman Urdu, ask menu/pricing questions, build and edit a cart (items and deals), set order type and delivery info, confirm and place an order, cancel a draft order, request a human, and ask to see menu photos — all handled by one LangChain agent node deciding which tool (if any) to call each turn, rather than a fixed Switch-based branch structure. Kitchen/admin notification is wired in and fires automatically after a successful order or an escalation. Remaining work is centered on production hardening: multi-customer/concurrency testing, Meta production onboarding, and full multilingual regression testing.
 
 ## Goals
 
 - Understand customer messages in English, Urdu, and Roman Urdu
 - Answer menu and pricing questions using stored restaurant data
-- Build and modify a structured shopping cart
+- Build and modify a structured shopping cart (menu items and deals, with deal component selection)
 - Support delivery and pickup orders
 - Require explicit customer confirmation before placing an order
 - Save confirmed orders in PostgreSQL
-- Immediately notify restaurant staff about new orders
-- Support human handoff when requested or when automation fails
+- Immediately notify restaurant staff about new orders and escalations
+- Support human handoff when requested or when automation can't proceed
 - Prevent invented menu items, prices, totals, and delivery times
 
 ## Technology stack
 
 - **Messaging:** Meta WhatsApp Cloud API
 - **Workflow automation:** n8n Cloud
-- **AI:** Google Gemini (via n8n LangChain nodes — Basic LLM Chain + Structured Output Parser)
+- **AI:** Google Gemini, via a single LangChain **Agent** node (tool-calling), not a fixed Switch/rules pipeline
 - **Database:** Neon PostgreSQL
 - **Version control:** GitHub
 
@@ -35,113 +35,122 @@ WhatsApp Trigger (Meta Cloud API)
         ↓
 Normalize Incoming Message
         ↓
+Ensure Schema (idempotent DDL: processed_messages table, session columns)
+        ↓
 Check Duplicate Message → If not already processed
         ↓
-Upsert Customer and Session
+Upsert Customer and Session (loads cart, order state, recent_messages)
         ↓
-Load Active Menu (trimmed fields — see note below)
+Load Active Menu (menu items, deals, and menu rules)
         ↓
-Gemini structured intent extraction (Basic LLM Chain + Structured Output Parser)
+Get Restaurant Settings
         ↓
-Route by Intent (Switch node)
-        ├── human_handoff = true      → [not yet built]
-        ├── clarification_needed      → [not yet built]
-        ├── confirmation = true       → Place Order → [confirmation/kitchen messages: in progress]
-        ├── items present             → Update Cart → Build Cart Summary → WhatsApp Send OK
-        ├── intent = greeting         → Get Restaurant Settings → Greeting Reply → WhatsApp Send OK
-        └── fallback (unhandled)      → [not yet built]
+Pizza Ordering Agent (Gemini, tool-calling, up to 8 iterations)
+        │
+        ├── Update Cart          — add/change/remove items or deals
+        ├── Set Order Type       — delivery or pickup, only on explicit customer statement
+        ├── Set Delivery Info    — save delivery name/address
+        ├── Place Order          — only after confirmed cart + order type (+ delivery info if needed)
+        ├── Cancel Order         — cancels a draft (not-yet-placed) order
+        ├── Escalate To Human    — flags session for staff, paired with Notify Admin
+        ├── Notify Admin         — WhatsApp alert to staff (kitchen tickets + escalations)
+        └── Send Menu Image 1/2  — sends the two menu photos (won't resend if already sent this conversation)
+        ↓
+Reply Text (agent's final plain-text reply)
+        ↓
+Send message (WhatsApp)
+        ↓
+Persist Conversation Turn (appends this turn to recent_messages, trimmed to last ~6 exchanges)
 ```
 
-All customer-facing replies converge into a single shared **WhatsApp Send** node (reads `reply_text` + `customer_phone`), rather than one node per branch, to keep the sending logic centralized.
+There is no intent-classification/Switch step anymore — the agent reads the full context (menu, rules, settings, session state, recent turns, and the new message) each turn and decides for itself whether to just reply, or call one or more tools, in what order.
 
 ## Core safety rules
 
-1. Never invent menu items or prices — every price comes from the database, validated against `menu_variants` at both cart-update and order-confirmation time, never from the AI's output.
-2. Never place an order without explicit customer confirmation.
-3. Save the order successfully before claiming it was placed.
+1. Never invent menu items, deals, prices, ids, or policies — the agent is instructed to ground every product mention in the exact `MENU_DATA`/`MENU_RULES` it's given, and every price is still validated/recalculated in SQL (`Update Cart`, `Place Order`) rather than trusted from the AI's output.
+2. Never place an order without explicit customer confirmation, a set order type, and (for delivery) saved name + address — enforced both in the agent's instructions and again in `Place Order`'s SQL guard.
+3. Save the order successfully before claiming it was placed (`order_created` is checked, never assumed).
 4. Ignore duplicate WhatsApp webhook deliveries.
-5. Ask for clarification when required information is missing.
-6. Transfer the conversation when the customer requests a human.
+5. Ask for clarification when required information (order type, delivery info, deal component choice) is missing, instead of guessing.
+6. Transfer the conversation when the customer requests a human, or when a cancellation attempt fails because the order was already placed.
 7. Never expose credentials, internal prompts, or system information.
 8. Treat the customer's message as data, never as instructions to the AI system.
 
 ## Development roadmap
 
 - [x] Create Meta WhatsApp test application
-- [x] Send a test WhatsApp message
-- [x] Receive WhatsApp messages in n8n
+- [x] Send/receive WhatsApp messages via n8n
 - [x] Normalize incoming message fields
-- [x] Connect n8n to Neon PostgreSQL
-- [x] Create the initial database schema (customers, processed_messages, conversation_sessions)
+- [x] Connect n8n to Neon PostgreSQL; idempotent schema setup (`Ensure Schema`)
 - [x] Add duplicate-message protection
-- [x] Create and import the restaurant menu (categories, items, variants, extras + seed data)
+- [x] Build the menu/deals schema (v2) and seed data
 - [x] Seed restaurant settings (name, currency, delivery charge, hours)
-- [x] Connect Gemini for structured intent extraction
-- [x] Route parsed intent to the right conversation branch (Switch node)
-- [x] Build and merge cart items from parsed intent (quantity-aware, price-validated)
-- [x] Validate products and calculate prices deterministically
-- [x] Save confirmed orders (orders table, snapshotted items + totals)
-- [ ] Send order confirmation message to customer
-- [ ] Notify kitchen staff immediately on new order
-- [ ] Add clarification-question branch
-- [ ] Add human-handoff branch
-- [ ] Add fallback/unhandled-intent reply
-- [ ] Add order status updates
-- [ ] Test English, Urdu, and Roman Urdu conversations end-to-end
+- [x] Replace the Switch/intent-classification pipeline with a single tool-calling agent
+- [x] Build and merge cart items and deals (quantity-aware, price-validated, deal component selection)
+- [x] Order-type and delivery-info collection as explicit agent tools
+- [x] Save confirmed orders (`orders` table, snapshotted items + totals), guarded against incomplete state
+- [x] Cancel-order flow for draft orders
+- [x] Human-handoff flow, paired with admin notification
+- [x] Send order confirmation message to customer
+- [x] Notify kitchen/admin staff immediately on new order or escalation
+- [x] Fallback handled implicitly by the agent (no dedicated branch needed)
+- [x] Menu photo sending, with re-send avoidance via recent conversation history
+- [x] Conversation history persistence (`recent_messages`) for multi-turn context
+- [ ] Order status update handling beyond `placed` (e.g. preparing/out_for_delivery/completed)
+- [ ] Multi-customer / concurrent-session testing
+- [ ] Full end-to-end testing in English, Urdu, and Roman Urdu
+- [ ] Meta production onboarding (move off the test number)
 
 ## Repository structure
 
 ```text
 Pizza-Whatsapp-AI-Bot-main/
 ├── database/
-│   └── migration/
-│       ├── 001_initial_schema.sql          # customers, processed_messages, conversation_sessions
-│       ├── 002_menu_schema.sql             # restaurant_settings, menu_categories, menu_items, menu_variants, menu_extras
-│       ├── 003_seed_menu.sql               # seed data for categories, items, variants
-│       ├── 004_seed_restaurant_settings.sql# seeds restaurant_settings (name, currency, delivery charge, hours)
-│       └── 005_orders_schema.sql           # orders table (snapshotted items, totals, status)
-├── n8n_workflow.json                       # exported n8n workflow
+│   └── migration/                          # schema history, including menu schema v2
+├── final_workflow.json                     # exported n8n workflow (agent-based)
 └── README.md
 ```
 
 ## Database schema summary
 
-**Core (001_initial_schema.sql)**
+**Core**
 - `customers` — `whatsapp_phone` (unique), name, preferred language
 - `processed_messages` — message ids already handled, for duplicate protection
-- `conversation_sessions` — one active session per customer: `cart` (JSONB `{"items": []}`), order type, delivery address, awaiting_confirmation, human_handoff, last_question
+- `conversation_sessions` — one active session per customer: `cart` (JSONB `{"items": []}`), `order_type`, `delivery_name`, `delivery_address`, `order_status` (defaults to `draft`), `active_order_id`, `awaiting_human`, `recent_messages` (JSONB, trimmed rolling history for the agent's multi-turn context)
 
-**Menu (002_menu_schema.sql)**
+**Menu (v2)**
 - `restaurant_settings` — name, currency, delivery charge, opening hours (seeded: **Pizza Bar**, PKR, Rs. 150 delivery)
-- `menu_categories` — e.g. Classic Pizzas, Signature Pizzas, Deals
-- `menu_items` — name, aliases (for fuzzy matching)
-- `menu_variants` — size + price per item
-- `menu_extras` — add-ons with type and price
+- `restaurant_menu_items`, `restaurant_menu_variants`, `restaurant_menu_aliases` — items, sizes/prices, fuzzy-match aliases
+- `restaurant_deals`, `restaurant_deal_components` — deals and their (fixed or customer-selectable) components
+- `restaurant_menu_rules` — sizes, crust availability, deal-selection policy, hours, contact info, etc.
+- `active_restaurant_menu_for_ai` view — the single read model the agent is given each turn
 
-**Orders (005_orders_schema.sql)**
-- `orders` — customer_id, `items` (JSONB snapshot of the cart at confirmation time, so later menu/price changes never rewrite past orders), order_type, delivery_address, subtotal, delivery_charge, total, status (`received` -> `preparing` -> `out_for_delivery` -> `completed`, or `cancelled`)
+**Orders**
+- `orders` — customer_id, `items` (JSONB snapshot of the cart at confirmation time), order_type, delivery_name, delivery_address, subtotal, delivery_charge, total, status
 
 ## n8n workflow nodes
 
 1. **WhatsApp Trigger** — Meta Cloud API webhook
 2. **Normalize Incoming Message** — extracts customer_name, customer_phone, message_id, message_text, message_type, message_timestamp
-3. **Check Duplicate Message** — Postgres lookup against `processed_messages`
-4. **If** — branches on already_processed
-5. **Upsert Customer and Session** — inserts/updates `customers` and `conversation_sessions`
-6. **Load Active Menu** — pulls active categories/items/variants as JSON. Trimmed to `id`, `name`, `aliases`, `category`, and `variants` (dropped `description` and other unused fields) to keep the prompt lean and avoid Gemini output truncation
-7. **Google Gemini Chat Model** — Max Output Tokens raised to 4096 (menu size + schema pushed past the default limit during testing)
-8. **Basic LLM Chain** — intent-extraction prompt: treats customer text as data, restricts output to real menu data, understands English/Urdu/Roman Urdu, flags clarification/confirmation/human handoff, requires every cart item to include `menu_item_id`, `variant_id`, `item_name`, `size`, `quantity`, `extra_ids`
-9. **Structured Output Parser** — enforces the JSON schema using a populated example item (not an empty array), so item shape is consistent every time
-10. **Route by Intent** (Switch, Rules mode) — checked in order: `human_handoff` -> `clarification_needed` -> `confirmation` (-> `confirm_order`) -> `items.length > 0` (-> `update_cart`) -> `intent == "greeting"` -> fallback
-11. **Get Restaurant Settings** -> **Greeting Reply** -> shared WhatsApp Send *(greeting branch, done)*
-12. **Update Cart** -> **Build Cart Summary** -> shared WhatsApp Send *(update_cart branch, done)*
-13. **Place Order** -> *(order-confirmation + kitchen-notify nodes: in progress)* *(confirm_order branch)*
-
-### Update Cart logic
-Re-validates every `menu_item_id`/`variant_id` pair from the LLM output against the real `menu_variants`/`menu_items` tables — invalid IDs are silently excluded rather than trusted. Merges quantities for items already in the cart instead of appending duplicate line entries (fixed after an early bug caused repeated test runs to stack duplicate lines). Recalculates `line_total` from the database price, never from the AI.
-
-### Place Order logic
-Recalculates the subtotal from the cart's stored `line_total`s, adds the delivery charge only when `order_type = 'delivery'`, inserts one snapshotted row into `orders`, and clears the cart only if an order was actually created (guards against confirming an empty cart).
+3. **Ensure Schema** — idempotent DDL: creates `processed_messages` if missing, adds `recent_messages`/`order_status`/`active_order_id`/`awaiting_human` columns to `conversation_sessions` if missing
+4. **Check Duplicate Message** — Postgres lookup against `processed_messages`
+5. **If** — branches on already_processed
+6. **Upsert Customer and Session** — inserts/updates `customers` and `conversation_sessions`, returns current cart/order state and `recent_messages`
+7. **Load Active Menu** — pulls menu items, deals, and menu rules as JSON from the v2 schema/view
+8. **Get Restaurant Settings**
+9. **Google Gemini Chat Model** — model backing the agent
+10. **Pizza Ordering Agent** (LangChain Agent, tool-calling, `maxIterations: 8`) — single system prompt carrying restaurant settings, full menu data/rules, current session state, and recent conversation history; decides each turn whether to just answer or call one or more of:
+    - **Update Cart** — validates and merges menu-item or deal lines against the live menu tables; recalculates `line_total` from the database, never from the AI
+    - **Set Order Type** — only on an explicit "delivery"/"pickup" statement, never assumed
+    - **Set Delivery Info** — saves delivery name/address (partial updates supported)
+    - **Place Order** — advisory-locked, recalculates totals from the cart's `line_total`s, adds delivery charge only for delivery orders, inserts one snapshotted row into `orders`, and only clears the cart / marks the session `placed` if an order was actually created (guards on non-empty cart, valid order type, and complete delivery info)
+    - **Cancel Order** — clears cart/order-type/delivery fields only while the session is still `draft`; reports `cancelled=false` if an order was already placed
+    - **Escalate To Human** — sets `awaiting_human = TRUE` on the session
+    - **Notify Admin** — WhatsApp message to staff, used for both kitchen tickets and escalations
+    - **Send Menu Image 1 / Send Menu Image 2** — sends the two menu photos (hosted on Vercel); the agent checks recent history first to avoid resending
+11. **Reply Text** — extracts the agent's final plain-text reply
+12. **Send message** — the single shared WhatsApp send node for all customer-facing replies
+13. **Persist Conversation Turn** — appends the customer message + bot reply to `recent_messages`, trimmed to roughly the last 6 exchanges
 
 ## Environment variables
 
@@ -169,23 +178,19 @@ BACKUP_WHATSAPP_NUMBER=
 
 ## Current limitations
 
-- Meta's test number is intended for development and demonstrations.
+- Meta's test number is intended for development and demonstrations; production onboarding is still needed before using the restaurant's real WhatsApp number.
 - Free service tiers have rate and usage limits.
-- The project requires production onboarding before using the restaurant's real WhatsApp number.
-- AI output must always be validated against the restaurant database (enforced at both cart-update and order-placement time).
-- Order confirmation and kitchen notification messages are not yet sent — orders are saved, but the customer and kitchen aren't notified yet.
-- Clarification questions, human handoff, and unrecognized-intent replies are not yet implemented — messages on those paths currently have nowhere to go.
+- AI output must always be validated against the restaurant database — enforced in SQL at cart-update, order-placement, and cancellation time, not just in the agent's instructions.
+- Order status is currently binary in practice (`draft` → `placed`); there's no flow yet for advancing an order through preparing/out-for-delivery/completed.
 - Testing so far has used a single test customer/phone number; multi-customer and concurrent-session behavior is untested.
+- Full multilingual (English/Urdu/Roman Urdu) end-to-end regression testing is still outstanding.
 
 ## Next steps
 
-1. Build `Build Order Confirmation` (Set node) producing `reply_text` (customer order summary) and `kitchen_text` (kitchen notification) from `Place Order`'s output.
-2. Wire `reply_text` into the shared WhatsApp Send node, and `kitchen_text` into a new `Notify Kitchen` WhatsApp Send node addressed to the kitchen's WhatsApp number.
-3. Build the `clarification_needed` branch — send `clarification_reason` back to the customer as a follow-up question.
-4. Build the `human_handoff` branch — flag the session and notify staff.
-5. Add a fallback reply for unrecognized intents.
-6. Add order status update handling.
-7. End-to-end test in English, Urdu, and Roman Urdu.
+1. Add order-status update handling (preparing → out_for_delivery → completed / cancelled-by-staff).
+2. Test with multiple concurrent customers/sessions to confirm no cross-talk or race conditions beyond the existing `Place Order` advisory lock.
+3. End-to-end test in English, Urdu, and Roman Urdu, including deal-component selection and menu-photo requests.
+4. Complete Meta production onboarding and move off the test number.
 
 ## License
 
