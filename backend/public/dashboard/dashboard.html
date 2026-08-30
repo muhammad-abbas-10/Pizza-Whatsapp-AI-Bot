@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pizza Bar — Admin Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --border: #2a2e38;
+    --text: #eef0f3; --muted: #9aa1ad;
+    --accent: #ff5a36; --good: #2fbf71; --bad: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  header {
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header input {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 10px; border-radius: 6px; width: 220px;
+  }
+  nav { display: flex; gap: 8px; padding: 12px 20px; }
+  nav button {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 14px;
+  }
+  nav button.active { color: var(--text); border-color: var(--accent); background: #2a1712; }
+  main { padding: 0 20px 40px; max-width: 900px; margin: 0 auto; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+    background: #262a33; color: var(--muted); text-transform: capitalize;
+  }
+  .badge.pending { background: #3a2f12; color: #f2b93d; }
+  .badge.approved, .badge.completed { background: #123a26; color: var(--good); }
+  .badge.denied, .badge.cancelled { background: #3a1414; color: var(--bad); }
+  .reply-label { display: block; font-size: 12px; color: var(--muted); margin-top: 10px; margin-bottom: 4px; }
+  .reply-box {
+    width: 100%; background: #1e222b; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 13px; resize: vertical;
+  }
+  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  button.btn {
+    border: none; padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  }
+  .btn-approve { background: var(--good); color: #05271a; font-weight: 600; }
+  .btn-deny { background: var(--bad); color: #2a0505; font-weight: 600; }
+  select {
+    background: #1e222b; color: var(--text); border: 1px solid var(--border);
+    padding: 6px 8px; border-radius: 6px; font-size: 13px;
+  }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .items { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  #status-msg { font-size: 13px; color: var(--muted); padding: 0 20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🍕 Pizza Bar — Admin</h1>
+  <input id="admin-key" type="password" placeholder="Admin key">
+</header>
+
+<nav>
+  <button id="tab-requests" class="active">Pending Requests <span id="pending-count"></span></button>
+  <button id="tab-orders">Orders</button>
+</nav>
+<div id="status-msg"></div>
+
+<main>
+  <div id="view-requests"></div>
+  <div id="view-orders" style="display:none;"></div>
+</main>
+
+<script>
+const API_BASE = ""; // same origin as this page; set to your deployed backend URL if hosted separately
+const keyInput = document.getElementById("admin-key");
+keyInput.value = localStorage.getItem("adminKey") || "";
+keyInput.addEventListener("change", () => localStorage.setItem("adminKey", keyInput.value));
+
+const statusMsg = document.getElementById("status-msg");
+const viewRequests = document.getElementById("view-requests");
+const viewOrders = document.getElementById("view-orders");
+const tabRequests = document.getElementById("tab-requests");
+const tabOrders = document.getElementById("tab-orders");
+const pendingCountEl = document.getElementById("pending-count");
+
+let activeTab = "requests";
+
+tabRequests.onclick = () => switchTab("requests");
+tabOrders.onclick = () => switchTab("orders");
+
+function switchTab(tab) {
+  activeTab = tab;
+  tabRequests.classList.toggle("active", tab === "requests");
+  tabOrders.classList.toggle("active", tab === "orders");
+  viewRequests.style.display = tab === "requests" ? "block" : "none";
+  viewOrders.style.display = tab === "orders" ? "block" : "none";
+  refresh();
+}
+
+async function apiCall(path, options = {}) {
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-key": keyInput.value,
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  return data;
+}
+
+function timeAgo(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+async function loadRequests() {
+  // Don't blow away an in-progress reply on the next 5s poll.
+  if (document.activeElement && document.activeElement.classList.contains("reply-box")) {
+    return;
+  }
+
+  const { requests } = await apiCall("/admin/requests");
+  const pending = requests.filter(r => r.status === "pending");
+  pendingCountEl.textContent = pending.length ? `(${pending.length})` : "";
+
+  if (requests.length === 0) {
+    viewRequests.innerHTML = `<div class="empty">No admin requests yet.</div>`;
+    return;
+  }
+
+  viewRequests.innerHTML = requests.map(r => `
+    <div class="card">
+      <div class="row">
+        <div>
+          <strong>${r.customer_name || "Unknown customer"}</strong>
+          <span class="muted">${r.customer_phone}</span>
+        </div>
+        <span class="badge ${r.status}">${r.status}</span>
+      </div>
+      <div class="muted" style="margin-top:6px;">
+        ${r.request_type}${r.order_id ? ` · order #${r.order_id} (${r.order_status}, ${r.order_total ? "PKR " + r.order_total : ""})` : ""}
+        · ${timeAgo(r.created_at)}
+      </div>
+      <div style="margin-top:8px;">${escapeHtml(r.question)}</div>
+      ${r.admin_note ? `<div class="muted" style="margin-top:6px;">Sent to customer: "${escapeHtml(r.admin_note)}"</div>` : ""}
+      ${r.status === "pending" ? `
+        <label class="reply-label" for="reply-${r.id}">Reply to customer (optional)</label>
+        <textarea id="reply-${r.id}" class="reply-box" rows="2" placeholder="e.g. Sorry, it's already in the oven — can't cancel this one."></textarea>
+        <div class="actions">
+          <button class="btn btn-approve" onclick="resolveRequest(${r.id}, 'approve')">Send &amp; Approve</button>
+          <button class="btn btn-deny" onclick="resolveRequest(${r.id}, 'deny')">Send &amp; Deny</button>
+        </div>
+      ` : ""}
+    </div>
+  `).join("");
+}
+
+async function resolveRequest(id, decision) {
+  const textarea = document.getElementById(`reply-${id}`);
+  const note = textarea ? textarea.value.trim() : "";
+  try {
+    await apiCall(`/admin/requests/${id}/${decision}`, {
+      method: "POST",
+      body: JSON.stringify({ admin_note: note || undefined }),
+    });
+    statusMsg.textContent = `Request ${decision}d and customer notified.`;
+    loadRequests();
+  } catch (err) {
+    statusMsg.textContent = `Error: ${err.message}`;
+  }
+}
+
+const ORDER_STATUSES = ["received", "preparing", "out_for_delivery", "completed", "cancelled"];
+
+async function loadOrders() {
+  const { orders } = await apiCall("/admin/orders?limit=50");
+
+  if (orders.length === 0) {
+    viewOrders.innerHTML = `<div class="empty">No orders yet.</div>`;
+    return;
+  }
+
+  viewOrders.innerHTML = orders.map(o => `
+    <div class="card">
+      <div class="row">
+        <div>
+          <strong>#${o.id} — ${o.customer_name || "Unknown"}</strong>
+          <span class="muted">${o.customer_phone}</span>
+        </div>
+        <span class="badge ${o.status}">${o.status.replace("_", " ")}</span>
+      </div>
+      <div class="muted" style="margin-top:6px;">
+        ${o.order_type}${o.delivery_address ? " · " + escapeHtml(o.delivery_address) : ""} · ${timeAgo(o.created_at)}
+      </div>
+      <div class="items">${(o.items || []).map(i => `${i.quantity || 1}× ${i.name || i.item_name || "item"}`).join(", ")}</div>
+      <div class="row" style="margin-top:8px; align-items:center;">
+        <strong>PKR ${o.total}</strong>
+        <select onchange="updateOrderStatus(${o.id}, this.value)">
+          ${ORDER_STATUSES.map(s => `<option value="${s}" ${s === o.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+  `).join("");
+}
+
+async function updateOrderStatus(id, status) {
+  try {
+    await apiCall(`/admin/orders/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+    statusMsg.textContent = `Order #${id} marked ${status.replace("_", " ")}.`;
+  } catch (err) {
+    statusMsg.textContent = `Error: ${err.message}`;
+  }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+async function refresh() {
+  if (!keyInput.value) {
+    statusMsg.textContent = "Enter your admin key above to load data.";
+    return;
+  }
+  try {
+    if (activeTab === "requests") await loadRequests();
+    else await loadOrders();
+    if (!statusMsg.textContent.startsWith("Order") && !statusMsg.textContent.startsWith("Request")) {
+      statusMsg.textContent = "";
+    }
+  } catch (err) {
+    statusMsg.textContent = `Error: ${err.message}`;
+  }
+}
+
+keyInput.addEventListener("change", refresh);
+refresh();
+setInterval(refresh, 5000); // simple polling — good enough for a single-shop dashboard
+</script>
+</body>
+</html>

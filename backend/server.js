@@ -3,11 +3,17 @@ const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
 require("dotenv").config();
+const path = require("path");
+const { registerAdminRoutes } = require("./src/admin-routes");
 
 const app = express();
 
 // Allow requests from the test HTML page and later from Vercel
 app.use(cors());
+app.use(express.json());
+
+// Admin dashboard static page: http://localhost:3000/dashboard/
+app.use("/dashboard", express.static(path.join(__dirname, "public", "dashboard")));
 
 // Neon PostgreSQL connection
 const pool = new Pool({
@@ -35,6 +41,12 @@ const upload = multer({
     }
   },
 });
+
+// --------------------------------------------------
+// ADMIN DASHBOARD ROUTES (orders + approve/deny requests)
+// --------------------------------------------------
+
+registerAdminRoutes(app, pool);
 
 // --------------------------------------------------
 // TEST ROUTE

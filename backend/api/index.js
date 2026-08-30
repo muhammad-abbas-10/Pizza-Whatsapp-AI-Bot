@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
+const { registerAdminRoutes } = require("../src/admin-routes");
 
 const app = express();
 
@@ -127,6 +128,12 @@ app.get("/health", async (req, res) => {
   });
 }
 });
+
+// --------------------------------------------------
+// ADMIN DASHBOARD ROUTES (orders + approve/deny requests)
+// --------------------------------------------------
+
+registerAdminRoutes(app, pool);
 
 // --------------------------------------------------
 // UPLOAD 2–3 IMAGES

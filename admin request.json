@@ -1,5 +1,5 @@
 {
-  "name": "final workflow",
+  "name": "admin request",
   "nodes": [
     {
       "parameters": {
@@ -11,10 +11,10 @@
       "type": "n8n-nodes-base.whatsAppTrigger",
       "typeVersion": 1,
       "position": [
-        -1584,
-        160
+        -848,
+        16
       ],
-      "id": "2b7bcc44-5222-446d-886d-eaca121a1be5",
+      "id": "f649ef46-3bb6-49dd-a535-304d0b3895ac",
       "name": "WhatsApp Trigger",
       "webhookId": "ec5004de-7569-4c9b-8c00-65f777a69200",
       "credentials": {
@@ -71,25 +71,25 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        -1216,
-        160
+        -480,
+        16
       ],
-      "id": "777d25aa-7b38-456b-a77e-3f2df972d52a",
+      "id": "eede01f7-c255-4a89-8bee-c9e93ea0a874",
       "name": "Normalize Incoming Message"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "CREATE TABLE IF NOT EXISTS processed_messages (\n  message_id TEXT PRIMARY KEY,\n  customer_phone TEXT,\n  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS recent_messages JSONB NOT NULL DEFAULT '[]'::jsonb;\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS order_status TEXT NOT NULL DEFAULT 'draft';\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS active_order_id BIGINT;\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS awaiting_human BOOLEAN NOT NULL DEFAULT FALSE;\n",
+        "query": "CREATE TABLE IF NOT EXISTS processed_messages (\n  message_id TEXT PRIMARY KEY,\n  customer_phone TEXT,\n  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS recent_messages JSONB NOT NULL DEFAULT '[]'::jsonb;\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS order_status TEXT NOT NULL DEFAULT 'draft';\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS active_order_id BIGINT;\nALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS awaiting_human BOOLEAN NOT NULL DEFAULT FALSE;\nCREATE TABLE IF NOT EXISTS admin_requests (\n  id BIGSERIAL PRIMARY KEY,\n  customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,\n  order_id BIGINT REFERENCES orders(id) ON DELETE SET NULL,\n  request_type TEXT NOT NULL,\n  question TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'denied')),\n  admin_note TEXT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n  resolved_at TIMESTAMPTZ\n);\nCREATE INDEX IF NOT EXISTS idx_admin_requests_status ON admin_requests (status, created_at);\n",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -976,
-        160
+        -240,
+        16
       ],
-      "id": "2374f763-81a1-484c-9441-13ad6111a930",
+      "id": "4587e21b-fbdb-4272-a0f1-8dca34730234",
       "name": "Ensure Schema",
       "credentials": {
         "postgres": {
@@ -109,10 +109,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -736,
-        144
+        0,
+        0
       ],
-      "id": "0e96236e-c5d6-48eb-8a29-10b5f3a690cf",
+      "id": "76d935cf-ec40-4f5a-a271-1e4006f84e5c",
       "name": "Check Duplicate Message",
       "credentials": {
         "postgres": {
@@ -132,10 +132,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -32,
-        448
+        704,
+        304
       ],
-      "id": "cf2cdd87-d181-4eef-ad83-97eaddd8a48f",
+      "id": "01a0578b-7ad4-4595-9861-9ee7888ba97c",
       "name": "Upsert Customer and Session",
       "credentials": {
         "postgres": {
@@ -153,10 +153,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        224,
-        144
+        960,
+        0
       ],
-      "id": "0c8f2568-b392-460c-9a0c-c486ed81fb22",
+      "id": "929134c2-8135-42ff-9bc5-d724eb54313e",
       "name": "Load Active Menu",
       "credentials": {
         "postgres": {
@@ -174,10 +174,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        448,
-        144
+        1184,
+        0
       ],
-      "id": "e548d5f4-4776-4d6f-a82e-430da0b8a51a",
+      "id": "f1679377-25b2-4a94-bbb1-4373aed90ecd",
       "name": "Get Restaurant Settings",
       "credentials": {
         "postgres": {
@@ -197,10 +197,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        464,
-        560
+        1200,
+        416
       ],
-      "id": "904c6a8f-1752-4bdc-933e-8532603dae02",
+      "id": "c229b064-2323-4504-8e7c-62e131842a6b",
       "name": "Update Cart",
       "credentials": {
         "postgres": {
@@ -220,10 +220,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        688,
-        560
+        1424,
+        416
       ],
-      "id": "78229729-cff3-421b-8694-9010ae1c7594",
+      "id": "c4202b74-ec70-4736-9ebb-e78cdb68a51a",
       "name": "Set Order Type",
       "credentials": {
         "postgres": {
@@ -243,10 +243,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1024,
-        544
+        1760,
+        400
       ],
-      "id": "74aa2317-8e41-43e6-a31f-e5c4fb5e0c36",
+      "id": "b2cc06e8-ae16-4979-a8db-9a8258fa62d6",
       "name": "Set Delivery Info",
       "credentials": {
         "postgres": {
@@ -266,10 +266,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1184,
-        560
+        1920,
+        416
       ],
-      "id": "0e78246c-966a-4d33-8e6a-ead99663af84",
+      "id": "8740ea7f-a44d-424a-beeb-4ad5ce0b32d1",
       "name": "Place Order",
       "credentials": {
         "postgres": {
@@ -289,10 +289,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1344,
-        560
+        2080,
+        416
       ],
-      "id": "9a041d03-b6d5-4de5-b41b-3e6afdbf28a9",
+      "id": "823b0f1a-efea-4dea-bf35-efae42bdd2f6",
       "name": "Cancel Order",
       "credentials": {
         "postgres": {
@@ -312,10 +312,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1568,
-        560
+        2304,
+        416
       ],
-      "id": "0e9f3e7b-32a9-4e05-bc7f-3269aa755f7d",
+      "id": "baa5ee0a-6379-4a30-8348-5179785c7e4e",
       "name": "Escalate To Human",
       "credentials": {
         "postgres": {
@@ -335,10 +335,10 @@
       "type": "n8n-nodes-base.whatsAppTool",
       "typeVersion": 1.1,
       "position": [
-        1792,
-        560
+        2528,
+        416
       ],
-      "id": "8f00c06f-5883-40c9-ae13-be762911de2a",
+      "id": "727c8f7a-5a72-4936-bb3f-4045661c0458",
       "name": "Notify Admin",
       "webhookId": "da86d03c-6b36-4583-8167-a26606d62d98",
       "credentials": {
@@ -360,10 +360,10 @@
       "type": "n8n-nodes-base.whatsAppTool",
       "typeVersion": 1.1,
       "position": [
-        2016,
-        560
+        2752,
+        416
       ],
-      "id": "aeb1c8c6-6aaf-4d08-b76f-2bfe736d7a33",
+      "id": "b1a65dfd-342d-4247-80bd-20ba80e66409",
       "name": "Send Menu Image 1",
       "webhookId": "698dbc04-cf65-4ffb-a183-59e65c77c6d5",
       "credentials": {
@@ -385,10 +385,10 @@
       "type": "n8n-nodes-base.whatsAppTool",
       "typeVersion": 1.1,
       "position": [
-        2224,
-        560
+        2960,
+        416
       ],
-      "id": "6cb5f876-50d5-4b93-9ff6-de4dba473201",
+      "id": "13b3feb0-a1ba-454c-ac77-8bdd739d7550",
       "name": "Send Menu Image 2",
       "webhookId": "786532ff-f2fb-4f33-8ac6-3d442d524104",
       "credentials": {
@@ -409,10 +409,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
       "position": [
-        592,
-        752
+        1328,
+        608
       ],
-      "id": "6bf8f3dd-b98a-449e-b55d-72d834851d32",
+      "id": "ab3e1ffb-9060-424c-afcf-cb589d7e93a1",
       "name": "Google Gemini Chat Model",
       "credentials": {
         "googlePalmApi": {
@@ -426,17 +426,17 @@
         "promptType": "define",
         "text": "=Customer's new message: \"{{ $('Combine and Mark Processed').item.json.combined_text }}\"",
         "options": {
-          "systemMessage": "=You are the WhatsApp ordering assistant for {{ $('Get Restaurant Settings').item.json.restaurant_name }}, a pizza restaurant. You chat naturally in whichever language/style the customer uses — English, Urdu, or Roman Urdu — and you decide for yourself what to do each turn. There is no fixed menu of commands: read what the customer actually wants and act accordingly.\n\nCONTEXT GIVEN TO YOU EACH TURN\n- RESTAURANT_SETTINGS: {{ JSON.stringify($('Get Restaurant Settings').item.json) }}\n- MENU_DATA (source of truth for every item/deal/price/id — never invent one): {{ JSON.stringify($('Load Active Menu').item.json.menu) }}\n- MENU_RULES (sizes, crust availability, deal-selection policy, hours, contact info, etc.): {{ JSON.stringify($('Load Active Menu').item.json.menu_rules) }}\n- CURRENT_SESSION (cart, order_type, delivery info, order_status, awaiting_human, pending_items): {{ JSON.stringify($('Upsert Customer and Session').item.json) }}\n- RECENT_MESSAGES (last turns of this conversation, oldest first): {{ JSON.stringify($('Upsert Customer and Session').item.json.recent_messages) }}\n- Customer's new message: \"{{ $('Normalize Incoming Message').item.json.message_text }}\"\n\nHOW TO ANSWER QUESTIONS\nAny question about the menu, a specific deal's contents, prices, sizes, crusts, hours, or policies should be answered directly from MENU_DATA / MENU_RULES / RESTAURANT_SETTINGS above — you do not need a tool for that, you already have the data.\n\nGROUNDING RULE (read this before every reply that mentions a product):\n- Before naming ANY item, sauce, deal, price, size, or component in your reply, you must be able to point to the exact record in MENU_DATA (or the exact rule in MENU_RULES) that it came from. Names and prices must match MENU_DATA byte-for-byte — not \"close enough\", not a plausible-sounding variant, not something a typical pizza place might have.\n- If the customer asks about a category (e.g. \"what sauces/dips do you have\") first find every MENU_DATA record where category or item_type matches that category, and list only those exact names and prices. If you find none, say plainly that you don't see that on the current menu and offer to check with the team — never fill the gap with an invented item.\n- If order_type is delivery, the total you mention must always include the delivery charge from restaurant_settings.\n- As soon as the customer says delivery or pickup, call Set Order Type immediately — do not wait until order confirmation to ask.\n- Never invent an item, price, id, component, flavor, or rule that isn't literally present in MENU_DATA/MENU_RULES. If you're not fully sure something is on the menu, treat it as NOT on the menu rather than guessing.\n- When a deal has selectable components (selection_group with selectable:true) and the customer hasn't said which flavor/type they want, ask; fixed (selectable:false) components should never be asked about.\n\nWHEN TO USE TOOLS\nOnly call a tool when you need to change something or take a real-world action:\n- Track Pending Item — when the customer clearly states they want a specific menu item, deal, or drink (with real order intent) but the conversation moves to something else before it is added to the cart or confirmed. Do not call this for items already in the cart, or for casual browsing/menu questions with no order intent.\n- If the customer later refers to an item vaguely (e.g. \"wohi\", \"same\", \"that one\", \"vo hi\"), first check CURRENT_SESSION.pending_items for the most recent matching item before asking the customer to repeat themselves. If it's empty or has no clear match, ask the customer to clarify — do not guess. Once resolved, proceed normally (e.g. call Update Cart with the matching MENU_DATA item).\n- Update Cart — whenever the cart should change (add, change quantity, or remove by setting quantity 0). Use the exact ids from MENU_DATA. If a new item mention shows up unexpectedly alongside unrelated info in the same message (e.g. next to a name or delivery address, or mid another task), briefly confirm with the customer before adding it, instead of adding it silently. After calling it, tell the customer their updated cart + total in a short, clear summary, in their language.\n- Set Order Type — only once the customer has explicitly said \"delivery\" or \"pickup\" in this conversation. Never default or assume.\n- Set Delivery Info — once the customer gives their delivery name and/or address.\n- Place Order — only after you've shown the customer a cart summary with total and they've clearly confirmed, AND order_type is set, AND (if delivery) name+address are saved. If the tool reports order_created=false, something above is still missing — figure out what and ask, don't claim the order went through. After a successful Place Order, call Notify Admin with a clear kitchen ticket (items, sizes, qty, order type, delivery info if any, total, customer phone), then tell the customer their order is confirmed.\n- Cancel Order — when the customer wants to cancel. If the result says cancelled=false, the order was already placed and can't be cancelled this way; apologize, and use Escalate To Human + Notify Admin so the team can help.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number.\n- Send Menu Image 1 / Send Menu Image 2 — when the customer wants to see the menu visually (call both, in order), then still describe in text how to order from it. Before calling these, check RECENT_MESSAGES: if one of your own earlier replies in this conversation already mentions sending/showing the menu, you've already sent the photos — don't call these tools again, just answer their new question directly (e.g. from a fresh menu request point them back to the photos you already sent, or just answer with text/MENU_DATA).\n\nSTYLE\n- Keep replies short, warm, and WhatsApp-appropriate; light emoji is fine, don't overdo it.\n- Never claim an action (cart updated, order placed, order cancelled, team notified) happened unless the matching tool result actually confirms it.\n- Never make up prices, item names, ids, delivery times, or policies that aren't in the data you were given.\n- Only your final reply to the customer should be plain conversational text — no JSON, no markdown code fences.\n- If MENU_DATA above is empty or missing for this turn, say you're having trouble pulling up the menu right now and offer to have the team follow up — do NOT answer menu questions from general knowledge of what pizza places typically sell.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, complains about a current/active order (e.g. delivery is late, wrong item received, order taking too long), or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number. You may apologize to the customer, but only say the team has been notified or the issue is being escalated if you actually called Escalate To Human and Notify Admin in this same turn — never make that claim without calling the tools.",
+          "systemMessage": "=You are the WhatsApp ordering assistant for {{ $('Get Restaurant Settings').item.json.restaurant_name }}, a pizza restaurant. You chat naturally in whichever language/style the customer uses — English, Urdu, or Roman Urdu — and you decide for yourself what to do each turn. There is no fixed menu of commands: read what the customer actually wants and act accordingly.\n\nCONTEXT GIVEN TO YOU EACH TURN\n- RESTAURANT_SETTINGS: {{ JSON.stringify($('Get Restaurant Settings').item.json) }}\n- MENU_DATA (source of truth for every item/deal/price/id — never invent one): {{ JSON.stringify($('Load Active Menu').item.json.menu) }}\n- MENU_RULES (sizes, crust availability, deal-selection policy, hours, contact info, etc.): {{ JSON.stringify($('Load Active Menu').item.json.menu_rules) }}\n- CURRENT_SESSION (cart, order_type, delivery info, order_status, awaiting_human, pending_items): {{ JSON.stringify($('Upsert Customer and Session').item.json) }}\n- RECENT_MESSAGES (last turns of this conversation, oldest first): {{ JSON.stringify($('Upsert Customer and Session').item.json.recent_messages) }}\n- Customer's new message: \"{{ $('Normalize Incoming Message').item.json.message_text }}\"\n\nHOW TO ANSWER QUESTIONS\nAny question about the menu, a specific deal's contents, prices, sizes, crusts, hours, or policies should be answered directly from MENU_DATA / MENU_RULES / RESTAURANT_SETTINGS above — you do not need a tool for that, you already have the data.\n\nGROUNDING RULE (read this before every reply that mentions a product):\n- Before naming ANY item, sauce, deal, price, size, or component in your reply, you must be able to point to the exact record in MENU_DATA (or the exact rule in MENU_RULES) that it came from. Names and prices must match MENU_DATA byte-for-byte — not \"close enough\", not a plausible-sounding variant, not something a typical pizza place might have.\n- If the customer asks about a category (e.g. \"what sauces/dips do you have\") first find every MENU_DATA record where category or item_type matches that category, and list only those exact names and prices. If you find none, say plainly that you don't see that on the current menu and offer to check with the team — never fill the gap with an invented item.\n- If order_type is delivery, the total you mention must always include the delivery charge from restaurant_settings.\n- As soon as the customer says delivery or pickup, call Set Order Type immediately — do not wait until order confirmation to ask.\n- Never invent an item, price, id, component, flavor, or rule that isn't literally present in MENU_DATA/MENU_RULES. If you're not fully sure something is on the menu, treat it as NOT on the menu rather than guessing.\n- When a deal has selectable components (selection_group with selectable:true) and the customer hasn't said which flavor/type they want, ask; fixed (selectable:false) components should never be asked about.\n\nWHEN TO USE TOOLS\nOnly call a tool when you need to change something or take a real-world action:\n- Track Pending Item — when the customer clearly states they want a specific menu item, deal, or drink (with real order intent) but the conversation moves to something else before it is added to the cart or confirmed. Do not call this for items already in the cart, or for casual browsing/menu questions with no order intent.\n- If the customer later refers to an item vaguely (e.g. \"wohi\", \"same\", \"that one\", \"vo hi\"), first check CURRENT_SESSION.pending_items for the most recent matching item before asking the customer to repeat themselves. If it's empty or has no clear match, ask the customer to clarify — do not guess. Once resolved, proceed normally (e.g. call Update Cart with the matching MENU_DATA item).\n- Update Cart — whenever the cart should change (add, change quantity, or remove by setting quantity 0). Use the exact ids from MENU_DATA. If a new item mention shows up unexpectedly alongside unrelated info in the same message (e.g. next to a name or delivery address, or mid another task), briefly confirm with the customer before adding it, instead of adding it silently. After calling it, tell the customer their updated cart + total in a short, clear summary, in their language.\n- Set Order Type — only once the customer has explicitly said \"delivery\" or \"pickup\" in this conversation. Never default or assume.\n- Set Delivery Info — once the customer gives their delivery name and/or address.\n- Place Order — only after you've shown the customer a cart summary with total and they've clearly confirmed, AND order_type is set, AND (if delivery) name+address are saved. If the tool reports order_created=false, something above is still missing — figure out what and ask, don't claim the order went through. After a successful Place Order, call Notify Admin with a clear kitchen ticket (items, sizes, qty, order type, delivery info if any, total, customer phone), then tell the customer their order is confirmed.\n- Cancel Order — when the customer wants to cancel and CURRENT_SESSION.order_status is 'draft' (nothing placed yet). If the result says cancelled=false, the order was already placed — do NOT try this tool again; use Request Cancellation Approval instead.\n- Request Cancellation Approval — when the customer wants to cancel an order that has already been placed (order_status is not 'draft'). This does not cancel anything itself — it puts the request in front of the restaurant owner for a yes/no decision. After calling it, tell the customer clearly that you're checking with the team and will confirm shortly; do not say the order is cancelled, and do not say the team will message them directly — they will hear back from you, in this chat. Also call Notify Admin with a short heads-up. Never call this twice for the same unresolved request in one conversation.\n- Escalate To Human — for anything that isn't a structured yes/no decision: the customer asks for a person, or reports a problem with a past order. Always pair it with a Notify Admin call describing the issue and the customer's phone number.\n- Send Menu Image 1 / Send Menu Image 2 — when the customer wants to see the menu visually (call both, in order), then still describe in text how to order from it. Before calling these, check RECENT_MESSAGES: if one of your own earlier replies in this conversation already mentions sending/showing the menu, you've already sent the photos — don't call these tools again, just answer their new question directly (e.g. from a fresh menu request point them back to the photos you already sent, or just answer with text/MENU_DATA).\n\nSTYLE\n- Keep replies short, warm, and WhatsApp-appropriate; light emoji is fine, don't overdo it.\n- Never claim an action (cart updated, order placed, order cancelled, team notified) happened unless the matching tool result actually confirms it.\n- Never make up prices, item names, ids, delivery times, or policies that aren't in the data you were given.\n- Only your final reply to the customer should be plain conversational text — no JSON, no markdown code fences.\n- If MENU_DATA above is empty or missing for this turn, say you're having trouble pulling up the menu right now and offer to have the team follow up — do NOT answer menu questions from general knowledge of what pizza places typically sell.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, complains about a current/active order (e.g. delivery is late, wrong item received, order taking too long), or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number. You may apologize to the customer, but only say the team has been notified or the issue is being escalated if you actually called Escalate To Human and Notify Admin in this same turn — never make that claim without calling the tools.",
           "maxIterations": 8
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.9,
       "position": [
-        704,
-        144
+        1440,
+        0
       ],
-      "id": "94e3b733-af3f-4f8f-af86-f333713190d1",
+      "id": "85f2dbce-4bcb-4ca1-a1c8-b142e01019e6",
       "name": "Pizza Ordering Agent"
     },
     {
@@ -456,10 +456,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        944,
-        144
+        1680,
+        0
       ],
-      "id": "da4909a2-dfda-4acd-bbea-77da25b76e15",
+      "id": "482eceb3-8e46-4356-b590-8a5030a76b96",
       "name": "Reply Text"
     },
     {
@@ -473,10 +473,10 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1.1,
       "position": [
-        1168,
-        144
+        1904,
+        0
       ],
-      "id": "15b3deef-14e1-400d-aefa-cedf3c470c25",
+      "id": "4bd6f911-9788-41cf-875b-8f46619c6b17",
       "name": "Send message",
       "webhookId": "29fe3281-5477-4f75-96e5-6d2c9a3b945d",
       "credentials": {
@@ -497,10 +497,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        1392,
-        144
+        2128,
+        0
       ],
-      "id": "de4baced-dc91-4342-bdf9-e96bd62b889f",
+      "id": "4abbdf28-164d-4af9-94b9-26bb995f48d4",
       "name": "Persist Conversation Turn",
       "credentials": {
         "postgres": {
@@ -522,10 +522,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        864,
-        544
+        1600,
+        400
       ],
-      "id": "9ff1658b-9876-4226-bcc1-66f7f364f170",
+      "id": "b95aff53-61b5-4a9c-8467-fc79072c78b4",
       "name": "Track Pending Item",
       "credentials": {
         "postgres": {
@@ -545,10 +545,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -480,
-        160
+        256,
+        16
       ],
-      "id": "7bde20ef-0e17-4dc5-b4cd-be4200fdc97a",
+      "id": "5ab781d5-5c17-4e68-9503-fa4c760c07fb",
       "name": "Insert Message to Buffer",
       "credentials": {
         "postgres": {
@@ -564,10 +564,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -320,
-        160
+        416,
+        16
       ],
-      "id": "f1e61c63-22fc-4a4a-a68a-521f012027cb",
+      "id": "0203dcfc-d502-4396-bed2-cc9d25fa73f6",
       "name": "Wait",
       "webhookId": "45527a8b-bd1a-43a0-972b-7b1b9476c476"
     },
@@ -582,10 +582,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -768,
-        464
+        -32,
+        320
       ],
-      "id": "ad11efcc-1492-488f-a97b-da2fd8e2d84a",
+      "id": "139e86c5-f308-4489-89a5-3a0832dd699b",
       "name": "Check If Latest",
       "credentials": {
         "postgres": {
@@ -622,10 +622,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -544,
-        464
+        192,
+        320
       ],
-      "id": "4cbcb81d-14ac-404d-928b-623abd1f43b6",
+      "id": "65867f6f-3f7b-424f-bec6-7d58c0175bf0",
       "name": "If"
     },
     {
@@ -639,11 +639,34 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -256,
-        448
+        480,
+        304
       ],
-      "id": "c10aa0f2-32a0-46df-bc73-34b88388e4d1",
+      "id": "a78a221b-f4d7-4a2f-9e81-4c4d53fffc5a",
       "name": "Combine and Mark Processed",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ins AS (\n  INSERT INTO admin_requests (customer_id, order_id, request_type, question)\n  VALUES ($1, $2, 'cancel_order', $3)\n  RETURNING id\n),\nflag AS (\n  UPDATE conversation_sessions SET awaiting_human = TRUE, updated_at = NOW()\n  WHERE customer_id = $1\n)\nSELECT id AS request_id FROM ins;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Upsert Customer and Session').item.json.active_order_id, $fromAI('question', 'Plain-language summary for the restaurant owner of what the customer wants and why (e.g. which order, reason for the cancellation request)', 'string') ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        1696,
+        624
+      ],
+      "id": "94620755-2bc5-4ad3-8ed8-8cf4d253a4b8",
+      "name": "Request Cancellation Approval",
       "credentials": {
         "postgres": {
           "id": "dw4LfSY4r5SsxibM",
@@ -926,8 +949,7 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
     "Combine and Mark Processed": {
@@ -940,6 +962,17 @@
           }
         ]
       ]
+    },
+    "Request Cancellation Approval": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -947,12 +980,11 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "ba605aab-6b25-4b0a-b30a-7edda44633b8",
+  "versionId": "17fd0f33-f95c-4716-992c-d2de2e0d2c17",
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "eee05c2433f62ab6a4653896bfc44c5d1e3b780090d02e70c183a215588f3b98"
   },
   "nodeGroups": [],
-  "id": "2XOV5R2We6SiQckg",
+  "id": "DxZJHT6M5JZYM2Xw",
   "tags": []
 }
