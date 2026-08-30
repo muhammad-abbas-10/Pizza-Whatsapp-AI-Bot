@@ -11,8 +11,8 @@
       "type": "n8n-nodes-base.whatsAppTrigger",
       "typeVersion": 1,
       "position": [
-        -1136,
-        144
+        -1584,
+        160
       ],
       "id": "2b7bcc44-5222-446d-886d-eaca121a1be5",
       "name": "WhatsApp Trigger",
@@ -71,8 +71,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        -896,
-        144
+        -1216,
+        160
       ],
       "id": "777d25aa-7b38-456b-a77e-3f2df972d52a",
       "name": "Normalize Incoming Message"
@@ -86,8 +86,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -672,
-        144
+        -976,
+        160
       ],
       "id": "2374f763-81a1-484c-9441-13ad6111a930",
       "name": "Ensure Schema",
@@ -109,7 +109,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -448,
+        -736,
         144
       ],
       "id": "0e96236e-c5d6-48eb-8a29-10b5f3a690cf",
@@ -123,42 +123,8 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "e97eb087-0798-4bed-a67e-cf6916339064",
-              "leftValue": "={{ $json.already_processed }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "false",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        -224,
-        144
-      ],
-      "id": "20a9fbe0-c2ff-4d92-a347-690400b032df",
-      "name": "If"
-    },
-    {
-      "parameters": {
         "operation": "executeQuery",
-        "query": "WITH customer AS (\n    INSERT INTO customers (\n        whatsapp_phone,\n        name,\n        updated_at\n    )\n    VALUES ($1, $2, NOW())\n    ON CONFLICT (whatsapp_phone)\n    DO UPDATE SET\n        name = EXCLUDED.name,\n        updated_at = NOW()\n    RETURNING id, whatsapp_phone, name\n),\nsession AS (\n    INSERT INTO conversation_sessions (customer_id)\n    SELECT id FROM customer\n    ON CONFLICT (customer_id)\n    DO UPDATE SET updated_at = NOW()\n    RETURNING *\n)\nSELECT\n    customer.id AS customer_id,\n    customer.whatsapp_phone,\n    customer.name,\n    session.id AS session_id,\n    session.cart,\n    session.order_type,\n    session.delivery_address,\n    session.awaiting_confirmation,\n    session.awaiting_human,\n    session.delivery_name,\n    session.recent_messages,\n    session.order_status,\n    session.active_order_id\nFROM customer\nJOIN session ON session.customer_id = customer.id;",
+        "query": "WITH customer AS (\n    INSERT INTO customers (\n        whatsapp_phone,\n        name,\n        updated_at\n    )\n    VALUES ($1, $2, NOW())\n    ON CONFLICT (whatsapp_phone)\n    DO UPDATE SET\n        name = EXCLUDED.name,\n        updated_at = NOW()\n    RETURNING id, whatsapp_phone, name\n),\nsession AS (\n    INSERT INTO conversation_sessions (customer_id)\n    SELECT id FROM customer\n    ON CONFLICT (customer_id)\n    DO UPDATE SET updated_at = NOW()\n    RETURNING *\n)\nSELECT\n    customer.id AS customer_id,\n    customer.whatsapp_phone,\n    customer.name,\n    session.id AS session_id,\n    session.cart,\n    session.order_type,\n    session.delivery_address,\n    session.awaiting_confirmation,\n    session.awaiting_human,\n    session.delivery_name,\n    session.recent_messages,\n    session.order_status,\n    session.active_order_id,\n    session.pending_items\nFROM customer\nJOIN session ON session.customer_id = customer.id;",
         "options": {
           "queryReplacement": "={{ [   $('Normalize Incoming Message').item.json.customer_phone,   $('Normalize Incoming Message').item.json.customer_name ] }}"
         }
@@ -166,8 +132,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        0,
-        144
+        -32,
+        448
       ],
       "id": "cf2cdd87-d181-4eef-ad83-97eaddd8a48f",
       "name": "Upsert Customer and Session",
@@ -277,8 +243,8 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        912,
-        560
+        1024,
+        544
       ],
       "id": "74aa2317-8e41-43e6-a31f-e5c4fb5e0c36",
       "name": "Set Delivery Info",
@@ -300,7 +266,7 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1136,
+        1184,
         560
       ],
       "id": "0e78246c-966a-4d33-8e6a-ead99663af84",
@@ -458,9 +424,9 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "={{ $('Normalize Incoming Message').item.json.message_text }}",
+        "text": "=Customer's new message: \"{{ $('Combine and Mark Processed').item.json.combined_text }}\"",
         "options": {
-          "systemMessage": "=You are the WhatsApp ordering assistant for {{ $('Get Restaurant Settings').item.json.restaurant_name }}, a pizza restaurant. You chat naturally in whichever language/style the customer uses — English, Urdu, or Roman Urdu — and you decide for yourself what to do each turn. There is no fixed menu of commands: read what the customer actually wants and act accordingly.\n\nCONTEXT GIVEN TO YOU EACH TURN\n- RESTAURANT_SETTINGS: {{ JSON.stringify($('Get Restaurant Settings').item.json) }}\n- MENU_DATA (source of truth for every item/deal/price/id — never invent one): {{ JSON.stringify($('Load Active Menu').item.json.menu) }}\n- MENU_RULES (sizes, crust availability, deal-selection policy, hours, contact info, etc.): {{ JSON.stringify($('Load Active Menu').item.json.menu_rules) }}\n- CURRENT_SESSION (cart, order_type, delivery info, order_status, awaiting_human): {{ JSON.stringify($('Upsert Customer and Session').item.json) }}\n- RECENT_MESSAGES (last turns of this conversation, oldest first): {{ JSON.stringify($('Upsert Customer and Session').item.json.recent_messages) }}\n- Customer's new message: \"{{ $('Normalize Incoming Message').item.json.message_text }}\"\n\nHOW TO ANSWER QUESTIONS\nAny question about the menu, a specific deal's contents, prices, sizes, crusts, hours, or policies should be answered directly from MENU_DATA / MENU_RULES / RESTAURANT_SETTINGS above — you do not need a tool for that, you already have the data.\n\nGROUNDING RULE (read this before every reply that mentions a product):\n- Before naming ANY item, sauce, deal, price, size, or component in your reply, you must be able to point to the exact record in MENU_DATA (or the exact rule in MENU_RULES) that it came from. Names and prices must match MENU_DATA byte-for-byte — not \"close enough\", not a plausible-sounding variant, not something a typical pizza place might have.\n- If the customer asks about a category (e.g. \"what sauces/dips do you have\") first find every MENU_DATA record where category or item_type matches that category, and list only those exact names and prices. If you find none, say plainly that you don't see that on the current menu and offer to check with the team — never fill the gap with an invented item.\n- Never invent an item, price, id, component, flavor, or rule that isn't literally present in MENU_DATA/MENU_RULES. If you're not fully sure something is on the menu, treat it as NOT on the menu rather than guessing.\n- When a deal has selectable components (selection_group with selectable:true) and the customer hasn't said which flavor/type they want, ask; fixed (selectable:false) components should never be asked about.\n\nWHEN TO USE TOOLS\nOnly call a tool when you need to change something or take a real-world action:\n- Update Cart — whenever the cart should change (add, change quantity, or remove by setting quantity 0). Use the exact ids from MENU_DATA. After calling it, tell the customer their updated cart + total in a short, clear summary, in their language.\n- Set Order Type — only once the customer has explicitly said \"delivery\" or \"pickup\" in this conversation. Never default or assume.\n- Set Delivery Info — once the customer gives their delivery name and/or address.\n- Place Order — only after you've shown the customer a cart summary with total and they've clearly confirmed, AND order_type is set, AND (if delivery) name+address are saved. If the tool reports order_created=false, something above is still missing — figure out what and ask, don't claim the order went through. After a successful Place Order, call Notify Admin with a clear kitchen ticket (items, sizes, qty, order type, delivery info if any, total, customer phone), then tell the customer their order is confirmed.\n- Cancel Order — when the customer wants to cancel. If the result says cancelled=false, the order was already placed and can't be cancelled this way; apologize, and use Escalate To Human + Notify Admin so the team can help.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number.\n- Send Menu Image 1 / Send Menu Image 2 — when the customer wants to see the menu visually (call both, in order), then still describe in text how to order from it. Before calling these, check RECENT_MESSAGES: if one of your own earlier replies in this conversation already mentions sending/showing the menu, you've already sent the photos — don't call these tools again, just answer their new question directly (e.g. from a fresh menu request point them back to the photos you already sent, or just answer with text/MENU_DATA).\n\nSTYLE\n- Keep replies short, warm, and WhatsApp-appropriate; light emoji is fine, don't overdo it.\n- Never claim an action (cart updated, order placed, order cancelled, team notified) happened unless the matching tool result actually confirms it.\n- Never make up prices, item names, ids, delivery times, or policies that aren't in the data you were given.\n- Only your final reply to the customer should be plain conversational text — no JSON, no markdown code fences.\n- If MENU_DATA above is empty or missing for this turn, say you're having trouble pulling up the menu right now and offer to have the team follow up — do NOT answer menu questions from general knowledge of what pizza places typically sell.",
+          "systemMessage": "=You are the WhatsApp ordering assistant for {{ $('Get Restaurant Settings').item.json.restaurant_name }}, a pizza restaurant. You chat naturally in whichever language/style the customer uses — English, Urdu, or Roman Urdu — and you decide for yourself what to do each turn. There is no fixed menu of commands: read what the customer actually wants and act accordingly.\n\nCONTEXT GIVEN TO YOU EACH TURN\n- RESTAURANT_SETTINGS: {{ JSON.stringify($('Get Restaurant Settings').item.json) }}\n- MENU_DATA (source of truth for every item/deal/price/id — never invent one): {{ JSON.stringify($('Load Active Menu').item.json.menu) }}\n- MENU_RULES (sizes, crust availability, deal-selection policy, hours, contact info, etc.): {{ JSON.stringify($('Load Active Menu').item.json.menu_rules) }}\n- CURRENT_SESSION (cart, order_type, delivery info, order_status, awaiting_human, pending_items): {{ JSON.stringify($('Upsert Customer and Session').item.json) }}\n- RECENT_MESSAGES (last turns of this conversation, oldest first): {{ JSON.stringify($('Upsert Customer and Session').item.json.recent_messages) }}\n- Customer's new message: \"{{ $('Normalize Incoming Message').item.json.message_text }}\"\n\nHOW TO ANSWER QUESTIONS\nAny question about the menu, a specific deal's contents, prices, sizes, crusts, hours, or policies should be answered directly from MENU_DATA / MENU_RULES / RESTAURANT_SETTINGS above — you do not need a tool for that, you already have the data.\n\nGROUNDING RULE (read this before every reply that mentions a product):\n- Before naming ANY item, sauce, deal, price, size, or component in your reply, you must be able to point to the exact record in MENU_DATA (or the exact rule in MENU_RULES) that it came from. Names and prices must match MENU_DATA byte-for-byte — not \"close enough\", not a plausible-sounding variant, not something a typical pizza place might have.\n- If the customer asks about a category (e.g. \"what sauces/dips do you have\") first find every MENU_DATA record where category or item_type matches that category, and list only those exact names and prices. If you find none, say plainly that you don't see that on the current menu and offer to check with the team — never fill the gap with an invented item.\n- If order_type is delivery, the total you mention must always include the delivery charge from restaurant_settings.\n- As soon as the customer says delivery or pickup, call Set Order Type immediately — do not wait until order confirmation to ask.\n- Never invent an item, price, id, component, flavor, or rule that isn't literally present in MENU_DATA/MENU_RULES. If you're not fully sure something is on the menu, treat it as NOT on the menu rather than guessing.\n- When a deal has selectable components (selection_group with selectable:true) and the customer hasn't said which flavor/type they want, ask; fixed (selectable:false) components should never be asked about.\n\nWHEN TO USE TOOLS\nOnly call a tool when you need to change something or take a real-world action:\n- Track Pending Item — when the customer clearly states they want a specific menu item, deal, or drink (with real order intent) but the conversation moves to something else before it is added to the cart or confirmed. Do not call this for items already in the cart, or for casual browsing/menu questions with no order intent.\n- If the customer later refers to an item vaguely (e.g. \"wohi\", \"same\", \"that one\", \"vo hi\"), first check CURRENT_SESSION.pending_items for the most recent matching item before asking the customer to repeat themselves. If it's empty or has no clear match, ask the customer to clarify — do not guess. Once resolved, proceed normally (e.g. call Update Cart with the matching MENU_DATA item).\n- Update Cart — whenever the cart should change (add, change quantity, or remove by setting quantity 0). Use the exact ids from MENU_DATA. If a new item mention shows up unexpectedly alongside unrelated info in the same message (e.g. next to a name or delivery address, or mid another task), briefly confirm with the customer before adding it, instead of adding it silently. After calling it, tell the customer their updated cart + total in a short, clear summary, in their language.\n- Set Order Type — only once the customer has explicitly said \"delivery\" or \"pickup\" in this conversation. Never default or assume.\n- Set Delivery Info — once the customer gives their delivery name and/or address.\n- Place Order — only after you've shown the customer a cart summary with total and they've clearly confirmed, AND order_type is set, AND (if delivery) name+address are saved. If the tool reports order_created=false, something above is still missing — figure out what and ask, don't claim the order went through. After a successful Place Order, call Notify Admin with a clear kitchen ticket (items, sizes, qty, order type, delivery info if any, total, customer phone), then tell the customer their order is confirmed.\n- Cancel Order — when the customer wants to cancel. If the result says cancelled=false, the order was already placed and can't be cancelled this way; apologize, and use Escalate To Human + Notify Admin so the team can help.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number.\n- Send Menu Image 1 / Send Menu Image 2 — when the customer wants to see the menu visually (call both, in order), then still describe in text how to order from it. Before calling these, check RECENT_MESSAGES: if one of your own earlier replies in this conversation already mentions sending/showing the menu, you've already sent the photos — don't call these tools again, just answer their new question directly (e.g. from a fresh menu request point them back to the photos you already sent, or just answer with text/MENU_DATA).\n\nSTYLE\n- Keep replies short, warm, and WhatsApp-appropriate; light emoji is fine, don't overdo it.\n- Never claim an action (cart updated, order placed, order cancelled, team notified) happened unless the matching tool result actually confirms it.\n- Never make up prices, item names, ids, delivery times, or policies that aren't in the data you were given.\n- Only your final reply to the customer should be plain conversational text — no JSON, no markdown code fences.\n- If MENU_DATA above is empty or missing for this turn, say you're having trouble pulling up the menu right now and offer to have the team follow up — do NOT answer menu questions from general knowledge of what pizza places typically sell.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, complains about a current/active order (e.g. delivery is late, wrong item received, order taking too long), or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number. You may apologize to the customer, but only say the team has been notified or the issue is being escalated if you actually called Escalate To Human and Notify Admin in this same turn — never make that claim without calling the tools.",
           "maxIterations": 8
         }
       },
@@ -542,6 +508,148 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Call this whenever the customer mentions a specific menu item, deal, or drink they want, but the conversation moves on to something else before it gets added to the cart or confirmed. Pass a short description of the item (e.g. '1 7up 345ml'). This lets you remember and resolve later vague references like 'wohi/same/that one' without asking the customer to repeat themselves.",
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_sessions\nSET pending_items = (\n  SELECT COALESCE(jsonb_agg(elem ORDER BY (elem->>'noted_at')::timestamptz DESC), '[]'::jsonb)\n  FROM (\n    SELECT elem\n    FROM jsonb_array_elements(\n      pending_items || jsonb_build_array(\n        jsonb_build_object('item', $2::text, 'noted_at', NOW())\n      )\n    ) elem\n    ORDER BY (elem->>'noted_at')::timestamptz DESC\n    LIMIT 3\n  ) t\n)\nWHERE customer_id = (SELECT id FROM customers WHERE whatsapp_phone = $1)\nRETURNING pending_items;",
+        "options": {
+          "queryReplacement": "={{ $('Normalize Incoming Message').item.json.customer_phone }}, {{ $fromAI('item_description', 'Short description of the menu item, deal, or drink the customer mentioned but has not yet confirmed or added to the cart, e.g. \\'1 7up 345ml\\'') }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        864,
+        544
+      ],
+      "id": "9ff1658b-9876-4226-bcc1-66f7f364f170",
+      "name": "Track Pending Item",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO message_buffer (customer_phone, message_text)\nVALUES ($1, $2)\nRETURNING id, received_at;",
+        "options": {
+          "queryReplacement": "={{ $('Normalize Incoming Message').item.json.customer_phone }}, {{ $('Normalize Incoming Message').item.json.message_text }} "
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -480,
+        160
+      ],
+      "id": "7bde20ef-0e17-4dc5-b4cd-be4200fdc97a",
+      "name": "Insert Message to Buffer",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 7
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        160
+      ],
+      "id": "f1e61c63-22fc-4a4a-a68a-521f012027cb",
+      "name": "Wait",
+      "webhookId": "45527a8b-bd1a-43a0-972b-7b1b9476c476"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT MAX(id) FROM message_buffer WHERE customer_phone = $1 AND processed = FALSE) = $2 AS is_latest;",
+        "options": {
+          "queryReplacement": "={{ $('Normalize Incoming Message').item.json.customer_phone }}, {{ $('Insert Message to Buffer').item.json.id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -768,
+        464
+      ],
+      "id": "ad11efcc-1492-488f-a97b-da2fd8e2d84a",
+      "name": "Check If Latest",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "99e84ffc-ae7b-4e68-956c-c67688b21b9d",
+              "leftValue": "={{ $json.is_latest }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -544,
+        464
+      ],
+      "id": "4cbcb81d-14ac-404d-928b-623abd1f43b6",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH combined AS (\n  SELECT string_agg(message_text, '\\n' ORDER BY received_at) AS combined_text\n  FROM message_buffer\n  WHERE customer_phone = $1 AND processed = FALSE\n),\nmarked AS (\n  UPDATE message_buffer\n  SET processed = TRUE\n  WHERE customer_phone = $1 AND processed = FALSE\n  RETURNING id\n)\nSELECT combined_text FROM combined;",
+        "options": {
+          "queryReplacement": "={{ $('Normalize Incoming Message').item.json.customer_phone }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -256,
+        448
+      ],
+      "id": "c10aa0f2-32a0-46df-bc73-34b88388e4d1",
+      "name": "Combine and Mark Processed",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -583,18 +691,7 @@
       "main": [
         [
           {
-            "node": "If",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "If": {
-      "main": [
-        [
-          {
-            "node": "Upsert Customer and Session",
+            "node": "Insert Message to Buffer",
             "type": "main",
             "index": 0
           }
@@ -776,6 +873,73 @@
           }
         ]
       ]
+    },
+    "Track Pending Item": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Message to Buffer": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Check If Latest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Latest": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Combine and Mark Processed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Combine and Mark Processed": {
+      "main": [
+        [
+          {
+            "node": "Upsert Customer and Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -783,8 +947,9 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "0dd0c8dc-f839-4283-80ee-c8ef65fdc1f2",
+  "versionId": "ba605aab-6b25-4b0a-b30a-7edda44633b8",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "eee05c2433f62ab6a4653896bfc44c5d1e3b780090d02e70c183a215588f3b98"
   },
   "nodeGroups": [],
