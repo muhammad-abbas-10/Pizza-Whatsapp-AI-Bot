@@ -27,6 +27,29 @@ The workflow runs end-to-end as a single AI agent: a customer can message the bo
 - **Database:** Neon PostgreSQL
 - **Version control:** GitHub
 
+## Admin dashboard
+
+The production admin dashboard is a separate Vite application in `frontend/`. It communicates only with the Express API in `backend/`; browser code never connects directly to Neon and never receives backend secrets.
+
+Run the two applications in separate terminals:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+```powershell
+cd backend
+npm install
+npm run migrate:dashboard
+npm run dev
+```
+
+The frontend defaults to `http://localhost:5173` and reads the backend origin from `frontend/.env` (`VITE_API_URL`). Configure `CORS_ORIGINS` and `FRONTEND_URL` in the backend environment for deployed origins. Copy `backend/.env.example` for the complete variable list; never place `DATABASE_URL`, WhatsApp credentials, or the admin key in the frontend environment.
+
+Dashboard pages include the live overview, active orders, pending requests, order history/CSV export, customers, feedback, menu management with Neon-hosted images, persisted notifications, and settings. The additive `010_admin_dashboard.sql` migration supplies feedback, notification, status-history, and admin-profile storage plus triggers for future order/request notifications.
+
 ## Current message flow (implemented)
 
 ```text

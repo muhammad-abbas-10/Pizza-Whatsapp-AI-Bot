@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
-const { registerAdminRoutes } = require("../src/admin-routes");
+const { registerAdminRoutes, requireAdminKey } = require("../src/admin-routes");
 
 const app = express();
 
@@ -22,7 +22,7 @@ const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter(Boolean)
-  : ["*"];
+  : ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"];
 
 app.use(
   cors({
@@ -30,11 +30,6 @@ app.use(
       // Allow requests without an Origin header
       // (Postman, server-to-server, etc.)
       if (!origin) {
-        return callback(null, true);
-      }
-
-      // Allow all origins if CORS_ORIGINS=*
-      if (allowedOrigins.includes("*")) {
         return callback(null, true);
       }
 
@@ -46,8 +41,9 @@ app.use(
         new Error("Not allowed by CORS")
       );
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
+    credentials: false,
   })
 );
 
@@ -57,6 +53,16 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
+
+app.get(["/dashboard", "/dashboard/"], (req, res) => {
+  return res.redirect(302, process.env.FRONTEND_URL || "http://localhost:5173");
+});
 
 // --------------------------------------------------
 // NEON DATABASE
@@ -85,7 +91,7 @@ const upload = multer({
   },
 
   fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
+    if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.mimetype)) {
       return cb(
         new Error("Only image files are allowed")
       );
@@ -94,6 +100,15 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+function hasValidImageSignature(file) {
+  const bytes = file.buffer;
+  if (file.mimetype === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (file.mimetype === "image/png") return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (file.mimetype === "image/gif") return bytes.length >= 6 && ["GIF87a", "GIF89a"].includes(bytes.subarray(0, 6).toString("ascii"));
+  if (file.mimetype === "image/webp") return bytes.length >= 12 && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP";
+  return false;
+}
 
 // --------------------------------------------------
 // HEALTH CHECK
@@ -119,12 +134,11 @@ app.get("/health", async (req, res) => {
       database: "connected",
     });
 } catch (error) {
-  console.error("Image retrieval error:", error);
+  console.error("Database health check error:", error);
 
   return res.status(500).json({
     success: false,
-    message: "Failed to retrieve image",
-    error: error.message,
+    message: "Database unavailable",
   });
 }
 });
@@ -141,6 +155,7 @@ registerAdminRoutes(app, pool);
 
 app.post(
   "/images/upload",
+  requireAdminKey,
   upload.array("images", 3),
   async (req, res) => {
     try {
@@ -168,6 +183,13 @@ app.post(
           success: false,
           message: "Maximum 3 images are allowed",
           received: req.files.length,
+        });
+      }
+
+      if (!req.files.every(hasValidImageSignature)) {
+        return res.status(400).json({
+          success: false,
+          message: "One or more files do not contain valid image data",
         });
       }
 
@@ -237,7 +259,7 @@ app.post(
 
 app.get("/images/:id", async (req, res) => {
   try {
-    const id = Number.parseInt(req.params.id, 10);
+    const id = Number(req.params.id);
 
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({
@@ -282,6 +304,7 @@ app.get("/images/:id", async (req, res) => {
       "Cache-Control",
       "public, max-age=3600"
     );
+    res.setHeader("X-Content-Type-Options", "nosniff");
 
     return res.send(image.image_data);
   } catch (error) {
