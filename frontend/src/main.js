@@ -90,7 +90,7 @@ function errorState(message) {
 }
 
 function pageHeading(title, copy, actions = "") {
-  return `<header class="page-heading"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(copy)}</p></div>${actions ? `<div class="cluster">${actions}</div>` : ""}</header>`;
+  return `<header class="page-heading"><div><div class="eyebrow-live"><span></span> LIVE · PAKISTAN TIME</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(copy)}</p></div>${actions ? `<div class="cluster">${actions}</div>` : ""}</header>`;
 }
 
 function pagination(meta, route) {
@@ -145,7 +145,7 @@ function renderShell() {
         <button class="btn icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="Open navigation">☰</button>
         <div class="topbar-title"><h1 id="topbar-title"></h1><p id="topbar-subtitle"></p></div>
         <div class="search-wrap" id="global-search-wrap"><span class="search-icon">⌕</span><label class="sr-only" for="global-search">Search</label><input class="input" id="global-search" type="search" placeholder="Search this page…"></div>
-        <div class="top-actions"><button class="btn icon-btn notification-button" data-route="notifications" aria-label="Notifications">♢<span class="notification-dot" id="notification-dot" hidden></span></button><button class="btn admin-mini" data-route="settings"><span class="avatar" style="width:26px;height:26px;border-radius:7px;font-size:9px">${escapeHtml(initials(admin))}</span>${escapeHtml(admin)}</button></div>
+        <div class="top-actions"><span class="restaurant-online"><span></span> Restaurant online</span><button class="btn icon-btn notification-button" data-route="notifications" aria-label="Notifications">♢<span class="notification-dot" id="notification-dot" hidden></span></button><button class="btn admin-mini" data-route="settings"><span class="avatar" style="width:26px;height:26px;border-radius:7px;font-size:9px">${escapeHtml(initials(admin))}</span>${escapeHtml(admin)}</button></div>
       </header>
       <main class="page" id="page-content"></main>
     </div>
