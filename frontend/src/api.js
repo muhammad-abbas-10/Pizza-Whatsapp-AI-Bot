@@ -32,7 +32,12 @@ export async function api(path, options = {}) {
 }
 
 export async function download(path, filename) {
-  const response = await fetch(`${API_BASE}${path}`, { headers: { "x-admin-key": getAdminKey() } });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, { headers: { "x-admin-key": getAdminKey() } });
+  } catch {
+    throw new Error("Cannot reach the Pizza Bar backend. Check VITE_API_URL and confirm the backend is running.");
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.message || "Download failed");

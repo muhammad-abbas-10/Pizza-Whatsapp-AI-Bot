@@ -8,21 +8,30 @@ export function money(value, currency = "PKR") {
   return new Intl.NumberFormat("en-PK", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
+function validDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function dateTime(value) {
-  if (!value) return "—";
+  const date = validDate(value);
+  if (!date) return "—";
   return new Intl.DateTimeFormat("en-PK", {
     dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Karachi",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function dateOnly(value) {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("en-PK", { dateStyle: "medium", timeZone: "Asia/Karachi" }).format(new Date(value));
+  const date = validDate(value);
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("en-PK", { dateStyle: "medium", timeZone: "Asia/Karachi" }).format(date);
 }
 
 export function relativeTime(value) {
-  if (!value) return "—";
-  const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000);
+  const date = validDate(value);
+  if (!date) return "—";
+  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
   const ranges = [[31536000, "year"], [2592000, "month"], [86400, "day"], [3600, "hour"], [60, "minute"]];
   const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
   for (const [size, unit] of ranges) {

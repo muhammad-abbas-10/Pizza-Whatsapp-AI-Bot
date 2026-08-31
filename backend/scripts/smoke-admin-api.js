@@ -24,6 +24,8 @@ async function main() {
   await check("CORS rejection", "/admin/session", { auth: false, headers: { Origin: "https://untrusted.example" } }, 403);
   await check("Session", "/admin/session");
   await check("Dashboard", "/admin/dashboard?days=7");
+  await check("Invalid order date", "/admin/orders?date_from=2026-02-30", {}, 400);
+  await check("Invalid order date range", "/admin/orders?date_from=2026-02-02&date_to=2026-02-01", {}, 400);
   const orders = await check("Orders filters", "/admin/orders?scope=active&page=1&limit=2&search=Abbas");
   if (orders.orders[0]) await check("Order details", `/admin/orders/${orders.orders[0].id}`);
   await check("Invalid order transition", "/admin/orders/1/status", { method: "PATCH", body: JSON.stringify({ status: "completed" }) }, 409);
@@ -40,8 +42,11 @@ async function main() {
   await check("Menu validation", "/admin/menu/items", { method: "POST", body: "{}" }, 400);
   await check("Notifications", "/admin/notifications?page=1&limit=10");
   await check("Missing notification read", "/admin/notifications/999999999/read", { method: "PATCH" }, 404);
+  await check("Notification filter validation", "/admin/notifications?type=invalid", {}, 400);
   await check("Settings", "/admin/settings");
   await check("Settings validation", "/admin/settings", { method: "PATCH", body: JSON.stringify({ currency: "INVALID" }) }, 400);
+  await check("Settings opening-hours validation", "/admin/settings", { method: "PATCH", body: JSON.stringify({ opening_hours: [] }) }, 400);
+  await check("Menu boolean validation", "/admin/menu/items/1", { method: "PATCH", body: JSON.stringify({ active: "true" }) }, 400);
   await check("Menu images", "/images", { auth: false });
   console.log(results.join("\n"));
 }

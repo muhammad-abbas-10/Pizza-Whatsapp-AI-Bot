@@ -91,7 +91,11 @@ function parsePagination(query, defaultLimit = 20, maxLimit = 100) {
 }
 
 function isIsoDate(value) {
-  return !value || /^\d{4}-\d{2}-\d{2}$/.test(String(value));
+  if (!value) return true;
+  const text = String(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00.000Z`);
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === text;
 }
 
 function csvCell(value) {
@@ -152,6 +156,9 @@ function registerAdminRoutes(app, pool) {
       }
       if (!isIsoDate(dateFrom) || !isIsoDate(dateTo)) {
         return res.status(400).json({ success: false, message: "Dates must use YYYY-MM-DD" });
+      }
+      if (dateFrom && dateTo && dateFrom > dateTo) {
+        return res.status(400).json({ success: false, message: "From date cannot be after to date" });
       }
       if (dateFrom) {
         params.push(dateFrom);
@@ -328,6 +335,9 @@ function registerAdminRoutes(app, pool) {
 
       if (!Number.isInteger(requestId) || requestId <= 0) {
         return res.status(400).json({ success: false, message: "Invalid request id" });
+      }
+      if (admin_note !== undefined && (typeof admin_note !== "string" || admin_note.length > 2000)) {
+        return res.status(400).json({ success: false, message: "Admin note must be 2,000 characters or fewer" });
       }
 
       await client.query("BEGIN");
@@ -587,6 +597,9 @@ function registerAdminRoutes(app, pool) {
     if (!isIsoDate(dateFrom) || !isIsoDate(dateTo)) {
       return res.status(400).json({ success: false, message: "Dates must use YYYY-MM-DD" });
     }
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      return res.status(400).json({ success: false, message: "From date cannot be after to date" });
+    }
     try {
       const params = [];
       const conditions = [`o.status IN ('completed', 'cancelled')`];
@@ -834,7 +847,13 @@ function registerAdminRoutes(app, pool) {
         if (["name", "description"].includes(key) && typeof req.body[key] !== "string") {
           return res.status(400).json({ success: false, message: `${key} must be text` });
         }
-        values.push(req.body[key]);
+        if (key === "name" && !req.body[key].trim()) {
+          return res.status(400).json({ success: false, message: "name cannot be empty" });
+        }
+        if (["active", "is_popular", "is_featured"].includes(key) && typeof req.body[key] !== "boolean") {
+          return res.status(400).json({ success: false, message: `${key} must be true or false` });
+        }
+        values.push(typeof req.body[key] === "string" ? req.body[key].trim() : req.body[key]);
         fields.push(`${key} = $${values.length}`);
       }
     }
@@ -902,7 +921,13 @@ function registerAdminRoutes(app, pool) {
     const conditions = [];
     const params = [];
     if (req.query.unread === "true") conditions.push("n.read_at IS NULL");
+    if (req.query.unread && !["true", "false"].includes(req.query.unread)) {
+      return res.status(400).json({ success: false, message: "unread must be true or false" });
+    }
     if (req.query.type) {
+      if (!["new_order", "customer_request", "notification_failure", "system"].includes(req.query.type)) {
+        return res.status(400).json({ success: false, message: "Invalid notification type" });
+      }
       params.push(req.query.type);
       conditions.push(`n.notification_type = $${params.length}`);
     }
@@ -980,6 +1005,9 @@ function registerAdminRoutes(app, pool) {
     }
     if (displayName !== undefined && (typeof displayName !== "string" || !displayName.trim())) {
       return res.status(400).json({ success: false, message: "Admin display name is required" });
+    }
+    if (openingHours !== undefined && (openingHours === null || typeof openingHours !== "object" || Array.isArray(openingHours))) {
+      return res.status(400).json({ success: false, message: "Opening hours must be a JSON object" });
     }
     const client = await pool.connect();
     try {
