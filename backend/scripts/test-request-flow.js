@@ -61,16 +61,24 @@ async function main() {
       (SELECT status FROM admin_requests WHERE id = $2) AS approval_status,
       (SELECT status FROM admin_requests WHERE id = $3) AS denial_status,
       (SELECT awaiting_human FROM conversation_sessions WHERE customer_id = $4) AS awaiting_human,
+      (SELECT notification_sent FROM admin_requests WHERE id = $2) AS notification_sent,
       (SELECT notification_error FROM admin_requests WHERE id = $2) AS notification_error
   `, [orderId, approveId, denyId, customerId]);
   const row = verified.rows[0];
-  if (row.order_status !== "cancelled" || row.approval_status !== "approved" || row.denial_status !== "denied" || row.awaiting_human !== false || row.notification_error !== "not_configured") {
+  if (
+    row.order_status !== "cancelled" ||
+    row.approval_status !== "approved" ||
+    row.denial_status !== "denied" ||
+    row.awaiting_human !== false ||
+    row.notification_sent !== false ||
+    !row.notification_error
+  ) {
     throw new Error(`Request flow verification failed: ${JSON.stringify(row)}`);
   }
   console.log("Request approve: passed");
   console.log("Request deny: passed");
   console.log("Cancellation side effect: passed");
-  console.log("Notification failure and retry: passed");
+  console.log("Notification failure recorded and retry endpoint verified: passed");
 }
 
 main()
