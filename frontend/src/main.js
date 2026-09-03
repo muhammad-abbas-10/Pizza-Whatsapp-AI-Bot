@@ -378,13 +378,14 @@ async function loadRequests() {
 
 function renderRequestCard(request, currency) {
   const cancellable = request.request_type !== "cancel_order" || Boolean(request.order_id);
+  const notificationRetryable = !request.notification_sent && !(request.status === "approved" && request.request_type === "cancel_order" && !request.order_id);
   const typeLabel = ({ cancel_order: "Cancellation request", modification: "Order modification", delivery: "Delivery issue" })[request.request_type] || "Customer request";
   return `<article class="request-card"><div class="request-card-top"><div><div class="request-number">REQUEST #${escapeHtml(request.id)}</div><div class="request-type">${escapeHtml(typeLabel)}</div></div>${badge(request.status)}</div>
     <div class="request-question">${escapeHtml(request.question)}</div>
     <div class="request-facts"><div><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(request.customer_name || "Unnamed")}<br><span class="subtle">${escapeHtml(request.customer_phone)}</span></div></div><div><div class="fact-label">Order</div><div class="fact-value">${request.order_id ? `#${escapeHtml(request.order_id)}<br>${escapeHtml(itemSummary(request.order_items, 1))}` : "Not linked"}</div></div><div><div class="fact-label">Total</div><div class="fact-value">${request.order_total ? escapeHtml(money(request.order_total, currency)) : "—"}</div></div><div><div class="fact-label">Delivery</div><div class="fact-value">${escapeHtml(request.delivery_address || (request.order_type ? statusLabel(request.order_type) : "—"))}</div></div><div><div class="fact-label">Requested</div><div class="fact-value">${escapeHtml(relativeTime(request.created_at))}</div></div><div><div class="fact-label">Notification</div><div class="fact-value">${request.notification_sent ? '<span class="success-text">Sent</span>' : request.status === "pending" || !request.notification_error ? "Not sent" : '<span class="danger-text">Failed</span>'}</div></div></div>
     ${request.request_type === "cancel_order" && !cancellable && request.status === "pending" ? '<div class="notification-failure">Order is not linked — cancellation approval is unavailable. Deny or inspect the bot request first.</div>' : ""}
     ${request.status !== "pending" && !request.notification_sent && request.notification_error ? `<div class="notification-failure">Customer notification failed: ${escapeHtml(request.notification_error)}</div>` : ""}
-    <div class="request-actions">${request.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}${request.status === "pending" ? `${cancellable ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>` : ""}<button class="btn btn-danger btn-sm" data-resolve-request="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>` : !request.notification_sent ? `<button class="btn btn-sm" data-retry-request="${escapeHtml(request.id)}">Retry notification</button>` : ""}<span class="subtle" style="margin-left:auto">${escapeHtml(dateTime(request.created_at))}</span></div></article>`;
+    <div class="request-actions">${request.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}${request.status === "pending" ? `${cancellable ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>` : ""}<button class="btn btn-danger btn-sm" data-resolve-request="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>` : notificationRetryable ? `<button class="btn btn-sm" data-retry-request="${escapeHtml(request.id)}">Retry notification</button>` : ""}<span class="subtle" style="margin-left:auto">${escapeHtml(dateTime(request.created_at))}</span></div></article>`;
 }
 
 function confirmRequest(requestId, decision) {
@@ -399,7 +400,8 @@ function confirmRequest(requestId, decision) {
     try {
       const result = await api(`/admin/requests/${requestId}/${decision}`, { method: "POST", body: JSON.stringify({ admin_note: note || undefined }) });
       closeModal();
-      toast(result.whatsapp?.sent ? `Request ${decision}d and customer notified.` : `Request ${decision}d; customer notification needs retry.`, result.whatsapp?.sent ? "success" : "error");
+      const decisionLabel = decision === "approve" ? "approved" : "denied";
+      toast(result.whatsapp?.sent ? `Request ${decisionLabel} and customer notified.` : `Request ${decisionLabel}; customer notification needs retry.`, result.whatsapp?.sent ? "success" : "error");
       loadCurrentPage();
       refreshSession();
     } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = `${action} request`; }

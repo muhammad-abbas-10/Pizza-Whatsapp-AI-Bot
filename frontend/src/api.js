@@ -26,7 +26,8 @@ export async function api(path, options = {}) {
   const body = isJson ? await response.json().catch(() => ({})) : await response.text();
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new CustomEvent("admin-auth-expired"));
-    throw new Error(body?.message || `Request failed (${response.status})`);
+    const detail = typeof body === "object" ? (body.message || body.error) : body;
+    throw new Error(detail || `Request failed (${response.status})`);
   }
   return body;
 }

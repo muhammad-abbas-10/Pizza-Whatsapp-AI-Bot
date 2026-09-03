@@ -53,58 +53,25 @@ Dashboard pages include the live overview, active orders, pending requests, orde
 ## Current message flow (implemented)
 
 ```text
-Customer WhatsApp message
-        ↓
-WhatsApp Trigger (Meta Cloud API)
-        ↓
-Normalize Incoming Message
-        ↓
-Ensure Schema (idempotent DDL: processed_messages table, session columns)
-        ↓
-Is this an actual message? (If: entry[0].changes[0].value.messages exists)
-        │
-        ├── false → stop (ignore status/delivery-receipt webhooks)
-        └── true
-                ↓
-        Check Duplicate Message → If not already processed
-                ↓
-        Insert Message to Buffer (message_buffer table)
-                ↓
-        Wait (~7s)
-                ↓
-        Check If Latest (is this still the newest unprocessed message for this customer?)
-                │
-                ├── false → stop (a newer message arrived meanwhile; that run will handle everything)
-                └── true
-                        ↓
-                Combine and Mark Processed (joins all buffered messages for this customer, newline-separated, into one turn)
-                        ↓
-                Upsert Customer and Session (loads cart, order state, pending_items, recent_messages)
-                        ↓
-                Load Active Menu (menu items, deals, and menu rules)
-                        ↓
-                Get Restaurant Settings
-                        ↓
-                Pizza Ordering Agent (Gemini, tool-calling, up to 8 iterations)
-                        │
-                        ├── Track Pending Item   — remembers an item the customer mentioned but didn't yet confirm
-                        ├── Update Cart          — add/change/remove items or deals
-                        ├── Set Order Type       — delivery or pickup, only on explicit customer statement
-                        ├── Set Delivery Info    — save delivery name/address
-                        ├── Place Order          — only after confirmed cart + order type (+ delivery info if needed)
-                        ├── Cancel Order         — cancels a draft (not-yet-placed) order
-                        ├── Escalate To Human    — flags session for staff, paired with Notify Admin
-                        ├── Notify Admin         — WhatsApp alert to staff (kitchen tickets + escalations)
-                        └── Send Menu Image 1/2  — sends the two menu photos (won't resend if already sent this conversation)
-                        ↓
-                Reply Text (agent's final plain-text reply)
-                        ↓
-                Send message (WhatsApp)
-                        ↓
-                Persist Conversation Turn (appends this turn to recent_messages, trimmed to last ~6 exchanges)
+WhatsApp Trigger → Normalize → text-event guard → workflow configuration
+                                             ↓
+                                  exact admin-phone check
+                                  ↙                   ↘
+ADMIN PATH                                              CUSTOMER PATH
+durable admin-message claim                             durable buffer insert
+→ parse APPROVE/DENY (no AI)                            → wait 7 seconds
+→ atomic request/order update                           → claim latest serialized turn
+→ notify affected customer                              → upsert customer/session
+→ acknowledge admin                                     → load menu/settings
+→ finalize message id                                   → Gemini ordering agent + tools
+                                                        → send customer reply
+                                                        → persist turn and finalize all
+                                                          buffered message ids
 ```
 
-There is no intent-classification/Switch step — the agent reads the full context (menu, rules, settings, session state including `pending_items`, recent turns, and the new combined message) each turn and decides for itself whether to just reply, or call one or more tools, in what order.
+Only the customer path uses the ordering agent. Admin messages never enter customer buffering, customer/session upserts, or the AI. Rapid customer bursts are combined oldest-first and serialized per phone; a newer execution supersedes older waiters, while an active turn makes the next execution retry after a short wait. Meta message ids are written to `processed_messages` only after the corresponding path finishes successfully.
+
+Schema creation is migration-only. Apply `011_cancellation_request_integrity.sql` and `012_n8n_workflow_runtime_hardening.sql` before activating the imported workflow; no `CREATE TABLE`/`ALTER TABLE` statements run in the live message path.
 
 ## Core safety rules
 
@@ -123,8 +90,8 @@ There is no intent-classification/Switch step — the agent reads the full conte
 - [x] Create Meta WhatsApp test application
 - [x] Send/receive WhatsApp messages via n8n
 - [x] Normalize incoming message fields
-- [x] Connect n8n to Neon PostgreSQL; idempotent schema setup (`Ensure Schema`)
-- [x] Add duplicate-message protection
+- [x] Connect n8n to Neon PostgreSQL; manage schema through versioned migrations
+- [x] Add durable duplicate-message protection and finalization after successful sends
 - [x] Build the menu/deals schema (v2) and seed data
 - [x] Seed restaurant settings (name, currency, delivery charge, hours)
 - [x] Replace the Switch/intent-classification pipeline with a single tool-calling agent
@@ -154,7 +121,7 @@ There is no intent-classification/Switch step — the agent reads the full conte
 Pizza-Whatsapp-AI-Bot-main/
 ├── database/
 │   └── migration/                          # schema history, including menu schema v2
-├── final_workflow.json                     # exported n8n workflow (agent-based)
+├── admin request.json                      # importable upgraded n8n workflow
 └── README.md
 ```
 
@@ -164,7 +131,8 @@ Pizza-Whatsapp-AI-Bot-main/
 - `customers` — `whatsapp_phone` (unique), name, preferred language
 - `processed_messages` — message ids already handled, for duplicate protection
 - `conversation_sessions` — one active session per customer: `cart` (JSONB `{"items": []}`), `order_type`, `delivery_name`, `delivery_address`, `order_status` (defaults to `draft`), `active_order_id`, `awaiting_human`, `recent_messages` (JSONB, trimmed rolling history for the agent's multi-turn context), `pending_items` (JSONB, capped at the last 3 items the customer mentioned but hadn't yet confirmed/added to cart)
-- `message_buffer` — `customer_phone`, `message_text`, `received_at`, `processed`; short-lived staging table used to debounce rapid-fire multi-message bursts into a single combined turn before the agent sees them
+- `message_buffer` — durable customer-message staging keyed by Meta `message_id`, with batch lease/finalization timestamps for rapid-burst debounce and per-phone serialization
+- `admin_message_claims` — durable admin-message leases used to suppress duplicate webhook resolution attempts without creating customer/session rows
 
 **Menu (v2)**
 - `restaurant_settings` — name, currency, delivery charge, opening hours (seeded: **Pizza Bar**, PKR, Rs. 150 delivery)
@@ -178,22 +146,13 @@ Pizza-Whatsapp-AI-Bot-main/
 
 ## n8n workflow nodes
 
-1. **WhatsApp Trigger** — Meta Cloud API webhook
-2. **Normalize Incoming Message** — extracts customer_name, customer_phone, message_id, message_text, message_type, message_timestamp
-3. **Ensure Schema** — idempotent DDL: creates `processed_messages` if missing, adds `recent_messages`/`order_status`/`active_order_id`/`awaiting_human`/`pending_items` columns to `conversation_sessions` if missing
-4. **Is this an actual message?** (If) — checks `entry[0].changes[0].value.messages` exists; WhatsApp also sends status-update webhooks (sent/delivered/read) on the same endpoint, which have no `messages` array and would otherwise flow through with null customer data. False branch is a dead end.
-5. **Check Duplicate Message** — Postgres lookup against `processed_messages`
-6. **If** — branches on already_processed
-7. **Insert Message to Buffer** — inserts the incoming message into `message_buffer`
-8. **Wait** (~7 seconds) — gives a customer sending multiple quick messages time to finish before the workflow acts
-9. **Check If Latest** — compares this message's `id` (not its timestamp — timestamp equality was unreliable after a JSON round-trip) against `MAX(id)` of that customer's unprocessed buffered messages
-10. **If** (is_latest) — false branch is a dead end (a newer message superseded this one and will handle everything); true branch continues
-11. **Combine and Mark Processed** — joins all of that customer's unprocessed buffered messages, newline-separated (not space-joined, to keep them visually distinct rather than reading as one continuous sentence), and marks them processed
-12. **Upsert Customer and Session** — inserts/updates `customers` and `conversation_sessions`, returns current cart/order state, `pending_items`, and `recent_messages`
-13. **Load Active Menu** — pulls menu items, deals, and menu rules as JSON from the v2 schema/view
-14. **Get Restaurant Settings**
-15. **Google Gemini Chat Model** — model backing the agent
-16. **Pizza Ordering Agent** (LangChain Agent, tool-calling, `maxIterations: 8`) — single system prompt carrying restaurant settings, full menu data/rules, current session state (including `pending_items`), recent conversation history, and the combined message; decides each turn whether to just answer or call one or more of:
+1. **WhatsApp Trigger / Normalize Incoming Message / Is Supported Text Message** — extracts safe normalized fields and stops status receipts or unsupported payloads before database writes.
+2. **Workflow Configuration / Is Authorized Admin** — reads n8n variables (with the previously configured values as fallbacks) and compares normalized phone digits exactly.
+3. **Admin path** — `Claim Admin Message` provides a replay lease; `Parse Admin Command` accepts only `APPROVE <id> [note]` or `DENY <id> [reason]`; `Resolve Admin Request` locks and updates the request/order atomically; notification and finalization nodes message the customer/admin and record the Meta message id. No AI node is connected to this path.
+4. **Customer acceptance path** — `Insert Message to Buffer` rejects processed/actively claimed duplicates using the Meta message id; `Customer Message Accepted` stops duplicates.
+5. **Customer debounce path** — waits about 7 seconds, then `Claim Latest Customer Turn` combines the newest unprocessed burst and leases one turn per phone. Superseded runs stop; busy runs wait and retry.
+6. **Upsert Customer and Session / Load Active Menu / Get Restaurant Settings** — loads all customer state and current source-of-truth menu data after the turn is claimed.
+7. **Google Gemini Chat Model / Pizza Ordering Agent** (`maxIterations: 8`) — customer-only agent that receives the combined burst and may call:
     - **Track Pending Item** — records a specific item/deal/drink the customer expressed real order intent for but didn't confirm or add to cart before the topic moved on; the agent checks this list first when the customer later refers to something vaguely ("same", "wohi")
     - **Update Cart** — validates and merges menu-item or deal lines against the live menu tables; recalculates `line_total` from the database, never from the AI; if an item mention shows up unexpectedly alongside unrelated info (e.g. next to a name), the agent is instructed to confirm before adding rather than adding silently
     - **Set Order Type** — only on an explicit "delivery"/"pickup" statement, never assumed; the agent is instructed to call this the moment the customer says it, not wait until confirmation
@@ -203,9 +162,7 @@ Pizza-Whatsapp-AI-Bot-main/
     - **Escalate To Human** — sets `awaiting_human = TRUE` on the session; triggers on a request for a person, a problem with a past order, *or a complaint about a current/active order* (e.g. late delivery); the agent is explicitly told never to claim it escalated or notified staff unless it actually called this tool and Notify Admin in the same turn
     - **Notify Admin** — WhatsApp message to staff, used for both kitchen tickets and escalations
     - **Send Menu Image 1 / Send Menu Image 2** — sends the two menu photos (hosted on Vercel); the agent checks recent history first to avoid resending
-17. **Reply Text** — extracts the agent's final plain-text reply
-18. **Send message** — the single shared WhatsApp send node for all customer-facing replies
-19. **Persist Conversation Turn** — appends the customer message + bot reply to `recent_messages`, trimmed to roughly the last 6 exchanges
+8. **Reply Text / Send message / Finalize Customer Turn** — sends the customer reply, appends the combined turn to `recent_messages`, marks the leased buffer rows processed, and inserts every Meta id into `processed_messages` in one SQL statement.
 
 ## Environment variables
 
@@ -222,6 +179,21 @@ GEMINI_API_KEY=
 KITCHEN_WHATSAPP_NUMBER=
 BACKUP_WHATSAPP_NUMBER=
 ```
+
+Set these n8n Variables before activation (the export retains the prior values as fallbacks so an import does not silently lose the current configuration):
+
+```text
+ADMIN_WHATSAPP_PHONE=923...
+WHATSAPP_PHONE_NUMBER_ID=...
+```
+
+Import/run order:
+
+1. Run `npm run migrate:workflow-runtime` from `backend/` (migration `012`; migration `011` must already be present).
+2. Import `admin request.json` into n8n.
+3. Re-select the existing Postgres, WhatsApp Trigger, WhatsApp API, and Gemini credentials if the target n8n instance uses different credential IDs.
+4. Set the two n8n Variables above, confirm the trigger's production webhook is registered in Meta, then activate the new workflow only after deactivating the older version.
+5. Send a normal customer message and an admin help/invalid command before testing an actual pending cancellation request.
 
 Note: Meta's temporary test-tier access tokens expire roughly every 24 hours. For multi-day friend-testing without repeatedly regenerating and re-pasting a token, consider switching to a longer-lived System User access token (Business Settings → System Users) instead.
 

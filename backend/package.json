@@ -9,7 +9,13 @@
     "test": "node --check server.js && node --check api/index.js && node --check src/admin-routes.js",
     "migrate:dashboard": "node scripts/run-migration.js 010_admin_dashboard.sql",
     "test:api": "node scripts/smoke-admin-api.js",
-    "test:request-flow": "node scripts/test-request-flow.js"
+    "test:request-flow": "node scripts/test-request-flow.js",
+    "test:whatsapp": "node scripts/test-whatsapp-service.js",
+    "test:workflow-cancellation": "node scripts/test-workflow-cancellation-query.js",
+    "test:workflow-cart": "node scripts/test-workflow-cart-query.js",
+    "test:workflow-runtime": "node scripts/test-workflow-runtime.js",
+    "workflow:upgrade": "node scripts/upgrade-n8n-workflow.js",
+    "migrate:workflow-runtime": "node scripts/run-migration.js 012_n8n_workflow_runtime_hardening.sql"
   },
   "keywords": [],
   "author": "",

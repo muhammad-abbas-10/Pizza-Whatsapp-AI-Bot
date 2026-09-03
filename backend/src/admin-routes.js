@@ -7,9 +7,12 @@
 //   ADMIN_API_KEY            - shared secret the dashboard sends as x-admin-key
 //   WHATSAPP_TOKEN            - permanent/system-user token for the Cloud API
 //   WHATSAPP_PHONE_NUMBER_ID  - the sending number's phone_number_id
+//   WHATSAPP_GRAPH_API_VERSION - supported Graph API version (for example v23.0)
 
 const crypto = require("crypto");
-const WHATSAPP_API_VERSION = "v20.0";
+// Do not leave this on an expired Graph API version.  It is configurable so
+// deployments can be updated without changing application code.
+const WHATSAPP_API_VERSION = process.env.WHATSAPP_GRAPH_API_VERSION || "v23.0";
 
 async function sendWhatsAppMessage(to, body) {
   const token = process.env.WHATSAPP_TOKEN;
@@ -19,7 +22,22 @@ async function sendWhatsAppMessage(to, body) {
     console.error(
       "WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID not configured — skipping customer notification"
     );
-    return { sent: false, reason: "not_configured" };
+    return {
+      sent: false,
+      error: "WhatsApp notification failed",
+      message: "WhatsApp credentials are not configured on the backend",
+      reason: "not_configured",
+    };
+  }
+
+  const recipient = String(to || "").replace(/\D/g, "");
+  if (!/^\d{8,15}$/.test(recipient)) {
+    return {
+      sent: false,
+      error: "WhatsApp notification failed",
+      message: "The customer phone number is not a valid international WhatsApp number",
+      reason: "invalid_recipient",
+    };
   }
 
   try {
@@ -33,7 +51,7 @@ async function sendWhatsAppMessage(to, body) {
         },
         body: JSON.stringify({
           messaging_product: "whatsapp",
-          to,
+          to: recipient,
           type: "text",
           text: { body },
         }),
@@ -43,14 +61,35 @@ async function sendWhatsAppMessage(to, body) {
 
     if (!response.ok) {
       const errText = await response.text();
+      let metaMessage = "";
+      try {
+        const metaError = JSON.parse(errText)?.error;
+        metaMessage = metaError?.message || metaError?.error_user_msg || "";
+      } catch {
+        // Non-JSON response: the HTTP status is still useful to the caller.
+      }
       console.error("WhatsApp send failed:", response.status, errText);
-      return { sent: false, reason: `whatsapp_http_${response.status}` };
+      const reason = `whatsapp_http_${response.status}${metaMessage ? `: ${metaMessage.slice(0, 500)}` : ""}`;
+      return {
+        sent: false,
+        error: "WhatsApp notification failed",
+        message: metaMessage || `WhatsApp API returned HTTP ${response.status}`,
+        // Keep the dashboard/DB diagnostic short; don't store a full provider payload.
+        reason,
+      };
     }
 
-    return { sent: true };
+    const responseBody = await response.json().catch(() => ({}));
+    return { sent: true, messageId: responseBody.messages?.[0]?.id || null };
   } catch (error) {
     console.error("WhatsApp send error:", error.message);
-    return { sent: false, reason: error.name === "TimeoutError" ? "whatsapp_timeout" : "whatsapp_unavailable" };
+    const timedOut = error.name === "TimeoutError";
+    return {
+      sent: false,
+      error: "WhatsApp notification failed",
+      message: timedOut ? "WhatsApp API timed out" : "WhatsApp API is unavailable",
+      reason: timedOut ? "whatsapp_timeout" : "whatsapp_unavailable",
+    };
   }
 }
 
@@ -303,6 +342,7 @@ function registerAdminRoutes(app, pool) {
         SELECT
           r.id, r.request_type, r.question, r.status, r.admin_note,
           r.created_at, r.resolved_at, r.notification_sent, r.notification_error,
+          r.notification_attempts, r.last_notification_attempt_at,
           c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
           o.id AS order_id, o.status AS order_status, o.total AS order_total,
           o.items AS order_items, o.delivery_address, o.order_type,
@@ -326,118 +366,214 @@ function registerAdminRoutes(app, pool) {
     }
   });
 
-  async function resolveRequest(req, res, decision) {
-    const client = await pool.connect();
-
+  app.get("/admin/requests/:id", async (req, res) => {
+    const requestId = Number(req.params.id);
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid request id" });
+    }
     try {
-      const requestId = Number(req.params.id);
-      const { admin_note } = req.body || {};
-
-      if (!Number.isInteger(requestId) || requestId <= 0) {
-        return res.status(400).json({ success: false, message: "Invalid request id" });
-      }
-      if (admin_note !== undefined && (typeof admin_note !== "string" || admin_note.length > 2000)) {
-        return res.status(400).json({ success: false, message: "Admin note must be 2,000 characters or fewer" });
-      }
-
-      await client.query("BEGIN");
-
-      const { rows } = await client.query(
+      const { rows } = await pool.query(
         `
-        SELECT r.*, c.whatsapp_phone
+        SELECT
+          r.id, r.request_type, r.question, r.status, r.admin_note,
+          r.created_at, r.resolved_at, r.notification_sent, r.notification_error,
+          r.notification_attempts, r.last_notification_attempt_at,
+          c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
+          o.id AS order_id, o.status AS order_status, o.total AS order_total,
+          o.items AS order_items, o.delivery_address, o.delivery_name, o.order_type
         FROM admin_requests r
         JOIN customers c ON c.id = r.customer_id
-        WHERE r.id = $1 AND r.status = 'pending'
-        FOR UPDATE
+        LEFT JOIN orders o ON o.id = r.order_id
+        WHERE r.id = $1
         `,
         [requestId]
       );
+      if (rows.length === 0) {
+        return res.status(404).json({ success: false, message: "Request not found" });
+      }
+      return res.json({ success: true, request: rows[0] });
+    } catch (error) {
+      console.error("Get admin request error:", error);
+      return res.status(500).json({ success: false, message: "Failed to load request" });
+    }
+  });
 
+  function resolvedRequestMessage(status, adminNote) {
+    const defaultMessage = status === "approved"
+      ? "Update on your request: it's been approved. ✅"
+      : "Update on your request: unfortunately we're not able to do that this time.";
+    return adminNote ? `${defaultMessage}\n\n${adminNote}` : defaultMessage;
+  }
+
+  // Serialize attempts for a request so concurrent retry clicks cannot send a
+  // second message after the first one has succeeded.
+  async function notifyResolvedRequest(requestId) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query(
+        `
+        SELECT r.status, r.request_type, r.order_id, r.admin_note, r.notification_sent, c.whatsapp_phone
+        FROM admin_requests r
+        JOIN customers c ON c.id = r.customer_id
+        WHERE r.id = $1 AND r.status IN ('approved', 'denied')
+        FOR UPDATE OF r
+        `,
+        [requestId]
+      );
       if (rows.length === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({
-          success: false,
-          message: "Request not found or already resolved",
-        });
+        return { found: false };
+      }
+      if (rows[0].notification_sent) {
+        await client.query("COMMIT");
+        return { found: true, whatsapp: { sent: true, alreadySent: true } };
+      }
+      if (rows[0].status === "approved" && rows[0].request_type === "cancel_order" && !rows[0].order_id) {
+        await client.query("COMMIT");
+        return {
+          found: true,
+          blocked: true,
+          whatsapp: {
+            sent: false,
+            error: "Cancellation request is not linked to an order",
+            message: "An approval notification cannot be sent because no order was cancelled",
+            reason: "unlinked_order",
+          },
+        };
+      }
+
+      const whatsapp = await sendWhatsAppMessage(
+        rows[0].whatsapp_phone,
+        resolvedRequestMessage(rows[0].status, rows[0].admin_note)
+      );
+      await client.query(
+        `
+        UPDATE admin_requests
+        SET notification_sent = $1,
+            notification_error = $2,
+            notification_attempts = notification_attempts + 1,
+            last_notification_attempt_at = NOW(),
+            notification_message_id = $3
+        WHERE id = $4
+        `,
+        [
+          whatsapp.sent,
+          whatsapp.sent ? null : String(whatsapp.reason || "unknown error"),
+          whatsapp.messageId || null,
+          requestId,
+        ]
+      );
+      await client.query("COMMIT");
+      return { found: true, whatsapp };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function resolveRequest(req, res, decision) {
+    const requestId = Number(req.params.id);
+    const { admin_note } = req.body || {};
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid request id" });
+    }
+    if (admin_note !== undefined && (typeof admin_note !== "string" || admin_note.length > 2000)) {
+      return res.status(400).json({ success: false, message: "Admin note must be 2,000 characters or fewer" });
+    }
+
+    const client = await pool.connect();
+    let committed = false;
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query(
+        `
+        SELECT r.*, o.status AS linked_order_status, o.customer_id AS order_customer_id
+        FROM admin_requests r
+        LEFT JOIN orders o ON o.id = r.order_id
+        WHERE r.id = $1
+        FOR UPDATE OF r
+        `,
+        [requestId]
+      );
+      if (rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ success: false, message: "Request not found" });
       }
 
       const requestRow = rows[0];
+      if (requestRow.status !== "pending") {
+        await client.query("COMMIT");
+        committed = true;
+        if (requestRow.status !== decision) {
+          return res.status(409).json({ success: false, message: `Request is already ${requestRow.status}` });
+        }
+        return res.json({
+          success: true,
+          decision,
+          alreadyResolved: true,
+          whatsapp: { sent: requestRow.notification_sent, alreadySent: requestRow.notification_sent },
+        });
+      }
 
-      // Apply the actual side-effect for known request types.
-      if (requestRow.request_type === "cancel_order" && requestRow.order_id) {
-        if (decision === "approved") {
-          const cancelledOrder = await client.query(
-            `
-            UPDATE orders
-            SET status = 'cancelled', updated_at = NOW()
-            WHERE id = $1 AND status IN ('received', 'preparing', 'out_for_delivery')
-            RETURNING id
-            `,
+      if (requestRow.request_type === "cancel_order" && decision === "approved") {
+        if (!requestRow.order_id || !requestRow.linked_order_status) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            success: false,
+            error: "Cancellation request is not linked to an order",
+            message: "This request cannot be approved because no order is linked to it",
+          });
+        }
+        if (String(requestRow.order_customer_id) !== String(requestRow.customer_id)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            success: false,
+            error: "Cancellation request has an invalid order link",
+            message: "The linked order does not belong to this customer",
+          });
+        }
+        if (requestRow.linked_order_status === "completed") {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "A completed order cannot be cancelled" });
+        }
+        if (requestRow.linked_order_status !== "cancelled") {
+          const cancelled = await client.query(
+            `UPDATE orders SET status = 'cancelled', updated_at = NOW()
+             WHERE id = $1 AND status IN ('received', 'preparing', 'out_for_delivery')
+             RETURNING id`,
             [requestRow.order_id]
           );
-          if (cancelledOrder.rows.length === 0) {
+          if (cancelled.rows.length === 0) {
             await client.query("ROLLBACK");
-            return res.status(409).json({
-              success: false,
-              message: "This order can no longer be cancelled",
-            });
+            return res.status(409).json({ success: false, message: "This order can no longer be cancelled" });
           }
-          await client.query(
-            `
-            UPDATE conversation_sessions
-            SET order_status = 'cancelled'
-            WHERE customer_id = $1 AND active_order_id = $2
-            `,
-            [requestRow.customer_id, requestRow.order_id]
-          );
         }
-        // On denial, the order is left exactly as it was.
+        await client.query(
+          `UPDATE conversation_sessions
+           SET order_status = 'cancelled', awaiting_human = FALSE, updated_at = NOW()
+           WHERE customer_id = $1 AND active_order_id = $2`,
+          [requestRow.customer_id, requestRow.order_id]
+        );
       }
 
       await client.query(
-        `
-        UPDATE admin_requests
-        SET status = $1, admin_note = $2, resolved_at = NOW()
-        WHERE id = $3
-        `,
-        [decision, admin_note || null, requestId]
+        `UPDATE admin_requests SET status = $1, admin_note = $2, resolved_at = NOW() WHERE id = $3`,
+        [decision, admin_note?.trim() || null, requestId]
       );
-
-      // Clear the "bot is waiting on admin" flag so the agent resumes normally
-      // on this customer's next message.
       await client.query(
-        `UPDATE conversation_sessions SET awaiting_human = FALSE WHERE customer_id = $1`,
+        `UPDATE conversation_sessions SET awaiting_human = FALSE, updated_at = NOW() WHERE customer_id = $1`,
         [requestRow.customer_id]
       );
-
       await client.query("COMMIT");
+      committed = true;
 
-      const defaultMessage =
-        decision === "approved"
-          ? "Update on your request: it's been approved. ✅"
-          : "Update on your request: unfortunately we're not able to do that this time.";
-
-      const messageToSend = admin_note
-        ? `${defaultMessage}\n\n${admin_note}`
-        : defaultMessage;
-
-      const whatsappResult = await sendWhatsAppMessage(
-        requestRow.whatsapp_phone,
-        messageToSend
-      );
-
-      await pool.query(
-        `
-        UPDATE admin_requests
-        SET notification_sent = $1, notification_error = $2
-        WHERE id = $3
-        `,
-        [whatsappResult.sent, whatsappResult.sent ? null : String(whatsappResult.reason || "unknown error"), requestId]
-      );
-
-      return res.json({ success: true, decision, whatsapp: whatsappResult });
+      const notification = await notifyResolvedRequest(requestId);
+      return res.json({ success: true, decision, whatsapp: notification.whatsapp });
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!committed) await client.query("ROLLBACK").catch(() => {});
       console.error("Resolve admin request error:", error);
       return res.status(500).json({ success: false, message: "Failed to resolve request" });
     } finally {
@@ -447,6 +583,7 @@ function registerAdminRoutes(app, pool) {
 
   app.post("/admin/requests/:id/approve", (req, res) => resolveRequest(req, res, "approved"));
   app.post("/admin/requests/:id/deny", (req, res) => resolveRequest(req, res, "denied"));
+  app.post("/admin/requests/:id/reject", (req, res) => resolveRequest(req, res, "denied"));
 
   app.post("/admin/requests/:id/notify", async (req, res) => {
     const requestId = Number(req.params.id);
@@ -455,37 +592,18 @@ function registerAdminRoutes(app, pool) {
     }
 
     try {
-      const { rows } = await pool.query(
-        `
-        SELECT r.status, r.admin_note, r.notification_sent, c.whatsapp_phone
-        FROM admin_requests r
-        JOIN customers c ON c.id = r.customer_id
-        WHERE r.id = $1 AND r.status IN ('approved', 'denied')
-        `,
-        [requestId]
-      );
-      if (rows.length === 0) {
+      const notification = await notifyResolvedRequest(requestId);
+      if (!notification.found) {
         return res.status(404).json({ success: false, message: "Resolved request not found" });
       }
-      if (rows[0].notification_sent) {
-        return res.json({ success: true, whatsapp: { sent: true, alreadySent: true } });
+      const { whatsapp } = notification;
+      if (notification.blocked) {
+        return res.status(409).json({ success: false, error: whatsapp.error, message: whatsapp.message, whatsapp });
       }
-
-      const approved = rows[0].status === "approved";
-      const defaultMessage = approved
-        ? "Update on your request: it's been approved. ✅"
-        : "Update on your request: unfortunately we're not able to do that this time.";
-      const message = rows[0].admin_note
-        ? `${defaultMessage}\n\n${rows[0].admin_note}`
-        : defaultMessage;
-      const whatsapp = await sendWhatsAppMessage(rows[0].whatsapp_phone, message);
-      await pool.query(
-        `UPDATE admin_requests SET notification_sent = $1, notification_error = $2 WHERE id = $3`,
-        [whatsapp.sent, whatsapp.sent ? null : String(whatsapp.reason || "unknown error"), requestId]
-      );
       return res.status(whatsapp.sent ? 200 : 502).json({
         success: whatsapp.sent,
-        message: whatsapp.sent ? "Customer notified" : "Notification failed; you can retry",
+        error: whatsapp.sent ? undefined : "WhatsApp notification failed",
+        message: whatsapp.sent ? "Customer notified" : whatsapp.message,
         whatsapp,
       });
     } catch (error) {

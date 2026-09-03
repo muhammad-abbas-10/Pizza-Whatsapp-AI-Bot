@@ -31,7 +31,10 @@ async function main() {
   await check("Invalid order transition", "/admin/orders/1/status", { method: "PATCH", body: JSON.stringify({ status: "completed" }) }, 409);
   await check("Order history", "/admin/orders?scope=history&page=1&limit=10");
   await check("Order history export", "/admin/order-history/export.csv");
-  await check("Requests", "/admin/requests?page=1&limit=10");
+  const requests = await check("Requests", "/admin/requests?page=1&limit=10");
+  if (requests.requests[0]) await check("Request details", `/admin/requests/${requests.requests[0].id}`);
+  await check("Invalid request details", "/admin/requests/not-a-number", {}, 400);
+  await check("Missing request details", "/admin/requests/999999999", {}, 404);
   await check("Missing request decision", "/admin/requests/999999999/approve", { method: "POST", body: "{}" }, 404);
   await check("Missing notification retry", "/admin/requests/999999999/notify", { method: "POST" }, 404);
   const customers = await check("Customers", "/admin/customers?page=1&limit=10");
