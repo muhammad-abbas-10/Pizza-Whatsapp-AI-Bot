@@ -241,7 +241,7 @@ async function loadDashboard() {
   const maxOrders = Math.max(1, ...data.activity.map((point) => Number(point.orders)));
   const statusMap = Object.fromEntries(data.status_counts.map((item) => [item.status, Number(item.count)]));
   const totalStatuses = Math.max(1, Object.values(statusMap).reduce((sum, count) => sum + count, 0));
-  const statuses = ["received", "preparing", "out_for_delivery", "completed", "cancelled"];
+  const statuses = ["received", "preparing", "oven", "out_for_delivery", "completed", "cancelled"];
 
   app.querySelector("#page-content").innerHTML = `${pageHeading("Restaurant overview", "Live operational data from the Pizza Bar backend and Neon database.")}
     <section class="stats-grid">
@@ -252,7 +252,7 @@ async function loadDashboard() {
     </section>
     <section class="dashboard-grid">
       <article class="panel"><div class="panel-head"><div><div class="panel-title">Order activity</div><div class="panel-subtitle">Daily orders in Pakistan time</div></div><div class="segmented">${[1,7,30].map((days) => `<button class="segment ${state.dashboardDays === days ? "active" : ""}" data-dashboard-days="${days}">${days === 1 ? "Today" : `${days} days`}</button>`).join("")}</div></div><div class="panel-body"><div class="chart">${data.activity.map((point) => `<div class="chart-column"><div class="chart-track"><span class="chart-value">${point.orders}</span><div class="chart-bar" style="height:${Math.max(2, Math.round(Number(point.orders) / maxOrders * 100))}%"></div></div><div class="chart-label">${escapeHtml(new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${String(point.day).slice(0, 10)}T00:00:00Z`)))}</div></div>`).join("")}</div></div></article>
-      <article class="panel"><div class="panel-head"><div><div class="panel-title">Order status</div><div class="panel-subtitle">All-time distribution</div></div></div><div class="panel-body"><div class="status-list">${statuses.map((status, index) => { const count = statusMap[status] || 0; const colors = ["#e6a83c", "#f26a2e", "#5d8ee2", "#47b978", "#e25d5d"]; return `<div class="status-row"><div><div class="status-meta"><span>${escapeHtml(statusLabel(status))}</span><span class="status-count">${count}</span></div><div class="status-track"><div class="status-fill" style="--status-color:${colors[index]};width:${Math.round(count / totalStatuses * 100)}%"></div></div></div></div>`; }).join("")}</div></div></article>
+      <article class="panel"><div class="panel-head"><div><div class="panel-title">Order status</div><div class="panel-subtitle">All-time distribution</div></div></div><div class="panel-body"><div class="status-list">${statuses.map((status, index) => { const count = statusMap[status] || 0; const colors = ["#e6a83c", "#f26a2e", "#ef5b32", "#5d8ee2", "#47b978", "#e25d5d"]; return `<div class="status-row"><div><div class="status-meta"><span>${escapeHtml(statusLabel(status))}</span><span class="status-count">${count}</span></div><div class="status-track"><div class="status-fill" style="--status-color:${colors[index]};width:${Math.round(count / totalStatuses * 100)}%"></div></div></div></div>`; }).join("")}</div></div></article>
     </section>
     <section class="dashboard-grid">
       <article class="panel"><div class="panel-head"><div><div class="panel-title">Recent orders</div><div class="panel-subtitle">Latest WhatsApp orders</div></div><button class="btn btn-sm" data-route-jump="orders">View all</button></div>${renderCompactOrders(data.recent_orders, currency)}</article>
@@ -288,7 +288,7 @@ async function loadOrders(route) {
   const actions = history ? '<button class="btn" data-action="export-history">⇩ Export CSV</button>' : "";
   app.querySelector("#page-content").innerHTML = `${pageHeading(history ? "Order history" : "Orders", history ? "Search completed and cancelled orders." : "Manage orders currently moving through the kitchen.", actions)}
     <div class="toolbar"><input class="input mobile-page-search" data-local-search="${route}" type="search" value="${escapeHtml(filters.search)}" placeholder="Search order, customer or phone…">
-      <select class="select" data-filter="status"><option value="">All statuses</option>${(history ? ["completed", "cancelled"] : ["received", "preparing", "out_for_delivery"]).map((status) => `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(statusLabel(status))}</option>`).join("")}</select>
+      <select class="select" data-filter="status"><option value="">All statuses</option>${(history ? ["completed", "cancelled"] : ["received", "preparing", "oven", "out_for_delivery"]).map((status) => `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(statusLabel(status))}</option>`).join("")}</select>
       <select class="select" data-filter="order_type"><option value="">Delivery & pickup</option><option value="delivery" ${filters.order_type === "delivery" ? "selected" : ""}>Delivery</option><option value="pickup" ${filters.order_type === "pickup" ? "selected" : ""}>Pickup</option></select>
       <input class="input date-field" data-filter="date_from" type="date" value="${escapeHtml(filters.date_from)}" aria-label="From date"><input class="input date-field" data-filter="date_to" type="date" value="${escapeHtml(filters.date_to)}" aria-label="To date">
     </div>
@@ -329,12 +329,26 @@ async function openOrder(orderId) {
     const data = await api(`/admin/orders/${orderId}`);
     const order = data.order;
     const currency = state.session?.restaurant?.currency || "PKR";
-    const transitions = {
-      received: [["preparing", "Start preparing"], ["cancelled", "Cancel order"]],
-      preparing: [["out_for_delivery", "Mark out for delivery"], ["completed", "Mark delivered"], ["cancelled", "Cancel order"]],
-      out_for_delivery: [["completed", "Mark delivered"], ["cancelled", "Cancel order"]],
-    }[order.status] || [];
-    const whatsapp = String(order.customer_phone || "").replace(/\D/g, "");
+    const labels = {
+      preparing: "Start preparing",
+      oven: "Move to oven",
+      out_for_delivery: "Mark out for delivery",
+      completed: order.order_type === "pickup" ? "Mark completed" : "Mark delivered",
+      cancelled: "Cancel order",
+    };
+    const transitions = (order.allowed_transitions || []).map((status) => [status, labels[status] || statusLabel(status)]);
+    const latestNotification = data.notifications?.[0] || null;
+    const notificationCopy = !latestNotification
+      ? "No dashboard-generated customer update yet."
+      : latestNotification.delivery_status === "sent"
+        ? `Delivered ${dateTime(latestNotification.sent_at || latestNotification.updated_at)}`
+        : latestNotification.delivery_status === "superseded"
+          ? "Not sent because a newer order status is already authoritative."
+        : latestNotification.delivery_status === "failed"
+          ? `Failed: ${latestNotification.last_error || "n8n/WhatsApp delivery failed"}`
+          : latestNotification.delivery_status === "processing"
+            ? "Delivery is processing in n8n."
+            : "Queued for delivery.";
     showModal(`<div class="modal-head"><div><div class="request-number">ORDER #${escapeHtml(order.id)}</div><h2>${escapeHtml(order.customer_name || "Customer")}</h2></div><button class="btn icon-btn" data-close-modal aria-label="Close">×</button></div>
       <div class="modal-body stack"><div class="detail-grid">
         <div class="detail-block"><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(order.customer_name || "Unnamed")}<br>${escapeHtml(order.customer_phone)}</div></div>
@@ -342,20 +356,49 @@ async function openOrder(orderId) {
         <div class="detail-block wide"><div class="fact-label">Items</div><div class="line-items" style="margin-top:10px">${(order.items || []).map((item) => `<div class="line-item"><div><strong>${escapeHtml(item.quantity || 1)}× ${escapeHtml(item.item_name || item.name || "Item")}</strong><div class="secondary-cell">${escapeHtml(item.size || item.variant || "Standard")}${Array.isArray(item.extras) && item.extras.length ? ` · ${escapeHtml(item.extras.join(", "))}` : ""}</div></div><span>${escapeHtml(money(item.line_total || Number(item.price || 0) * Number(item.quantity || 1), currency))}</span></div>`).join("")}</div></div>
         <div class="detail-block"><div class="fact-label">Totals</div><div class="fact-value">Subtotal ${escapeHtml(money(order.subtotal, currency))}<br>Delivery ${escapeHtml(money(order.delivery_charge, currency))}<br><strong>Total ${escapeHtml(money(order.total, currency))}</strong></div></div>
         <div class="detail-block"><div class="fact-label">Status</div><div class="fact-value">${badge(order.status)}<br><span class="subtle">${escapeHtml(dateTime(order.created_at))}</span></div></div>
+        <div class="detail-block wide"><div class="fact-label">Customer notification</div><div class="fact-value">${escapeHtml(notificationCopy)}</div>${latestNotification?.delivery_status === "failed" ? `<button class="btn btn-sm" style="margin-top:10px" data-retry-order-event="${escapeHtml(latestNotification.id)}" data-order-id="${escapeHtml(order.id)}">Retry notification</button>` : ""}</div>
         <div class="detail-block wide"><div class="fact-label">Timeline</div><div class="timeline" style="margin-top:12px">${data.history.map((event) => `<div class="timeline-item"><span class="timeline-dot"></span><div><div class="primary-cell">${escapeHtml(statusLabel(event.status))}</div><div class="secondary-cell">${escapeHtml(dateTime(event.created_at))}</div></div></div>`).join("")}</div></div>
       </div></div>
-      <div class="modal-foot"><a class="btn" href="https://wa.me/${escapeHtml(whatsapp)}" target="_blank" rel="noopener">Open WhatsApp</a>${transitions.map(([status, label]) => `<button class="btn ${status === "cancelled" ? "btn-danger" : "btn-primary"}" data-order-status="${status}" data-order-id="${escapeHtml(order.id)}">${escapeHtml(label)}</button>`).join("")}</div>`, { label: `Order ${order.id}` });
+      <div class="modal-foot">${transitions.length ? transitions.map(([status, label]) => `<button class="btn ${status === "cancelled" ? "btn-danger" : "btn-primary"}" data-order-status="${status}" data-order-id="${escapeHtml(order.id)}">${escapeHtml(label)}</button>`).join("") : '<span class="muted">No further actions</span>'}</div>`, { label: `Order ${order.id}` });
     modalRoot.querySelectorAll("[data-order-status]").forEach((button) => button.addEventListener("click", async () => {
       const original = button.textContent;
-      button.disabled = true;
+      const actionButtons = [...modalRoot.querySelectorAll("[data-order-status]")];
+      actionButtons.forEach((actionButton) => { actionButton.disabled = true; });
       button.textContent = "Updating…";
       try {
-        await api(`/admin/orders/${button.dataset.orderId}/status`, { method: "PATCH", body: JSON.stringify({ status: button.dataset.orderStatus }) });
-        toast(`Order #${button.dataset.orderId} marked ${statusLabel(button.dataset.orderStatus)}.`);
+        const result = await api(`/admin/orders/${button.dataset.orderId}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: button.dataset.orderStatus, expected_status: order.status, request_id: crypto.randomUUID() }),
+        });
+        const deliveryStatus = result.notification?.delivery_status;
+        const notificationMessage = deliveryStatus === "sent"
+          ? "Customer notified."
+          : deliveryStatus === "superseded"
+            ? "A newer status superseded this notification."
+          : deliveryStatus === "failed"
+            ? "Customer notification failed — open the order to retry."
+            : "Customer notification queued.";
+        toast(`Order #${button.dataset.orderId} marked ${statusLabel(button.dataset.orderStatus)}. ${notificationMessage}`, deliveryStatus === "failed" ? "error" : "success");
         closeModal();
         loadCurrentPage();
-      } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = original; }
+      } catch (error) { toast(error.message, "error"); actionButtons.forEach((actionButton) => { actionButton.disabled = false; }); button.textContent = original; }
     }));
+    modalRoot.querySelector("[data-retry-order-event]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = "Retrying…";
+      try {
+        const result = await api(`/admin/orders/${button.dataset.orderId}/notifications/${button.dataset.retryOrderEvent}/retry`, { method: "POST" });
+        toast(result.notification?.delivery_status === "sent" ? "Customer notification delivered." : "Customer notification is processing.");
+        openOrder(button.dataset.orderId);
+        refreshSession();
+      } catch (error) {
+        toast(error.message, "error");
+        button.disabled = false;
+        button.textContent = original;
+      }
+    });
   } catch (error) {
     showModal(`<div class="error-state"><div><div class="state-icon">!</div><div class="state-title">Order unavailable</div><div class="state-copy">${escapeHtml(error.message)}</div><button class="btn" data-close-modal>Close</button></div></div>`);
   }
@@ -377,20 +420,21 @@ async function loadRequests() {
 }
 
 function renderRequestCard(request, currency) {
-  const cancellable = request.request_type !== "cancel_order" || Boolean(request.order_id);
-  const notificationRetryable = !request.notification_sent && !(request.status === "approved" && request.request_type === "cancel_order" && !request.order_id);
+  const cancellable = request.request_type !== "cancel_order" || Boolean(request.order_id && request.order_cancellable);
+  const deliveryStatus = request.notification_delivery_status || (request.notification_sent ? "sent" : request.notification_error ? "failed" : null);
+  const notificationRetryable = request.status !== "pending" && deliveryStatus === "failed" && Boolean(request.notification_event_id);
   const typeLabel = ({ cancel_order: "Cancellation request", modification: "Order modification", delivery: "Delivery issue" })[request.request_type] || "Customer request";
   return `<article class="request-card"><div class="request-card-top"><div><div class="request-number">REQUEST #${escapeHtml(request.id)}</div><div class="request-type">${escapeHtml(typeLabel)}</div></div>${badge(request.status)}</div>
     <div class="request-question">${escapeHtml(request.question)}</div>
-    <div class="request-facts"><div><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(request.customer_name || "Unnamed")}<br><span class="subtle">${escapeHtml(request.customer_phone)}</span></div></div><div><div class="fact-label">Order</div><div class="fact-value">${request.order_id ? `#${escapeHtml(request.order_id)}<br>${escapeHtml(itemSummary(request.order_items, 1))}` : "Not linked"}</div></div><div><div class="fact-label">Total</div><div class="fact-value">${request.order_total ? escapeHtml(money(request.order_total, currency)) : "—"}</div></div><div><div class="fact-label">Delivery</div><div class="fact-value">${escapeHtml(request.delivery_address || (request.order_type ? statusLabel(request.order_type) : "—"))}</div></div><div><div class="fact-label">Requested</div><div class="fact-value">${escapeHtml(relativeTime(request.created_at))}</div></div><div><div class="fact-label">Notification</div><div class="fact-value">${request.notification_sent ? '<span class="success-text">Sent</span>' : request.status === "pending" || !request.notification_error ? "Not sent" : '<span class="danger-text">Failed</span>'}</div></div></div>
-    ${request.request_type === "cancel_order" && !cancellable && request.status === "pending" ? '<div class="notification-failure">Order is not linked — cancellation approval is unavailable. Deny or inspect the bot request first.</div>' : ""}
-    ${request.status !== "pending" && !request.notification_sent && request.notification_error ? `<div class="notification-failure">Customer notification failed: ${escapeHtml(request.notification_error)}</div>` : ""}
+    <div class="request-facts"><div><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(request.customer_name || "Unnamed")}<br><span class="subtle">${escapeHtml(request.customer_phone)}</span></div></div><div><div class="fact-label">Order</div><div class="fact-value">${request.order_id ? `#${escapeHtml(request.order_id)}<br>${escapeHtml(itemSummary(request.order_items, 1))}` : "Not linked"}</div></div><div><div class="fact-label">Total</div><div class="fact-value">${request.order_total ? escapeHtml(money(request.order_total, currency)) : "—"}</div></div><div><div class="fact-label">Delivery</div><div class="fact-value">${escapeHtml(request.delivery_address || (request.order_type ? statusLabel(request.order_type) : "—"))}</div></div><div><div class="fact-label">Requested</div><div class="fact-value">${escapeHtml(relativeTime(request.created_at))}</div></div><div><div class="fact-label">Notification</div><div class="fact-value">${deliveryStatus === "sent" ? '<span class="success-text">Delivered</span>' : deliveryStatus === "failed" ? '<span class="danger-text">Failed</span>' : deliveryStatus === "processing" ? "Processing" : deliveryStatus === "pending" ? "Queued" : deliveryStatus === "superseded" ? "Superseded" : "Not sent"}</div></div></div>
+    ${request.request_type === "cancel_order" && !cancellable && request.status === "pending" ? `<div class="notification-failure">Order #${escapeHtml(request.order_id || "?")} can no longer be cancelled at status ${escapeHtml(statusLabel(request.order_status))}. The backend will reject approval.</div>` : ""}
+    ${deliveryStatus === "failed" ? `<div class="notification-failure">Customer notification failed: ${escapeHtml(request.event_notification_error || request.notification_error || "Delivery failed")}</div>` : ""}
     <div class="request-actions">${request.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}${request.status === "pending" ? `${cancellable ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>` : ""}<button class="btn btn-danger btn-sm" data-resolve-request="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>` : notificationRetryable ? `<button class="btn btn-sm" data-retry-request="${escapeHtml(request.id)}">Retry notification</button>` : ""}<span class="subtle" style="margin-left:auto">${escapeHtml(dateTime(request.created_at))}</span></div></article>`;
 }
 
 function confirmRequest(requestId, decision) {
   const action = decision === "approve" ? "Approve" : "Deny";
-  showModal(`<form id="request-decision-form"><div class="modal-head"><h2>${action} request #${escapeHtml(requestId)}?</h2><button type="button" class="btn icon-btn" data-close-modal>×</button></div><div class="modal-body"><p class="muted" style="margin-top:0">This updates the database and attempts to notify the customer on WhatsApp.</p><div class="field"><label for="admin-note">Message to customer (optional)</label><textarea class="textarea" id="admin-note" name="admin_note" placeholder="Add a short explanation"></textarea></div></div><div class="modal-foot"><button type="button" class="btn" data-close-modal>Cancel</button><button type="submit" class="btn ${decision === "approve" ? "btn-primary" : "btn-danger"}">${action} request</button></div></form>`, { label: `${action} request` });
+  showModal(`<form id="request-decision-form"><div class="modal-head"><h2>${action} request #${escapeHtml(requestId)}?</h2><button type="button" class="btn icon-btn" data-close-modal>×</button></div><div class="modal-body"><p class="muted" style="margin-top:0">This commits the decision, queues a durable event, and asks n8n to notify the customer. Staff stay entirely in this dashboard.</p><div class="field"><label for="admin-note">Customer-safe reason (optional)</label><textarea class="textarea" id="admin-note" name="admin_note" placeholder="Add a short explanation"></textarea></div></div><div class="modal-foot"><button type="button" class="btn" data-close-modal>Cancel</button><button type="submit" class="btn ${decision === "approve" ? "btn-primary" : "btn-danger"}">${action} request</button></div></form>`, { label: `${action} request` });
   modalRoot.querySelector("#request-decision-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = event.currentTarget.querySelector("[type='submit']");
@@ -401,7 +445,15 @@ function confirmRequest(requestId, decision) {
       const result = await api(`/admin/requests/${requestId}/${decision}`, { method: "POST", body: JSON.stringify({ admin_note: note || undefined }) });
       closeModal();
       const decisionLabel = decision === "approve" ? "approved" : "denied";
-      toast(result.whatsapp?.sent ? `Request ${decisionLabel} and customer notified.` : `Request ${decisionLabel}; customer notification needs retry.`, result.whatsapp?.sent ? "success" : "error");
+      const deliveryStatus = result.notification?.delivery_status;
+      toast(
+        deliveryStatus === "sent"
+          ? `Request ${decisionLabel} and customer notified.`
+          : deliveryStatus === "failed"
+            ? `Request ${decisionLabel}; customer notification failed and can be retried.`
+            : `Request ${decisionLabel}; customer notification queued.`,
+        deliveryStatus === "failed" ? "error" : "success"
+      );
       loadCurrentPage();
       refreshSession();
     } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = `${action} request`; }
@@ -414,8 +466,8 @@ async function retryNotification(button) {
   button.disabled = true;
   button.textContent = "Retrying…";
   try {
-    await api(`/admin/requests/${id}/notify`, { method: "POST" });
-    toast("Customer notification sent.");
+    const result = await api(`/admin/requests/${id}/notify`, { method: "POST" });
+    toast(result.notification?.delivery_status === "sent" ? "Customer notification delivered." : "Customer notification is processing.");
     loadCurrentPage();
   } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = original; }
 }
@@ -437,7 +489,7 @@ async function openCustomer(customerId) {
     const data = await api(`/admin/customers/${customerId}`);
     const customer = data.customer;
     const currency = state.session?.restaurant?.currency || "PKR";
-    showModal(`<div class="modal-head"><div><div class="request-number">CUSTOMER #${escapeHtml(customer.id)}</div><h2>${escapeHtml(customer.name || "Unnamed customer")}</h2></div><button class="btn icon-btn" data-close-modal>×</button></div><div class="modal-body stack"><div class="detail-grid"><div class="detail-block"><div class="fact-label">WhatsApp</div><div class="fact-value">${escapeHtml(customer.whatsapp_phone)}</div></div><div class="detail-block"><div class="fact-label">Language</div><div class="fact-value">${escapeHtml(customer.preferred_language || "Not recorded")}</div></div><div class="detail-block"><div class="fact-label">Total orders</div><div class="fact-value">${customer.total_orders}</div></div><div class="detail-block"><div class="fact-label">Total spending</div><div class="fact-value">${escapeHtml(money(customer.total_spending, currency))}</div></div></div><div><div class="panel-title" style="margin-bottom:10px">Recent orders</div>${data.orders.length ? `<div class="line-items">${data.orders.map((order) => `<button class="line-item btn btn-quiet" data-view-order="${escapeHtml(order.id)}"><span>#${escapeHtml(order.id)} · ${escapeHtml(itemSummary(order.items))}</span><span>${escapeHtml(money(order.total, currency))}</span></button>`).join("")}</div>` : '<div class="muted">No orders.</div>'}</div>${data.session ? `<div><div class="panel-title" style="margin-bottom:10px">Conversation state</div><div class="detail-block"><div class="fact-value">Bot status: ${escapeHtml(statusLabel(data.session.order_status))}<br>Last activity: ${escapeHtml(dateTime(data.session.updated_at))}<br>Human handoff: ${data.session.human_handoff || data.session.awaiting_human ? "Active" : "No"}</div></div></div>` : ""}</div><div class="modal-foot"><a class="btn btn-primary" target="_blank" rel="noopener" href="https://wa.me/${escapeHtml(String(customer.whatsapp_phone).replace(/\D/g, ""))}">Open WhatsApp</a></div>`, { label: "Customer details" });
+    showModal(`<div class="modal-head"><div><div class="request-number">CUSTOMER #${escapeHtml(customer.id)}</div><h2>${escapeHtml(customer.name || "Unnamed customer")}</h2></div><button class="btn icon-btn" data-close-modal>×</button></div><div class="modal-body stack"><div class="detail-grid"><div class="detail-block"><div class="fact-label">WhatsApp</div><div class="fact-value">${escapeHtml(customer.whatsapp_phone)}</div></div><div class="detail-block"><div class="fact-label">Language</div><div class="fact-value">${escapeHtml(customer.preferred_language || "Not recorded")}</div></div><div class="detail-block"><div class="fact-label">Total orders</div><div class="fact-value">${customer.total_orders}</div></div><div class="detail-block"><div class="fact-label">Total spending</div><div class="fact-value">${escapeHtml(money(customer.total_spending, currency))}</div></div></div><div><div class="panel-title" style="margin-bottom:10px">Recent orders</div>${data.orders.length ? `<div class="line-items">${data.orders.map((order) => `<button class="line-item btn btn-quiet" data-view-order="${escapeHtml(order.id)}"><span>#${escapeHtml(order.id)} · ${escapeHtml(itemSummary(order.items))}</span><span>${escapeHtml(money(order.total, currency))}</span></button>`).join("")}</div>` : '<div class="muted">No orders.</div>'}</div>${data.session ? `<div><div class="panel-title" style="margin-bottom:10px">Conversation state</div><div class="detail-block"><div class="fact-value">Bot status: ${escapeHtml(statusLabel(data.session.order_status))}<br>Last activity: ${escapeHtml(dateTime(data.session.updated_at))}<br>Human handoff: ${data.session.human_handoff || data.session.awaiting_human ? "Active" : "No"}</div></div></div>` : ""}</div><div class="modal-foot"><span class="muted">Customer communication is handled by the bot.</span></div>`, { label: "Customer details" });
     modalRoot.querySelectorAll("[data-view-order]").forEach((button) => button.addEventListener("click", () => openOrder(button.dataset.viewOrder)));
   } catch (error) { toast(error.message, "error"); closeModal(); }
 }
@@ -555,7 +607,7 @@ async function loadSettings() {
     <form id="settings-form" class="settings-grid">
       <section class="panel settings-section"><h3>Restaurant information</h3><p>Used by the bot and admin dashboard.</p><div class="stack"><div class="field"><label for="restaurant-name">Restaurant name</label><input class="input" id="restaurant-name" name="restaurant_name" value="${escapeHtml(restaurant.restaurant_name)}" required></div><div class="detail-grid"><div class="field"><label for="currency">Currency</label><input class="input" id="currency" name="currency" value="${escapeHtml(restaurant.currency)}" maxlength="3" required></div><div class="field"><label for="delivery-charge">Delivery charge</label><input class="input" id="delivery-charge" name="delivery_charge" type="number" min="0" step="0.01" value="${escapeHtml(restaurant.delivery_charge)}" required></div></div><div class="field"><label for="opening-hours">Opening hours (JSON)</label><textarea class="textarea" id="opening-hours" name="opening_hours">${escapeHtml(JSON.stringify(restaurant.opening_hours || {}, null, 2))}</textarea></div></div></section>
       <section class="panel settings-section"><h3>Admin account</h3><p>The API key remains server-only and is never returned to this page.</p><div class="field"><label for="display-name">Display name</label><input class="input" id="display-name" name="display_name" value="${escapeHtml(admin.display_name)}" required></div><div class="integration-row"><div><div class="primary-cell">Authentication</div><div class="secondary-cell">Protected with x-admin-key</div></div>${badge("active")}</div></section>
-      <section class="panel settings-section"><h3>WhatsApp bot</h3><p>Integration readiness without exposing tokens or phone identifiers.</p><div class="integration-row"><div><div class="primary-cell">Cloud API credentials</div><div class="secondary-cell">Configured on the backend</div></div>${badge(data.integrations.whatsapp_configured ? "active" : "inactive")}</div></section>
+      <section class="panel settings-section"><h3>Customer status updates</h3><p>The backend securely dispatches durable events to n8n; no integration secret is exposed here.</p><div class="integration-row"><div><div class="primary-cell">n8n status webhook</div><div class="secondary-cell">Server-to-server authentication</div></div>${badge(data.integrations.n8n_status_webhook_configured ? "active" : "inactive")}</div></section>
       <section class="panel settings-section"><h3>Notifications & security</h3><p>Lightweight polling keeps staff informed without another external service.</p><div class="integration-row"><div><div class="primary-cell">Refresh interval</div><div class="secondary-cell">Orders, requests and notifications</div></div><span>${data.integrations.polling_seconds}s</span></div><div class="integration-row"><div><div class="primary-cell">Database access</div><div class="secondary-cell">Backend only</div></div>${badge("active")}</div></section>
       <div><button class="btn btn-primary" type="submit">Save settings</button></div>
     </form>`;

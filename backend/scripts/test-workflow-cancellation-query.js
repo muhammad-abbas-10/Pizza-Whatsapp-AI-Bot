@@ -1,7 +1,13 @@
 require("dotenv").config();
 
+const fs = require("fs");
+const path = require("path");
 const { Pool } = require("pg");
 const workflow = require("../../admin request.json");
+const migration = fs.readFileSync(
+  path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql"),
+  "utf8"
+).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -52,12 +58,13 @@ async function main() {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query(migration);
     const placeOrder = workflowQuery("Place Order");
     const requestCancellation = workflowQuery("Request Cancellation Approval");
 
     const { customerId } = await createCustomer(client, "single");
     const noOrder = await client.query(requestCancellation, [customerId, null, null, "Cancel"]);
-    if (noOrder.rows[0].error !== "no_cancellable_order" || noOrder.rows[0].admin_notification_allowed) {
+    if (noOrder.rows[0].error !== "no_cancellable_order" || noOrder.rows[0].dashboard_request_visible) {
       throw new Error("No-order cancellation guard failed");
     }
 
@@ -66,15 +73,13 @@ async function main() {
     const orderId = placed.rows[0].id;
 
     const created = await client.query(requestCancellation, [customerId, null, orderId, "Cancel my order"]);
-    if (!created.rows[0].request_created || !created.rows[0].admin_notification_allowed || String(created.rows[0].order_id) !== String(orderId)) {
+    if (!created.rows[0].request_created || !created.rows[0].dashboard_request_visible || String(created.rows[0].order_id) !== String(orderId)) {
       throw new Error("Single-order cancellation request was not linked correctly");
     }
-    if (!created.rows[0].admin_message?.includes(`APPROVE ${created.rows[0].request_id}`)
-      || !created.rows[0].admin_message?.includes(`DENY ${created.rows[0].request_id}`)) {
-      throw new Error("Cancellation alert is missing deterministic admin commands");
-    }
+    const visible = await client.query("SELECT id FROM admin_notifications WHERE source_key = $1", [`request:${created.rows[0].request_id}`]);
+    if (!visible.rows.length) throw new Error("Cancellation request is not visible in the admin dashboard");
     const repeated = await client.query(requestCancellation, [customerId, null, orderId, "Cancel again"]);
-    if (repeated.rows[0].error !== "request_already_pending" || !repeated.rows[0].admin_notification_allowed || repeated.rows[0].request_created) {
+    if (repeated.rows[0].error !== "request_already_pending" || !repeated.rows[0].dashboard_request_visible || repeated.rows[0].request_created) {
       throw new Error("Duplicate pending request was not reused");
     }
 
@@ -86,7 +91,7 @@ async function main() {
     );
     const second = await client.query(placeOrder, [multiCustomerId]);
     const ambiguous = await client.query(requestCancellation, [multiCustomerId, null, second.rows[0].id, "Cancel my order"]);
-    if (ambiguous.rows[0].error !== "multiple_cancellable_orders" || ambiguous.rows[0].admin_notification_allowed || ambiguous.rows[0].order_options.length !== 2) {
+    if (ambiguous.rows[0].error !== "multiple_cancellable_orders" || ambiguous.rows[0].dashboard_request_visible || ambiguous.rows[0].order_options.length !== 2) {
       throw new Error("Multiple-order ambiguity was not returned safely");
     }
     const explicit = await client.query(requestCancellation, [multiCustomerId, first.rows[0].id, second.rows[0].id, "Cancel the first order"]);
@@ -94,7 +99,7 @@ async function main() {
       throw new Error("Explicit order selection failed");
     }
     const invalid = await client.query(requestCancellation, [multiCustomerId, 999999999, second.rows[0].id, "Cancel unknown order"]);
-    if (invalid.rows[0].error !== "requested_order_not_found_or_not_cancellable" || invalid.rows[0].admin_notification_allowed) {
+    if (invalid.rows[0].error !== "requested_order_not_found_or_not_cancellable" || invalid.rows[0].dashboard_request_visible) {
       throw new Error("Invalid explicit order was not rejected");
     }
 
@@ -104,7 +109,7 @@ async function main() {
     console.log("No-order and invalid-order guards: passed");
     console.log("Multiple active order clarification: passed");
     console.log("Duplicate request reuse: passed");
-    console.log("Actionable admin APPROVE/DENY message: passed");
+    console.log("Dashboard-only cancellation visibility: passed");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     throw error;

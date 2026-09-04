@@ -1,8 +1,14 @@
 require("dotenv").config();
 
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 const { Pool } = require("pg");
 const workflow = require("../../admin request.json");
+const migration = fs.readFileSync(
+  path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql"),
+  "utf8"
+).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 1 });
 const query = (name) => {
@@ -15,6 +21,7 @@ async function main() {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query(migration);
     const variants = (await client.query(`
       SELECT mi.id AS menu_item_id, mi.name, mv.id AS variant_id, mv.variant_label, mv.price
       FROM restaurant_menu_items mi JOIN restaurant_menu_variants mv ON mv.menu_item_id = mi.id
@@ -45,7 +52,9 @@ async function main() {
     assert.equal(upsertState.active_order_status, "received", "Active order status was not loaded from orders");
     const corrected = await client.query(query("Update Placed Order Delivery Info"), [customerId, placed.id, "Correct Name", "Correct Address"]);
     assert.equal(corrected.rows.length, 1);
-    await client.query("UPDATE orders SET status = 'out_for_delivery' WHERE id = $1", [placed.id]);
+    await client.query("UPDATE orders SET status = 'preparing' WHERE id = $1", [placed.id]);
+    await client.query("UPDATE orders SET status = 'oven' WHERE id = $1", [placed.id]);
+    await client.query("UPDATE orders SET status = 'completed' WHERE id = $1", [placed.id]);
     const tooLate = await client.query(query("Update Placed Order Delivery Info"), [customerId, placed.id, "Late Name", "Late Address"]);
     assert.equal(tooLate.rows.length, 0, "Delivery information changed after the allowed order states");
 

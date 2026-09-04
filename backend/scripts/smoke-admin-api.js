@@ -28,7 +28,7 @@ async function main() {
   await check("Invalid order date range", "/admin/orders?date_from=2026-02-02&date_to=2026-02-01", {}, 400);
   const orders = await check("Orders filters", "/admin/orders?scope=active&page=1&limit=2&search=Abbas");
   if (orders.orders[0]) await check("Order details", `/admin/orders/${orders.orders[0].id}`);
-  await check("Invalid order transition", "/admin/orders/1/status", { method: "PATCH", body: JSON.stringify({ status: "completed" }) }, 409);
+  await check("Invalid order status", "/admin/orders/1/status", { method: "PATCH", body: JSON.stringify({ status: "not-a-status" }) }, 400);
   await check("Order history", "/admin/orders?scope=history&page=1&limit=10");
   await check("Order history export", "/admin/order-history/export.csv");
   const requests = await check("Requests", "/admin/requests?page=1&limit=10");

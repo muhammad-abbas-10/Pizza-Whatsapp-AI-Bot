@@ -190,6 +190,7 @@ img { display: block; max-width: 100%; }
 .badge::before { content: ""; width: 5px; height: 5px; border-radius: 99px; background: currentColor; }
 .badge-received, .badge-pending { color: var(--amber); background: rgba(230, 168, 60, .11); }
 .badge-preparing { color: #ee8a48; background: rgba(238, 138, 72, .11); }
+.badge-oven { color: #ff6b3d; background: rgba(255, 107, 61, .12); }
 .badge-out_for_delivery { color: var(--blue); background: rgba(93, 142, 226, .11); }
 .badge-completed, .badge-approved, .badge-active { color: var(--green); background: rgba(71, 185, 120, .11); }
 .badge-cancelled, .badge-denied, .badge-inactive { color: var(--red); background: rgba(226, 93, 93, .11); }

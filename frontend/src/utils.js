@@ -42,7 +42,7 @@ export function relativeTime(value) {
 
 export function statusLabel(status) {
   return ({
-    received: "Pending", preparing: "Preparing", out_for_delivery: "Out for delivery",
+    received: "Received", preparing: "Preparing", oven: "Oven", out_for_delivery: "Out for delivery",
     completed: "Delivered", cancelled: "Cancelled", approved: "Approved", denied: "Denied",
     pending: "Pending", active: "Active", inactive: "Inactive", delivery: "Delivery", pickup: "Pickup",
   })[status] || String(status || "Unknown").replaceAll("_", " ");

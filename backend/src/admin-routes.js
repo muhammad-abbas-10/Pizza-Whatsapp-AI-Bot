@@ -4,109 +4,16 @@
 // deployment (api/index.js) so the logic only lives in one place.
 //
 // Required env vars:
-//   ADMIN_API_KEY            - shared secret the dashboard sends as x-admin-key
-//   WHATSAPP_TOKEN            - permanent/system-user token for the Cloud API
-//   WHATSAPP_PHONE_NUMBER_ID  - the sending number's phone_number_id
-//   WHATSAPP_GRAPH_API_VERSION - supported Graph API version (for example v23.0)
+//   ADMIN_API_KEY             - shared secret the dashboard sends as x-admin-key
+//   N8N_ADMIN_WEBHOOK_URL     - private dashboard-event webhook
+//   N8N_ADMIN_WEBHOOK_SECRET  - server-to-server webhook credential
 
 const crypto = require("crypto");
-// Do not leave this on an expired Graph API version.  It is configurable so
-// deployments can be updated without changing application code.
-const WHATSAPP_API_VERSION = process.env.WHATSAPP_GRAPH_API_VERSION || "v23.0";
-
-// Keep this byte-for-byte equivalent to the n8n "Claim Customer Notification"
-// node. Both delivery paths use the same database lease, so only one caller can
-// send a resolved-request notification.
-const CUSTOMER_NOTIFICATION_CLAIM_SQL = `UPDATE admin_requests
-SET notification_claim_token = $2::text,
-    notification_claimed_at = NOW()
-WHERE id = $1::bigint
-  AND status IN ('approved', 'denied')
-  AND notification_sent = FALSE
-  AND (
-    notification_claim_token IS NULL
-    OR notification_claimed_at < NOW() - INTERVAL '2 minutes'
-  )
-RETURNING id;`;
-
-async function sendWhatsAppMessage(to, body) {
-  const token = process.env.WHATSAPP_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-
-  if (!token || !phoneNumberId) {
-    console.error(
-      "WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID not configured — skipping customer notification"
-    );
-    return {
-      sent: false,
-      error: "WhatsApp notification failed",
-      message: "WhatsApp credentials are not configured on the backend",
-      reason: "not_configured",
-    };
-  }
-
-  const recipient = String(to || "").replace(/\D/g, "");
-  if (!/^\d{8,15}$/.test(recipient)) {
-    return {
-      sent: false,
-      error: "WhatsApp notification failed",
-      message: "The customer phone number is not a valid international WhatsApp number",
-      reason: "invalid_recipient",
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${phoneNumberId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: recipient,
-          type: "text",
-          text: { body },
-        }),
-        signal: AbortSignal.timeout(15000),
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text();
-      let metaMessage = "";
-      try {
-        const metaError = JSON.parse(errText)?.error;
-        metaMessage = metaError?.message || metaError?.error_user_msg || "";
-      } catch {
-        // Non-JSON response: the HTTP status is still useful to the caller.
-      }
-      console.error("WhatsApp send failed:", response.status, errText);
-      const reason = `whatsapp_http_${response.status}${metaMessage ? `: ${metaMessage.slice(0, 500)}` : ""}`;
-      return {
-        sent: false,
-        error: "WhatsApp notification failed",
-        message: metaMessage || `WhatsApp API returned HTTP ${response.status}`,
-        // Keep the dashboard/DB diagnostic short; don't store a full provider payload.
-        reason,
-      };
-    }
-
-    const responseBody = await response.json().catch(() => ({}));
-    return { sent: true, messageId: responseBody.messages?.[0]?.id || null };
-  } catch (error) {
-    console.error("WhatsApp send error:", error.message);
-    const timedOut = error.name === "TimeoutError";
-    return {
-      sent: false,
-      error: "WhatsApp notification failed",
-      message: timedOut ? "WhatsApp API timed out" : "WhatsApp API is unavailable",
-      reason: timedOut ? "whatsapp_timeout" : "whatsapp_unavailable",
-    };
-  }
-}
+const {
+  dispatchCustomerNotificationEvent,
+  loadCustomerNotificationEvent,
+  publicEvent,
+} = require("./customer-notification-events");
 
 const failedAdminAttempts = new Map();
 
@@ -158,16 +65,11 @@ function csvCell(value) {
   return `"${safe.replace(/"/g, '""')}"`;
 }
 
-const ORDER_STATUSES = ["received", "preparing", "out_for_delivery", "completed", "cancelled"];
-const ALLOWED_STATUS_TRANSITIONS = {
-  received: ["preparing", "cancelled"],
-  preparing: ["out_for_delivery", "completed", "cancelled"],
-  out_for_delivery: ["completed", "cancelled"],
-  completed: [],
-  cancelled: [],
-};
+const ORDER_STATUSES = ["received", "preparing", "oven", "out_for_delivery", "completed", "cancelled"];
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = {}) {
+function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
+  const deliverEvent = dispatchEvent || ((eventId) => dispatchCustomerNotificationEvent(pool, eventId));
   app.use("/admin", requireAdminKey);
 
   // --------------------------------------------------
@@ -230,11 +132,22 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
         SELECT
           o.id, o.items, o.order_type, o.delivery_address, o.delivery_name,
           o.subtotal, o.delivery_charge, o.total, o.status,
+          allowed_order_status_transitions_for_order(o.status, o.order_type) AS allowed_transitions,
           o.created_at, o.updated_at,
           c.name AS customer_name, c.whatsapp_phone AS customer_phone,
+          latest_event.id AS notification_event_id,
+          latest_event.delivery_status AS notification_status,
+          latest_event.last_error AS notification_error,
           COUNT(*) OVER() AS total_count
         FROM orders o
         JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN LATERAL (
+          SELECT e.id, e.delivery_status, e.last_error
+          FROM customer_notification_events e
+          WHERE e.order_id = o.id
+          ORDER BY e.created_at DESC, e.id DESC
+          LIMIT 1
+        ) latest_event ON TRUE
         ${where}
         ORDER BY o.created_at DESC
         LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -257,64 +170,193 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
       return res.status(400).json({ success: false, message: "Invalid order id" });
     }
     try {
-      const [result, history] = await Promise.all([
+      const [result, history, notifications] = await Promise.all([
         pool.query(`
-          SELECT o.*, c.name AS customer_name, c.whatsapp_phone AS customer_phone
+          SELECT o.*, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
+                 allowed_order_status_transitions_for_order(o.status, o.order_type) AS allowed_transitions,
+                 order_is_cancellable(o.status) AS cancellable
           FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = $1`, [orderId]),
-        pool.query(`SELECT status, created_at FROM order_status_history WHERE order_id = $1 ORDER BY created_at`, [orderId]),
+        pool.query(`SELECT id, status, source, request_id, created_at FROM order_status_history WHERE order_id = $1 ORDER BY created_at`, [orderId]),
+        pool.query(`
+          SELECT id, request_id, event_type, order_status, decision, delivery_status,
+                 attempts, provider_message_id, last_error, created_at, updated_at, sent_at
+          FROM customer_notification_events
+          WHERE order_id = $1 ORDER BY created_at DESC, id DESC LIMIT 20`, [orderId]),
       ]);
       if (!result.rows.length) return res.status(404).json({ success: false, message: "Order not found" });
-      return res.json({ success: true, order: result.rows[0], history: history.rows });
+      return res.json({ success: true, order: result.rows[0], history: history.rows, notifications: notifications.rows.map(publicEvent) });
     } catch (error) {
       console.error("Get order error:", error);
       return res.status(500).json({ success: false, message: "Failed to load order" });
     }
   });
 
-  // PATCH /admin/orders/:id/status  { status }
+  // PATCH /admin/orders/:id/status  { status, expected_status?, request_id? }
   app.patch("/admin/orders/:id/status", async (req, res) => {
+    const orderId = Number(req.params.id);
+    const { status } = req.body || {};
+    const expectedStatus = req.body?.expected_status;
+    const suppliedRequestId = req.body?.request_id;
+    const requestId = suppliedRequestId || crypto.randomUUID();
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid order id" });
+    }
+
+    if (!ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `status must be one of: ${ORDER_STATUSES.join(", ")}`,
+      });
+    }
+    if (expectedStatus !== undefined && !ORDER_STATUSES.includes(expectedStatus)) {
+      return res.status(400).json({ success: false, message: "expected_status is invalid" });
+    }
+    if (!REQUEST_ID_PATTERN.test(requestId)) {
+      return res.status(400).json({ success: false, message: "request_id must be a UUID" });
+    }
+
+    const client = await pool.connect();
+    let clientReleased = false;
+    let committed = false;
+    let event;
+    let order;
     try {
-      const orderId = Number(req.params.id);
-      const { status } = req.body || {};
-
-      if (!Number.isInteger(orderId) || orderId <= 0) {
-        return res.status(400).json({ success: false, message: "Invalid order id" });
+      await client.query("BEGIN");
+      const existingRequest = await client.query(
+        `SELECT * FROM customer_notification_events WHERE request_id = $1 FOR UPDATE`,
+        [requestId]
+      );
+      if (existingRequest.rows.length) {
+        event = existingRequest.rows[0];
+        if (String(event.order_id) !== String(orderId) || event.order_status !== status) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "request_id was already used for a different action" });
+        }
+        order = (await client.query(
+          `SELECT o.*, allowed_order_status_transitions_for_order(o.status, o.order_type) AS allowed_transitions
+           FROM orders o WHERE id = $1`, [orderId]
+        )).rows[0];
+        await client.query("COMMIT");
+        committed = true;
+        return res.json({ success: true, already_applied: true, order, notification: publicEvent(event) });
       }
 
-      if (!ORDER_STATUSES.includes(status)) {
-        return res.status(400).json({
-          success: false,
-          message: `status must be one of: ${ORDER_STATUSES.join(", ")}`,
-        });
-      }
-
-      const current = await pool.query(`SELECT status FROM orders WHERE id = $1`, [orderId]);
-
-      if (current.rows.length === 0) {
+      const current = await client.query(
+        `SELECT o.*, allowed_order_status_transitions_for_order(o.status, o.order_type) AS allowed_transitions
+         FROM orders o WHERE id = $1 FOR UPDATE`, [orderId]
+      );
+      if (!current.rows.length) {
+        await client.query("ROLLBACK");
         return res.status(404).json({ success: false, message: "Order not found" });
       }
 
       const currentStatus = current.rows[0].status;
-      if (status !== currentStatus && !ALLOWED_STATUS_TRANSITIONS[currentStatus]?.includes(status)) {
+      if (expectedStatus !== undefined && currentStatus !== expectedStatus) {
+        await client.query("ROLLBACK");
         return res.status(409).json({
           success: false,
-          message: `Cannot change order from ${currentStatus} to ${status}`,
+          message: `Order changed from ${expectedStatus} to ${currentStatus}; refresh before taking another action`,
         });
       }
-
-      const result = await pool.query(
-        `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND status = $3 RETURNING *`,
-        [status, orderId, currentStatus]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(409).json({ success: false, message: "Order changed; refresh and try again" });
+      if (status === currentStatus) {
+        event = (await client.query(
+          `SELECT * FROM customer_notification_events
+           WHERE order_id = $1 AND order_status = $2
+           ORDER BY created_at DESC, id DESC LIMIT 1`, [orderId, status]
+        )).rows[0] || null;
+        await client.query("COMMIT");
+        committed = true;
+        return res.json({ success: true, already_applied: true, order: current.rows[0], notification: publicEvent(event) });
       }
 
-      return res.json({ success: true, order: result.rows[0] });
+      const allowed = await client.query(
+        `SELECT can_transition_order_status_for_order($1, $2, $3) AS allowed`,
+        [currentStatus, status, current.rows[0].order_type]
+      );
+      if (!allowed.rows[0]?.allowed) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: `Cannot change order from ${currentStatus} to ${status}` });
+      }
+
+      await client.query(`SELECT set_config('app.order_status_source', 'admin_dashboard', TRUE)`);
+      await client.query(`SELECT set_config('app.order_status_request_id', $1, TRUE)`, [requestId]);
+      const updated = await client.query(
+        `UPDATE orders SET status = $1, updated_at = NOW()
+         WHERE id = $2 AND status = $3
+         RETURNING *, allowed_order_status_transitions_for_order(status, order_type) AS allowed_transitions`,
+        [status, orderId, currentStatus]
+      );
+      if (!updated.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: "Order changed; refresh and try again" });
+      }
+      order = updated.rows[0];
+
+      const history = await client.query(
+        `SELECT id FROM order_status_history WHERE request_id = $1 AND order_id = $2`,
+        [requestId, orderId]
+      );
+      if (!history.rows.length) throw new Error("Status history was not recorded");
+
+      const inserted = await client.query(
+        `INSERT INTO customer_notification_events (
+           request_id, idempotency_key, event_type, order_id, customer_id,
+           status_history_id, order_status
+         ) VALUES ($1, $2, 'order_status_update', $3, $4, $5, $6)
+         RETURNING *`,
+        [requestId, `order_status:${orderId}:${history.rows[0].id}`, orderId, order.customer_id, history.rows[0].id, status]
+      );
+      event = inserted.rows[0];
+      await client.query("COMMIT");
+      committed = true;
+
+      client.release();
+      clientReleased = true;
+      const delivery = await deliverEvent(event.id);
+      return res.json({
+        success: true,
+        already_applied: false,
+        order,
+        notification: delivery.event || publicEvent(event),
+        notification_lifecycle: delivery.lifecycle,
+      });
     } catch (error) {
+      if (!committed) await client.query("ROLLBACK").catch(() => {});
       console.error("Update order status error:", error);
       return res.status(500).json({ success: false, message: "Failed to update order" });
+    } finally {
+      if (!clientReleased) client.release();
+    }
+  });
+
+  app.post("/admin/orders/:id/notifications/:eventId/retry", async (req, res) => {
+    const orderId = Number(req.params.id);
+    const eventId = Number(req.params.eventId);
+    if (![orderId, eventId].every((value) => Number.isInteger(value) && value > 0)) {
+      return res.status(400).json({ success: false, message: "Invalid order or notification id" });
+    }
+    try {
+      const event = await loadCustomerNotificationEvent(pool, eventId);
+      if (!event || String(event.order_id) !== String(orderId)) {
+        return res.status(404).json({ success: false, message: "Notification event not found for this order" });
+      }
+      const delivery = await deliverEvent(eventId);
+      return res.status(delivery.lifecycle === "failed" ? 502 : 200).json({
+        success: delivery.lifecycle !== "failed",
+        notification: delivery.event,
+        notification_lifecycle: delivery.lifecycle,
+        message: delivery.lifecycle === "sent" || delivery.lifecycle === "duplicate"
+          ? "Customer notification delivered"
+          : delivery.lifecycle === "processing"
+            ? "Customer notification is processing"
+            : delivery.lifecycle === "superseded"
+              ? "A newer status superseded this notification"
+            : "Customer notification failed",
+      });
+    } catch (error) {
+      console.error("Retry order notification error:", error);
+      return res.status(500).json({ success: false, message: "Failed to retry customer notification" });
     }
   });
 
@@ -361,10 +403,20 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
           c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
           o.id AS order_id, o.status AS order_status, o.total AS order_total,
           o.items AS order_items, o.delivery_address, o.order_type,
+          order_is_cancellable(o.status) AS order_cancellable,
+          latest_event.id AS notification_event_id,
+          latest_event.delivery_status AS notification_delivery_status,
+          latest_event.last_error AS event_notification_error,
           COUNT(*) OVER() AS total_count
         FROM admin_requests r
         JOIN customers c ON c.id = r.customer_id
         LEFT JOIN orders o ON o.id = r.order_id
+        LEFT JOIN LATERAL (
+          SELECT e.id, e.delivery_status, e.last_error
+          FROM customer_notification_events e
+          WHERE e.admin_request_id = r.id
+          ORDER BY e.created_at DESC, e.id DESC LIMIT 1
+        ) latest_event ON TRUE
         ${where}
         ORDER BY r.created_at DESC
         LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -395,10 +447,20 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
           r.notification_attempts, r.last_notification_attempt_at,
           c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
           o.id AS order_id, o.status AS order_status, o.total AS order_total,
-          o.items AS order_items, o.delivery_address, o.delivery_name, o.order_type
+          o.items AS order_items, o.delivery_address, o.delivery_name, o.order_type,
+          order_is_cancellable(o.status) AS order_cancellable,
+          latest_event.id AS notification_event_id,
+          latest_event.delivery_status AS notification_delivery_status,
+          latest_event.last_error AS event_notification_error
         FROM admin_requests r
         JOIN customers c ON c.id = r.customer_id
         LEFT JOIN orders o ON o.id = r.order_id
+        LEFT JOIN LATERAL (
+          SELECT e.id, e.delivery_status, e.last_error
+          FROM customer_notification_events e
+          WHERE e.admin_request_id = r.id
+          ORDER BY e.created_at DESC, e.id DESC LIMIT 1
+        ) latest_event ON TRUE
         WHERE r.id = $1
         `,
         [requestId]
@@ -413,103 +475,6 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
     }
   });
 
-  function resolvedRequestMessage(status, adminNote) {
-    const defaultMessage = status === "approved"
-      ? "Update on your request: it's been approved. ✅"
-      : "Update on your request: unfortunately we're not able to do that this time.";
-    return adminNote ? `${defaultMessage}\n\n${adminNote}` : defaultMessage;
-  }
-
-  // Claim first and commit before the provider call. n8n uses the same SQL, so
-  // dashboard and WhatsApp-admin decisions cannot both send the customer reply.
-  async function notifyResolvedRequest(requestId) {
-    const client = await pool.connect();
-    const claimToken = `req-${crypto.randomUUID()}`;
-    try {
-      const claim = await client.query(CUSTOMER_NOTIFICATION_CLAIM_SQL, [requestId, claimToken]);
-      if (claim.rows.length === 0) {
-        return { found: true, whatsapp: { sent: true, alreadySent: true } };
-      }
-
-      const { rows } = await client.query(
-        `
-        SELECT r.status, r.request_type, r.order_id, r.admin_note, c.whatsapp_phone
-        FROM admin_requests r
-        JOIN customers c ON c.id = r.customer_id
-        WHERE r.id = $1 AND r.notification_claim_token = $2
-        `,
-        [requestId, claimToken]
-      );
-      if (rows.length === 0) {
-        return { found: true, whatsapp: { sent: true, alreadySent: true } };
-      }
-      if (rows[0].status === "approved" && rows[0].request_type === "cancel_order" && !rows[0].order_id) {
-        await client.query(
-          `UPDATE admin_requests
-           SET notification_claim_token = NULL, notification_claimed_at = NULL
-           WHERE id = $1 AND notification_claim_token = $2`,
-          [requestId, claimToken]
-        );
-        return {
-          found: true,
-          blocked: true,
-          whatsapp: {
-            sent: false,
-            error: "Cancellation request is not linked to an order",
-            message: "An approval notification cannot be sent because no order was cancelled",
-            reason: "unlinked_order",
-          },
-        };
-      }
-
-      const whatsapp = await sendMessage(
-        rows[0].whatsapp_phone,
-        resolvedRequestMessage(rows[0].status, rows[0].admin_note)
-      );
-      if (whatsapp.sent) {
-        await client.query(
-          `UPDATE admin_requests
-           SET notification_sent = TRUE,
-               notification_error = NULL,
-               notification_attempts = notification_attempts + 1,
-               last_notification_attempt_at = NOW(),
-               notification_message_id = $3,
-               notification_claim_token = NULL,
-               notification_claimed_at = NULL
-           WHERE id = $1 AND notification_sent = FALSE
-             AND notification_claim_token = $2`,
-          [requestId, claimToken, whatsapp.messageId || null]
-        );
-      } else {
-        // A failed provider attempt is retryable immediately; a crashed process
-        // is retryable automatically when the shared two-minute lease expires.
-        await client.query(
-          `UPDATE admin_requests
-           SET notification_error = $3,
-               notification_attempts = notification_attempts + 1,
-               last_notification_attempt_at = NOW(),
-               notification_claim_token = NULL,
-               notification_claimed_at = NULL
-           WHERE id = $1 AND notification_sent = FALSE
-             AND notification_claim_token = $2`,
-          [requestId, claimToken, String(whatsapp.reason || "unknown error")]
-        );
-      }
-      return { found: true, whatsapp };
-    } catch (error) {
-      await client.query(
-        `UPDATE admin_requests
-         SET notification_claim_token = NULL, notification_claimed_at = NULL
-         WHERE id = $1 AND notification_sent = FALSE
-           AND notification_claim_token = $2`,
-        [requestId, claimToken]
-      ).catch(() => {});
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
   async function resolveRequest(req, res, decision) {
     const requestId = Number(req.params.id);
     const { admin_note } = req.body || {};
@@ -520,18 +485,15 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
       return res.status(400).json({ success: false, message: "Admin note must be 2,000 characters or fewer" });
     }
 
+    const eventRequestId = crypto.randomUUID();
     const client = await pool.connect();
+    let clientReleased = false;
     let committed = false;
+    let event;
     try {
       await client.query("BEGIN");
       const { rows } = await client.query(
-        `
-        SELECT r.*, o.status AS linked_order_status, o.customer_id AS order_customer_id
-        FROM admin_requests r
-        LEFT JOIN orders o ON o.id = r.order_id
-        WHERE r.id = $1
-        FOR UPDATE OF r
-        `,
+        `SELECT * FROM admin_requests WHERE id = $1 FOR UPDATE`,
         [requestId]
       );
       if (rows.length === 0) {
@@ -541,6 +503,11 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
 
       const requestRow = rows[0];
       if (requestRow.status !== "pending") {
+        event = (await client.query(
+          `SELECT * FROM customer_notification_events
+           WHERE admin_request_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
+          [requestId]
+        )).rows[0] || null;
         await client.query("COMMIT");
         committed = true;
         if (requestRow.status !== decision) {
@@ -549,71 +516,142 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
         return res.json({
           success: true,
           decision,
-          alreadyResolved: true,
-          whatsapp: { sent: requestRow.notification_sent, alreadySent: requestRow.notification_sent },
+          already_resolved: true,
+          notification: publicEvent(event),
         });
       }
 
-      if (requestRow.request_type === "cancel_order" && decision === "approved") {
-        if (!requestRow.order_id || !requestRow.linked_order_status) {
-          await client.query("ROLLBACK");
-          return res.status(409).json({
-            success: false,
-            error: "Cancellation request is not linked to an order",
-            message: "This request cannot be approved because no order is linked to it",
-          });
-        }
-        if (String(requestRow.order_customer_id) !== String(requestRow.customer_id)) {
-          await client.query("ROLLBACK");
-          return res.status(409).json({
-            success: false,
-            error: "Cancellation request has an invalid order link",
-            message: "The linked order does not belong to this customer",
-          });
-        }
-        if (requestRow.linked_order_status === "completed") {
-          await client.query("ROLLBACK");
-          return res.status(409).json({ success: false, message: "A completed order cannot be cancelled" });
-        }
-        if (requestRow.linked_order_status !== "cancelled") {
-          const cancelled = await client.query(
-            `UPDATE orders SET status = 'cancelled', updated_at = NOW()
-             WHERE id = $1 AND status IN ('received', 'preparing', 'out_for_delivery')
-             RETURNING id`,
-            [requestRow.order_id]
-          );
-          if (cancelled.rows.length === 0) {
-            await client.query("ROLLBACK");
-            return res.status(409).json({ success: false, message: "This order can no longer be cancelled" });
-          }
-        }
-        await client.query(
-          `UPDATE conversation_sessions
-           SET order_status = 'cancelled', awaiting_human = FALSE, updated_at = NOW()
-           WHERE customer_id = $1 AND active_order_id = $2`,
-          [requestRow.customer_id, requestRow.order_id]
+      if (requestRow.request_type !== "cancel_order") {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: "Only cancellation decisions are supported by this workflow" });
+      }
+      if (!requestRow.order_id) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: "This cancellation request is not linked to an order" });
+      }
+
+      const orderResult = await client.query(
+        `SELECT o.*, order_is_cancellable(o.status) AS cancellable
+         FROM orders o WHERE o.id = $1 FOR UPDATE`,
+        [requestRow.order_id]
+      );
+      if (!orderResult.rows.length || String(orderResult.rows[0].customer_id) !== String(requestRow.customer_id)) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: "The linked order does not belong to this customer" });
+      }
+      const order = orderResult.rows[0];
+
+      if (decision === "approved" && !order.cancellable && order.status !== "cancelled") {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          success: false,
+          message: `Order #${order.id} can no longer be cancelled because it is ${order.status}`,
+        });
+      }
+
+      let historyId = null;
+      if (decision === "approved" && order.status !== "cancelled") {
+        await client.query(`SELECT set_config('app.order_status_source', 'customer_cancellation', TRUE)`);
+        await client.query(`SELECT set_config('app.order_status_request_id', $1, TRUE)`, [eventRequestId]);
+        const cancelled = await client.query(
+          `UPDATE orders SET status = 'cancelled', updated_at = NOW()
+           WHERE id = $1 AND order_is_cancellable(status)
+           RETURNING id`,
+          [requestRow.order_id]
         );
+        if (!cancelled.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "This order can no longer be cancelled" });
+        }
+        historyId = (await client.query(
+          `SELECT id FROM order_status_history WHERE request_id = $1 AND order_id = $2`,
+          [eventRequestId, requestRow.order_id]
+        )).rows[0]?.id;
+        if (!historyId) throw new Error("Cancellation status history was not recorded");
       }
 
       await client.query(
-        `UPDATE admin_requests SET status = $1, admin_note = $2, resolved_at = NOW() WHERE id = $3`,
-        [decision, admin_note?.trim() || null, requestId]
+        `UPDATE admin_requests
+         SET status = $1, admin_note = $2, resolved_at = NOW(),
+             notification_sent = FALSE, notification_error = NULL,
+             notification_claim_token = NULL, notification_claimed_at = NULL,
+             resolved_by_phone = NULL, resolved_by_message_id = $3
+         WHERE id = $4`,
+        [decision, admin_note?.trim() || null, `dashboard:${eventRequestId}`, requestId]
       );
       await client.query(
-        `UPDATE conversation_sessions SET awaiting_human = FALSE, updated_at = NOW() WHERE customer_id = $1`,
-        [requestRow.customer_id]
+        `UPDATE conversation_sessions
+         SET awaiting_human = EXISTS (
+               SELECT 1 FROM admin_requests pending
+               WHERE pending.customer_id = $1 AND pending.status = 'pending'
+             ),
+             order_status = CASE
+               WHEN $2 = 'approved' AND active_order_id = $3 THEN 'cancelled'
+               ELSE order_status
+             END,
+             updated_at = NOW()
+         WHERE customer_id = $1`,
+        [requestRow.customer_id, decision, requestRow.order_id]
       );
+
+      if (decision === "approved" && order.status === "cancelled") {
+        event = (await client.query(
+          `SELECT * FROM customer_notification_events
+           WHERE order_id = $1 AND order_status = 'cancelled'
+           ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`,
+          [requestRow.order_id]
+        )).rows[0] || null;
+        if (event && !event.admin_request_id) {
+          event = (await client.query(
+            `UPDATE customer_notification_events SET admin_request_id = $1, updated_at = NOW()
+             WHERE id = $2 RETURNING *`, [requestId, event.id]
+          )).rows[0];
+        }
+      }
+
+      if (!event) {
+        const eventType = decision === "approved" ? "order_status_update" : "cancellation_denied";
+        const inserted = await client.query(
+          `INSERT INTO customer_notification_events (
+             request_id, idempotency_key, event_type, order_id, customer_id,
+             status_history_id, admin_request_id, order_status, decision, admin_note
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           ON CONFLICT (idempotency_key) DO UPDATE SET admin_request_id = EXCLUDED.admin_request_id
+           RETURNING *`,
+          [
+            eventRequestId,
+            `cancel_request:${requestId}:${decision}`,
+            eventType,
+            requestRow.order_id,
+            requestRow.customer_id,
+            historyId,
+            requestId,
+            decision === "approved" ? "cancelled" : order.status,
+            decision,
+            admin_note?.trim() || null,
+          ]
+        );
+        event = inserted.rows[0];
+      }
+
       await client.query("COMMIT");
       committed = true;
 
-      const notification = await notifyResolvedRequest(requestId);
-      return res.json({ success: true, decision, whatsapp: notification.whatsapp });
+      client.release();
+      clientReleased = true;
+      const delivery = await deliverEvent(event.id);
+      return res.json({
+        success: true,
+        decision,
+        notification: delivery.event || publicEvent(event),
+        notification_lifecycle: delivery.lifecycle,
+      });
     } catch (error) {
       if (!committed) await client.query("ROLLBACK").catch(() => {});
       console.error("Resolve admin request error:", error);
       return res.status(500).json({ success: false, message: "Failed to resolve request" });
     } finally {
-      client.release();
+      if (!clientReleased) client.release();
     }
   }
 
@@ -628,19 +666,24 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
     }
 
     try {
-      const notification = await notifyResolvedRequest(requestId);
-      if (!notification.found) {
-        return res.status(404).json({ success: false, message: "Resolved request not found" });
-      }
-      const { whatsapp } = notification;
-      if (notification.blocked) {
-        return res.status(409).json({ success: false, error: whatsapp.error, message: whatsapp.message, whatsapp });
-      }
-      return res.status(whatsapp.sent ? 200 : 502).json({
-        success: whatsapp.sent,
-        error: whatsapp.sent ? undefined : "WhatsApp notification failed",
-        message: whatsapp.sent ? "Customer notified" : whatsapp.message,
-        whatsapp,
+      const event = (await pool.query(
+        `SELECT * FROM customer_notification_events
+         WHERE admin_request_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
+        [requestId]
+      )).rows[0];
+      if (!event) return res.status(404).json({ success: false, message: "Resolved request notification not found" });
+      const delivery = await deliverEvent(event.id);
+      return res.status(delivery.lifecycle === "failed" ? 502 : 200).json({
+        success: delivery.lifecycle !== "failed",
+        message: delivery.lifecycle === "sent" || delivery.lifecycle === "duplicate"
+          ? "Customer notification delivered"
+          : delivery.lifecycle === "processing"
+            ? "Customer notification is processing"
+            : delivery.lifecycle === "superseded"
+              ? "A newer status superseded this notification"
+            : "Customer notification failed",
+        notification: delivery.event,
+        notification_lifecycle: delivery.lifecycle,
       });
     } catch (error) {
       console.error("Retry notification error:", error);
@@ -665,7 +708,7 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
         admin: profileResult.rows[0] || null,
         unread_notifications: unreadResult.rows[0]?.count || 0,
         integrations: {
-          whatsapp_configured: Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
+          n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL && process.env.N8N_ADMIN_WEBHOOK_SECRET),
           database_connected: true,
         },
       });
@@ -1136,7 +1179,7 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
         restaurant: restaurant.rows[0] || null,
         admin: profile.rows[0] || null,
         integrations: {
-          whatsapp_configured: Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
+          n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL && process.env.N8N_ADMIN_WEBHOOK_SECRET),
           polling_seconds: 15,
         },
       });
@@ -1193,7 +1236,6 @@ function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = 
 
 module.exports = {
   registerAdminRoutes,
-  sendWhatsAppMessage,
   requireAdminKey,
-  CUSTOMER_NOTIFICATION_CLAIM_SQL,
+  ORDER_STATUSES,
 };
