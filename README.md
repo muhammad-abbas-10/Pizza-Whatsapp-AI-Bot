@@ -4,7 +4,7 @@ A WhatsApp-based AI ordering system for **Pizza Bar**. It uses the Meta WhatsApp
 
 ## Project status
 
-The workflow runs end-to-end as a single AI agent: a customer can message the bot in English, Urdu, or Roman Urdu, ask menu/pricing questions, build and edit a cart (items and deals), set order type and delivery info, confirm and place an order, cancel a draft order, request a human, complain about an order, and ask to see menu photos — all handled by one LangChain agent node deciding which tool (if any) to call each turn. Small-group friend-testing (beyond the original single test customer) has surfaced and fixed several real-world edge cases: WhatsApp status-webhook noise, rapid-fire multi-message bursts, dropped conversational context, and an agent that occasionally claimed to have escalated a complaint without actually doing so. Remaining work is centered on further multilingual regression testing, concurrency testing with more simultaneous users, and Meta production onboarding.
+The workflow uses a small deterministic router for greetings/help and a focused AI agent for ordering turns. The agent loads only exact mentioned menu records and uses an on-demand database lookup instead of receiving the entire menu on every message. Customers can ask menu/pricing questions, build and edit a cart, choose delivery/pickup, place an order, request cancellation, ask for a human, complain, and request menu photos in English, Urdu, or Roman Urdu.
 
 ## Goals
 
@@ -59,7 +59,7 @@ WhatsApp Trigger → Normalize → text-event guard → workflow configuration
                                   ↙                   ↘
 ADMIN PATH                                              CUSTOMER PATH
 durable admin-message claim                             durable buffer insert
-→ parse APPROVE/DENY (no AI)                            → wait 7 seconds
+→ parse APPROVE/DENY (no AI)                            → wait 2 seconds
 → atomic request/order update                           → claim latest serialized turn
 → notify affected customer                              → upsert customer/session
 → acknowledge admin                                     → load menu/settings
@@ -75,7 +75,7 @@ Schema creation is migration-only. Apply the additive runtime migrations through
 
 ## Core safety rules
 
-1. Never invent menu items, deals, prices, ids, or policies — the agent is instructed to ground every product mention in the exact `MENU_DATA`/`MENU_RULES` it's given, and every price is still validated/recalculated in SQL (`Update Cart`, `Place Order`) rather than trusted from the AI's output.
+1. Never invent menu items, deals, prices, ids, or policies — product facts come from the relevant-menu query or `Menu Lookup`, and SQL recalculates prices at cart update and placement rather than trusting AI output.
 2. Never place an order without explicit customer confirmation, a set order type, and (for delivery) saved name + address — enforced both in the agent's instructions and again in `Place Order`'s SQL guard.
 3. Save the order successfully before claiming it was placed (`order_created` is checked, never assumed).
 4. Never claim an action happened — cart updated, order placed/cancelled, or a complaint escalated/team notified — unless the matching tool was actually called this turn. This was a real bug (see Known issues found & fixed) and is now explicit in the prompt.
@@ -150,14 +150,15 @@ Pizza-Whatsapp-AI-Bot-main/
 2. **Workflow Configuration / Configuration Present / Is Authorized Admin** — requires both n8n variables with no embedded phone/id fallback, stops safely when either is missing, and compares normalized phone digits exactly.
 3. **Admin path** — `Claim Admin Message` provides a replay lease; `Parse Admin Command` accepts only `APPROVE <id> [note]` or `DENY <id> [reason]`; `Resolve Admin Request` locks and updates the request/order atomically; notification and finalization nodes message the customer/admin and record the Meta message id. No AI node is connected to this path.
 4. **Customer acceptance path** — `Insert Message to Buffer` rejects processed/actively claimed duplicates using the Meta message id; `Customer Message Accepted` stops duplicates.
-5. **Customer debounce path** — waits about 7 seconds, then `Claim Latest Customer Turn` combines the newest unprocessed burst and leases one turn per phone. Superseded runs stop; busy runs wait and retry.
-6. **Upsert Customer and Session / Load Active Menu / Get Restaurant Settings** — loads all customer state and current source-of-truth menu data after the turn is claimed.
-7. **Google Gemini Chat Model / Pizza Ordering Agent** (`maxIterations: 8`) — customer-only agent that receives the combined burst and may call:
+5. **Customer debounce path** — waits 2 seconds, then `Claim Latest Customer Turn` combines the newest unprocessed burst and leases one turn per phone. Superseded runs stop; busy runs retry after 2 seconds.
+6. **Upsert / simple-message router / relevant menu** — greetings and help bypass Gemini; ordering turns load only exact mentioned menu records plus settings/rules.
+7. **Google Gemini Chat Model / Pizza Ordering Agent** (`maxIterations: 6`, 1024 output tokens) — customer-only agent that can call `Menu Lookup` for additional live menu records and may call:
     - **Track Pending Item** — records a specific item/deal/drink the customer expressed real order intent for but didn't confirm or add to cart before the topic moved on; the agent checks this list first when the customer later refers to something vaguely ("same", "wohi")
-    - **Update Cart** — validates and merges menu-item or deal lines against the live menu tables; recalculates `line_total` from the database, never from the AI; if an item mention shows up unexpectedly alongside unrelated info (e.g. next to a name), the agent is instructed to confirm before adding rather than adding silently
+    - **Update Menu Item Cart** — fast deterministic add/set/remove path for normal pizzas, drinks, sauces and sides
+    - **Update Cart** — heavier structured validation path reserved for configurable deals
     - **Set Order Type** — only on an explicit "delivery"/"pickup" statement, never assumed; the agent is instructed to call this the moment the customer says it, not wait until confirmation
     - **Set Delivery Info** — saves delivery name/address (partial updates supported)
-    - **Place Order** — advisory-locked, recalculates totals from the cart's `line_total`s, adds delivery charge only for delivery orders, inserts one snapshotted row into `orders`, and only clears the cart / marks the session `placed` if an order was actually created (guards on non-empty cart, valid order type, and complete delivery info)
+    - **Place Order** — advisory-locked, revalidates and reprices every line from live menu tables, snapshots the result, adds delivery charge only for delivery, and clears the cart only after successful creation
     - **Cancel Order** — clears cart/order-type/delivery fields only while the session is still `draft`; reports `cancelled=false` if an order was already placed
     - **Escalate To Human** — sets `awaiting_human = TRUE` on the session; triggers on a request for a person, a problem with a past order, *or a complaint about a current/active order* (e.g. late delivery); the agent is explicitly told never to claim it escalated or notified staff unless it actually called this tool and Notify Admin in the same turn
     - **Notify Admin** — WhatsApp message to staff, used for both kitchen tickets and escalations

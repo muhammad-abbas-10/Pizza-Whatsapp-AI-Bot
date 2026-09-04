@@ -51,7 +51,7 @@ Migration `012_n8n_workflow_runtime_hardening.sql` has been applied to the confi
 1. Insert the Meta id and text into `message_buffer`; reject ids already finalized or actively accepted.
 2. Wait seven seconds.
 3. Under a per-phone PostgreSQL advisory lock, only the newest waiter may claim all available messages as one batch.
-4. If another batch for that phone is active, wait ten seconds and retry. A five-minute lease allows recovery after a crashed execution.
+4. If another batch for that phone is active, wait two seconds and retry. A five-minute lease allows recovery after a crashed execution.
 5. Run the unchanged customer/session, menu, Gemini, cart, order, cancellation-request, handoff, admin-alert, and menu-image tools.
 6. Send the customer reply.
 7. In one SQL statement, persist the combined customer/bot turn, mark every batch row processed, and insert every Meta id into `processed_messages`.
