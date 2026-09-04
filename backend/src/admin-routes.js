@@ -6,7 +6,6 @@
 // Required env vars:
 //   ADMIN_API_KEY             - shared secret the dashboard sends as x-admin-key
 //   N8N_ADMIN_WEBHOOK_URL     - private dashboard-event webhook
-//   N8N_ADMIN_WEBHOOK_SECRET  - server-to-server webhook credential
 
 const crypto = require("crypto");
 const {
@@ -708,7 +707,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
         admin: profileResult.rows[0] || null,
         unread_notifications: unreadResult.rows[0]?.count || 0,
         integrations: {
-          n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL && process.env.N8N_ADMIN_WEBHOOK_SECRET),
+          n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL),
           database_connected: true,
         },
       });
@@ -1179,7 +1178,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
         restaurant: restaurant.rows[0] || null,
         admin: profile.rows[0] || null,
         integrations: {
-          n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL && process.env.N8N_ADMIN_WEBHOOK_SECRET),
+          n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL),
           polling_seconds: 15,
         },
       });

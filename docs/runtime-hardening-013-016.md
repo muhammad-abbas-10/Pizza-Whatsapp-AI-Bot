@@ -43,7 +43,6 @@ Backend:
 DATABASE_URL
 ADMIN_API_KEY
 N8N_ADMIN_WEBHOOK_URL
-N8N_ADMIN_WEBHOOK_SECRET
 N8N_ADMIN_WEBHOOK_TIMEOUT_MS (optional, default 15000)
 CORS_ORIGINS
 FRONTEND_URL
@@ -53,7 +52,6 @@ n8n Variables:
 
 ```text
 WHATSAPP_PHONE_NUMBER_ID
-N8N_ADMIN_WEBHOOK_SECRET
 ```
 
 n8n credentials provide Postgres, WhatsApp Trigger, WhatsApp API, and Gemini authentication. The WhatsApp Trigger credential's Meta Client Secret performs native webhook-signature verification.

@@ -34,9 +34,9 @@ Pickup orders may move from `oven` directly to `completed`. Cancellation is allo
 - A confirmed order is inserted before the customer agent may claim it was placed.
 - New-order and customer-request visibility uses the existing `admin_notifications` triggers; no staff WhatsApp alert is sent.
 - A status transition, its history row, and a `customer_notification_events` outbox row commit in one locked transaction.
-- The browser calls only the authenticated Express API and never receives the n8n secret or WhatsApp credentials.
+- The browser calls only the authenticated Express API and never receives the n8n webhook URL or WhatsApp credentials.
 - The backend sends n8n only `event_id` and `request_id`; n8n joins the event to `orders` and `customers` to obtain the authoritative phone.
-- n8n validates `N8N_ADMIN_WEBHOOK_SECRET` before database or WhatsApp work, then atomically claims the event with a persistent two-minute recovery lease.
+- n8n validates the structured event payload before database or WhatsApp work, then atomically claims the event with a persistent two-minute recovery lease.
 - Unique request/idempotency keys and conditional updates suppress double-clicks, concurrent admins, duplicate webhook calls, and competing retries.
 - Delivery state is persisted as `pending`, `processing`, `sent`, `failed`, or `superseded`. Failures create a visible dashboard notification and can be retried.
 - A delayed status event is marked `superseded` instead of sending stale information after the order has already advanced.
@@ -90,11 +90,10 @@ Migration `013_menu_v2.sql` rebuilds the canonical menu seed and can overwrite m
 1. Apply database migrations through `016`.
 2. Import `admin request.json`. The export is intentionally inactive.
 3. Re-select the target instance's Postgres, WhatsApp Trigger, WhatsApp API, and Gemini credentials if credential IDs differ.
-4. Create these n8n Variables:
+4. Create this n8n Variable:
 
    ```text
    WHATSAPP_PHONE_NUMBER_ID=...
-   N8N_ADMIN_WEBHOOK_SECRET=the-same-random-secret-used-by-the-backend
    ```
 
 5. Activate the imported workflow only after deactivating the older version.
@@ -112,7 +111,6 @@ PORT=3000
 DATABASE_URL=postgresql://...
 ADMIN_API_KEY=a-long-random-admin-secret
 N8N_ADMIN_WEBHOOK_URL=https://your-n8n.example/webhook/admin-order-status
-N8N_ADMIN_WEBHOOK_SECRET=a-different-long-random-secret
 N8N_ADMIN_WEBHOOK_TIMEOUT_MS=15000
 CORS_ORIGINS=http://localhost:5173
 FRONTEND_URL=http://localhost:5173
@@ -124,7 +122,7 @@ Frontend (`frontend/.env`; start from `frontend/.env.example`):
 VITE_API_URL=http://localhost:3000
 ```
 
-Never put `DATABASE_URL`, `ADMIN_API_KEY`, the n8n webhook secret, Meta tokens, or WhatsApp credentials in a `VITE_*` variable or commit real `.env` files.
+Never put `DATABASE_URL`, `ADMIN_API_KEY`, the n8n webhook URL, Meta tokens, or WhatsApp credentials in a `VITE_*` variable or commit real `.env` files.
 
 ## Important API behavior
 

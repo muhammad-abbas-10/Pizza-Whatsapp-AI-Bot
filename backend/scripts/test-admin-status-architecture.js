@@ -7,7 +7,7 @@ const {
 } = require("../src/customer-notification-events");
 
 const root = path.resolve(__dirname, "../..");
-const workflow = JSON.parse(fs.readFileSync(path.join(root, "admin request.json"), "utf8"));
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
 const migration = fs.readFileSync(path.join(root, "database/migration/016_dashboard_customer_status_events.sql"), "utf8");
 const backend = fs.readFileSync(path.join(root, "backend/src/admin-routes.js"), "utf8");
 const frontend = fs.readFileSync(path.join(root, "frontend/src/main.js"), "utf8");
@@ -35,7 +35,7 @@ function staticArchitectureTests() {
   const names = new Set(workflow.nodes.map((node) => node.name));
   const required = [
     "Admin Order Status Webhook",
-    "Authenticate Admin Status Webhook",
+    "Validate Admin Status Payload",
     "Claim Admin Customer Event",
     "Admin Customer Message Agent",
     "Build Safe Admin Customer Message",
@@ -64,17 +64,20 @@ function staticArchitectureTests() {
   removed.forEach((name) => assert(!names.has(name), `Legacy admin WhatsApp node remains: ${name}`));
 
   const serialized = JSON.stringify(workflow);
+  const removedSecretVariable = ["N8N", "ADMIN", "WEBHOOK", "SECRET"].join("_");
+  const removedSecretHeader = ["x", "n8n", "admin", "secret"].join("-");
   assert(!/ADMIN_WHATSAPP_PHONE|APPROVE <request_id>|DENY <request_id>/.test(serialized));
-  assert(serialized.includes("N8N_ADMIN_WEBHOOK_SECRET"), "n8n webhook secret is not validated");
+  assert(!serialized.includes(removedSecretVariable), "removed n8n webhook secret remains in workflow");
+  assert(!serialized.toLowerCase().includes(removedSecretHeader), "removed webhook secret header remains in workflow");
   assert(serialized.includes("source=admin_dashboard"), "AI prompt does not distinguish admin events");
   assert(serialized.includes("order_is_cancellable(o.status)"), "Cancellation tool does not use the canonical DB policy");
   assert(!serialized.includes("admin_notification_allowed"), "Cancellation still expects an admin WhatsApp alert");
   const claimSql = workflow.nodes.find((node) => node.name === "Claim Admin Customer Event").parameters.query;
   assert(claimSql.includes("o.id = e.order_id AND o.customer_id = e.customer_id"));
   assert(claimSql.includes("c.whatsapp_phone AS customer_phone"));
-  const rejectedBranch = workflow.connections["Admin Webhook Authorized"].main[1][0].node;
-  assert.equal(rejectedBranch, "Reject Admin Status Webhook");
-  assert.equal(workflow.nodes.find((node) => node.name === rejectedBranch).parameters.options.responseCode, 401);
+  const rejectedBranch = workflow.connections["Admin Status Payload Valid"].main[1][0].node;
+  assert.equal(rejectedBranch, "Reject Invalid Admin Status Payload");
+  assert.equal(workflow.nodes.find((node) => node.name === rejectedBranch).parameters.options.responseCode, 400);
   assert(String(workflow.nodes.find((node) => node.name === "Respond Admin Event Not Claimed").parameters.options.responseCode).includes("404"));
   assert(String(workflow.nodes.find((node) => node.name === "Respond Admin Event Processed").parameters.options.responseCode).includes("502"));
 
@@ -86,10 +89,9 @@ function staticArchitectureTests() {
   assert(!adminPath.has("Pizza Ordering Agent"), "Admin event can enter customer ordering logic");
   assert(!adminPath.has("Update Cart") && !adminPath.has("Place Order"));
 
-  const authCode = workflow.nodes.find((node) => node.name === "Authenticate Admin Status Webhook").parameters.jsCode;
-  const runAuth = new Function("$input", "$vars", authCode);
-  const webhookInput = (secret) => ({ all: () => [{ json: {
-    headers: { "x-n8n-admin-secret": secret },
+  const validationCode = workflow.nodes.find((node) => node.name === "Validate Admin Status Payload").parameters.jsCode;
+  const runValidation = new Function("$input", validationCode);
+  const webhookInput = () => ({ all: () => [{ json: {
     body: {
       source: "admin_dashboard",
       event: "customer_notification",
@@ -97,12 +99,14 @@ function staticArchitectureTests() {
       request_id: "4a2b2445-6ea4-4397-bd67-bd12c278e370",
     },
   } }] });
-  assert.equal(runAuth(webhookInput("correct"), { N8N_ADMIN_WEBHOOK_SECRET: "correct" })[0].json.authorized, true);
-  assert.equal(runAuth(webhookInput("wrong"), { N8N_ADMIN_WEBHOOK_SECRET: "correct" })[0].json.authorized, false);
-  const malformedItem = webhookInput("correct").all()[0];
+  assert.equal(runValidation(webhookInput())[0].json.valid_payload, true);
+  const wrongSourceItem = webhookInput().all()[0];
+  wrongSourceItem.json.body.source = "customer";
+  assert.equal(runValidation({ all: () => [wrongSourceItem] })[0].json.valid_payload, false);
+  const malformedItem = webhookInput().all()[0];
   malformedItem.json.body.request_id = "------------------------------------";
   const malformedInput = { all: () => [malformedItem] };
-  assert.equal(runAuth(malformedInput, { N8N_ADMIN_WEBHOOK_SECRET: "correct" })[0].json.authorized, false);
+  assert.equal(runValidation(malformedInput)[0].json.valid_payload, false);
 
   const safeMessageCode = workflow.nodes.find((node) => node.name === "Build Safe Admin Customer Message").parameters.jsCode;
   const runSafeMessage = new Function("$", "$input", safeMessageCode);
@@ -214,37 +218,33 @@ async function dispatcherTests() {
   const delivered = await dispatchCustomerNotificationEvent(pool, 41, {
     fetchImpl,
     webhookUrl: "https://n8n.example/webhook/admin-order-status",
-    webhookSecret: "server-secret",
   });
   assert.equal(delivered.lifecycle, "sent");
   assert.equal(delivered.event.provider_message_id, "wamid.test");
-  assert.equal(outbound.options.headers["x-n8n-admin-secret"], "server-secret");
+  assert.deepEqual(outbound.options.headers, { "content-type": "application/json" });
   assert.deepEqual(Object.keys(outbound.body).sort(), ["event", "event_id", "request_id", "source"]);
   assert(!JSON.stringify(outbound.body).includes("phone"), "Backend sent a browser/customer phone to n8n");
 
   const duplicate = await dispatchCustomerNotificationEvent(pool, 41, {
     fetchImpl,
     webhookUrl: "https://n8n.example/webhook/admin-order-status",
-    webhookSecret: "server-secret",
   });
   assert.equal(duplicate.lifecycle, "duplicate");
   assert.equal(calls, 1, "A sent event was dispatched twice");
 
   const failedPool = fakePool({ ...baseEvent });
   const failed = await dispatchCustomerNotificationEvent(failedPool, 41, {
-    fetchImpl: async () => new Response(JSON.stringify({ message: "invalid secret" }), { status: 401 }),
+    fetchImpl: async () => new Response(JSON.stringify({ message: "n8n unavailable" }), { status: 502 }),
     webhookUrl: "https://n8n.example/webhook/admin-order-status",
-    webhookSecret: "wrong-secret",
   });
   assert.equal(failed.lifecycle, "failed");
   assert.equal(failed.event.delivery_status, "failed");
-  assert(failed.event.last_error.includes("invalid secret"));
+  assert(failed.event.last_error.includes("n8n unavailable"));
 
   const missingConfigPool = fakePool({ ...baseEvent });
   const missingConfig = await dispatchCustomerNotificationEvent(missingConfigPool, 41, {
     fetchImpl,
     webhookUrl: "",
-    webhookSecret: "",
   });
   assert.equal(missingConfig.lifecycle, "failed");
   assert(missingConfig.event.last_error.includes("N8N_ADMIN_WEBHOOK"));
@@ -253,7 +253,7 @@ async function dispatcherTests() {
 async function main() {
   staticArchitectureTests();
   await dispatcherTests();
-  console.log("Admin status architecture, isolation, security, retry, and duplicate-dispatch tests: PASS");
+  console.log("Admin status architecture, isolation, payload validation, retry, and duplicate-dispatch tests: PASS");
 }
 
 main().catch((error) => {

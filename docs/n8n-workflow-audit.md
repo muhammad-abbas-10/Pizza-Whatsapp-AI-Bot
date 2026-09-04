@@ -28,15 +28,15 @@ Order placement still occurs inside the `Place Order` statement. The agent may c
 ## Dashboard-event path
 
 1. `Admin Order Status Webhook` receives only `event_id` and `request_id` from the backend.
-2. `Authenticate Admin Status Webhook` compares `x-n8n-admin-secret` with the private n8n variable and validates the structured source/event fields.
-3. Unauthorized requests return 401 before any database or messaging node.
+2. `Validate Admin Status Payload` validates the structured source/event fields and identifiers.
+3. Invalid payloads return 400 before any database or messaging node.
 4. `Claim Admin Customer Event` joins the event to its authoritative order/customer/session and obtains the customer phone from PostgreSQL. It atomically claims pending/failed events, recovers stale processing leases, and returns duplicates without sending.
 5. If an order has already advanced past the event, the event becomes `superseded`; stale wording is not sent.
 6. `Admin Customer Message Agent` receives explicit `source=admin_dashboard` context and can call no ordering tools.
 7. `Build Safe Admin Customer Message` enforces the order ID, length, no internal details, and no contradictory English, Roman Urdu, or Urdu status meaning. It supplies deterministic language-matched fallback wording if AI output is unsafe/unavailable.
 8. `Send Admin Status to Customer` targets only the database-loaded customer phone.
 9. `Record Admin Event Result` stores `sent`/`failed`, attempt count, provider message ID/error, and clears the claim.
-10. The webhook returns `unauthorized`, `not_found`, `processing`, `duplicate`, `superseded`, `sent`, or `failed` lifecycle data.
+10. The webhook returns `invalid_payload`, `not_found`, `processing`, `duplicate`, `superseded`, `sent`, or `failed` lifecycle data.
 
 ## Removed workflow nodes
 
@@ -62,9 +62,9 @@ Their database responsibilities now live in the authenticated backend transactio
 ## Added workflow nodes
 
 - `Admin Order Status Webhook`
-- `Authenticate Admin Status Webhook`
-- `Admin Webhook Authorized`
-- `Reject Admin Status Webhook`
+- `Validate Admin Status Payload`
+- `Admin Status Payload Valid`
+- `Reject Invalid Admin Status Payload`
 - `Claim Admin Customer Event`
 - `Admin Event Claimed`
 - `Respond Admin Event Not Claimed`
@@ -76,12 +76,12 @@ Their database responsibilities now live in the authenticated backend transactio
 
 ## Security invariants
 
-- The browser has no n8n URL secret, Meta token, WhatsApp credential, or direct WhatsApp link.
-- The n8n secret exists only in backend environment configuration and the n8n Variables store.
+- The browser has no n8n webhook URL, Meta token, WhatsApp credential, or direct WhatsApp link.
+- The admin-status webhook uses no custom shared secret; it validates the payload and then requires an exact persisted event/request match.
 - The event's composite foreign key enforces that its customer owns its order.
 - n8n ignores any browser/customer phone even if a caller invents one; no phone is present in the backend payload.
 - Admin-event AI cannot create orders, change status, mutate carts, create requests, or ask staff questions.
-- Invalid secrets and wrong event/order/customer relationships result in no WhatsApp send.
+- Invalid payloads and wrong event/order/customer relationships result in no WhatsApp send.
 
 ## Verification
 

@@ -38,8 +38,16 @@ const legacyAdminNodes = new Set([
   "Finalize Admin Message",
   "Notify Admin",
 ]);
-workflow.nodes = workflow.nodes.filter((node) => !legacyAdminNodes.has(node.name));
+const obsoleteAdminSecretNodes = new Set([
+  "Authenticate Admin Status Webhook",
+  "Admin Webhook Authorized",
+  "Reject Admin Status Webhook",
+]);
+workflow.nodes = workflow.nodes.filter((node) =>
+  !legacyAdminNodes.has(node.name) && !obsoleteAdminSecretNodes.has(node.name)
+);
 for (const name of legacyAdminNodes) delete workflow.connections[name];
+for (const name of obsoleteAdminSecretNodes) delete workflow.connections[name];
 
 const configuration = find("Workflow Configuration");
 configuration.parameters.assignments.assignments = configuration.parameters.assignments.assignments
@@ -153,28 +161,14 @@ upsert({
   name: "Admin Order Status Webhook",
   webhookId: "6184a7ac-f35d-4b5d-857c-41798246b79b",
   notesInFlow: true,
-  notes: "Dedicated backend-only entry point. The browser never receives this URL's secret. Authentication is checked before any database or WhatsApp node runs.",
+  notes: "Dedicated backend-only entry point. The browser never receives this URL. Payload structure is validated before any database or WhatsApp node runs.",
 });
 
 upsert({
   parameters: {
     mode: "runOnceForAllItems",
-    jsCode: `const equal = (left, right) => {
-  const a = String(left || '');
-  const b = String(right || '');
-  if (!a || a.length !== b.length) return false;
-  let difference = 0;
-  for (let index = 0; index < a.length; index += 1) {
-    difference |= a.charCodeAt(index) ^ b.charCodeAt(index);
-  }
-  return difference === 0;
-};
-
-return $input.all().map((item) => {
-  const headers = item.json.headers || {};
+    jsCode: `return $input.all().map((item) => {
   const body = item.json.body || {};
-  const secret = headers['x-n8n-admin-secret'] || headers['X-N8N-Admin-Secret'];
-  const configured = String($vars.N8N_ADMIN_WEBHOOK_SECRET || '');
   const eventId = Number(body.event_id);
   const validPayload = body.source === 'admin_dashboard'
     && body.event === 'customer_notification'
@@ -182,7 +176,7 @@ return $input.all().map((item) => {
     && eventId > 0
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(body.request_id || ''));
   return { json: {
-    authorized: equal(secret, configured) && validPayload,
+    valid_payload: validPayload,
     event_id: validPayload ? eventId : null,
     request_id: validPayload ? String(body.request_id) : null,
   } };
@@ -192,7 +186,7 @@ return $input.all().map((item) => {
   typeVersion: 2,
   position: [-624, -576],
   id: "820b11df-201b-4a23-8351-911c4146ffec",
-  name: "Authenticate Admin Status Webhook",
+  name: "Validate Admin Status Payload",
 });
 
 upsert({
@@ -201,7 +195,7 @@ upsert({
       options: { caseSensitive: true, leftValue: "", typeValidation: "strict", version: 3 },
       conditions: [{
         id: "5c6b0476-0c49-4e68-8b16-df811c3771de",
-        leftValue: "={{ $json.authorized }}",
+        leftValue: "={{ $json.valid_payload }}",
         rightValue: "",
         operator: { type: "boolean", operation: "true", singleValue: true },
       }],
@@ -213,20 +207,20 @@ upsert({
   typeVersion: 2.3,
   position: [-400, -576],
   id: "5c6b0476-0c49-4e68-8b16-df811c3771de",
-  name: "Admin Webhook Authorized",
+  name: "Admin Status Payload Valid",
 });
 
 upsert({
   parameters: {
     respondWith: "json",
-    responseBody: '={{ { accepted: false, lifecycle: "unauthorized", message: "Unauthorized or invalid event" } }}',
-    options: { responseCode: 401 },
+    responseBody: '={{ { accepted: false, lifecycle: "invalid_payload", message: "Invalid event payload" } }}',
+    options: { responseCode: 400 },
   },
   type: "n8n-nodes-base.respondToWebhook",
   typeVersion: 1.4,
   position: [-176, -432],
   id: "f0cbf337-599a-4574-be8d-5b7cff949bf9",
-  name: "Reject Admin Status Webhook",
+  name: "Reject Invalid Admin Status Payload",
 });
 
 upsert({
@@ -309,7 +303,7 @@ LEFT JOIN candidate c ON TRUE
 LEFT JOIN superseded ON superseded.id = c.id
 LEFT JOIN claimed ON claimed.id = c.id;`,
     options: {
-      queryReplacement: "={{ [ $('Authenticate Admin Status Webhook').item.json.event_id, $('Authenticate Admin Status Webhook').item.json.request_id, $execution.id ] }}",
+      queryReplacement: "={{ [ $('Validate Admin Status Payload').item.json.event_id, $('Validate Admin Status Payload').item.json.request_id, $execution.id ] }}",
     },
   },
   type: "n8n-nodes-base.postgres",
@@ -558,10 +552,10 @@ workflow.connections["Recover Reply Before Routing"] = {
 workflow.connections["Use Simple Reply"] = {
   main: [[edge("Send Simple Reply")], [edge("Load Active Menu")]],
 };
-workflow.connections["Admin Order Status Webhook"] = { main: [[edge("Authenticate Admin Status Webhook")]] };
-workflow.connections["Authenticate Admin Status Webhook"] = { main: [[edge("Admin Webhook Authorized")]] };
-workflow.connections["Admin Webhook Authorized"] = {
-  main: [[edge("Claim Admin Customer Event")], [edge("Reject Admin Status Webhook")]],
+workflow.connections["Admin Order Status Webhook"] = { main: [[edge("Validate Admin Status Payload")]] };
+workflow.connections["Validate Admin Status Payload"] = { main: [[edge("Admin Status Payload Valid")]] };
+workflow.connections["Admin Status Payload Valid"] = {
+  main: [[edge("Claim Admin Customer Event")], [edge("Reject Invalid Admin Status Payload")]],
 };
 workflow.connections["Claim Admin Customer Event"] = { main: [[edge("Admin Event Claimed")]] };
 workflow.connections["Admin Event Claimed"] = {

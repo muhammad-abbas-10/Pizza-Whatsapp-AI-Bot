@@ -61,7 +61,6 @@ async function dispatchCustomerNotificationEvent(
   {
     fetchImpl = global.fetch,
     webhookUrl = process.env.N8N_ADMIN_WEBHOOK_URL,
-    webhookSecret = process.env.N8N_ADMIN_WEBHOOK_SECRET,
     timeoutMs = Number(process.env.N8N_ADMIN_WEBHOOK_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
   } = {}
 ) {
@@ -74,8 +73,8 @@ async function dispatchCustomerNotificationEvent(
     return { accepted: true, lifecycle: "superseded", event: publicEvent(event) };
   }
 
-  if (!webhookUrl || !webhookSecret) {
-    await markDispatchFailure(pool, eventId, "N8N_ADMIN_WEBHOOK_URL or N8N_ADMIN_WEBHOOK_SECRET is not configured");
+  if (!webhookUrl) {
+    await markDispatchFailure(pool, eventId, "N8N_ADMIN_WEBHOOK_URL is not configured");
     return {
       accepted: false,
       lifecycle: "failed",
@@ -90,7 +89,6 @@ async function dispatchCustomerNotificationEvent(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-n8n-admin-secret": webhookSecret,
       },
       body: JSON.stringify({
         event: "customer_notification",
