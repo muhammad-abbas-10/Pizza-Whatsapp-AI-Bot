@@ -15,6 +15,7 @@
     "test:workflow-cart": "node scripts/test-workflow-cart-query.js",
     "test:workflow-runtime": "node scripts/test-workflow-runtime.js",
     "test:workflow-order-safety": "node scripts/test-workflow-order-safety.js",
+    "test:customer-journey": "node scripts/test-customer-journey.js",
     "test:notification-claim": "node scripts/test-notification-claim.js",
     "workflow:upgrade": "node scripts/upgrade-n8n-workflow.js",
     "migrate:workflow-runtime": "node scripts/run-migration.js 012_n8n_workflow_runtime_hardening.sql",
