@@ -1,5 +1,10 @@
 -- ============================================================
 -- PIZZA BAR - CANONICAL NEON MENU SCHEMA v2
+-- WARNING: DESTRUCTIVE / NON-IDEMPOTENT DATA SEED.
+-- This migration drops and recreates its own six canonical menu tables and
+-- repopulates menu data. It is not safe to re-run after dashboard users edit
+-- production prices or availability: those edits will be wiped back to the
+-- seed values. Back up and review live menu data before running it manually.
 -- Source: Pizza Bar menu images supplied by the restaurant/client
 -- Prices are PKR and the menu states that prices include taxes.
 --

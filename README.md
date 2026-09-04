@@ -71,7 +71,7 @@ durable admin-message claim                             durable buffer insert
 
 Only the customer path uses the ordering agent. Admin messages never enter customer buffering, customer/session upserts, or the AI. Rapid customer bursts are combined oldest-first and serialized per phone; a newer execution supersedes older waiters, while an active turn makes the next execution retry after a short wait. Meta message ids are written to `processed_messages` only after the corresponding path finishes successfully.
 
-Schema creation is migration-only. Apply `011_cancellation_request_integrity.sql` and `012_n8n_workflow_runtime_hardening.sql` before activating the imported workflow; no `CREATE TABLE`/`ALTER TABLE` statements run in the live message path.
+Schema creation is migration-only. Apply the additive runtime migrations through `015_reply_idempotency.sql` before activating the imported workflow; no DDL runs in the live message path. `013_menu_v2.sql` is destructive and will reset dashboard menu edits to seed values; review the [runtime hardening and migration order](docs/runtime-hardening-013-015.md) before running it.
 
 ## Core safety rules
 
@@ -147,7 +147,7 @@ Pizza-Whatsapp-AI-Bot-main/
 ## n8n workflow nodes
 
 1. **WhatsApp Trigger / Normalize Incoming Message / Is Supported Text Message** — extracts safe normalized fields and stops status receipts or unsupported payloads before database writes.
-2. **Workflow Configuration / Is Authorized Admin** — reads n8n variables (with the previously configured values as fallbacks) and compares normalized phone digits exactly.
+2. **Workflow Configuration / Configuration Present / Is Authorized Admin** — requires both n8n variables with no embedded phone/id fallback, stops safely when either is missing, and compares normalized phone digits exactly.
 3. **Admin path** — `Claim Admin Message` provides a replay lease; `Parse Admin Command` accepts only `APPROVE <id> [note]` or `DENY <id> [reason]`; `Resolve Admin Request` locks and updates the request/order atomically; notification and finalization nodes message the customer/admin and record the Meta message id. No AI node is connected to this path.
 4. **Customer acceptance path** — `Insert Message to Buffer` rejects processed/actively claimed duplicates using the Meta message id; `Customer Message Accepted` stops duplicates.
 5. **Customer debounce path** — waits about 7 seconds, then `Claim Latest Customer Turn` combines the newest unprocessed burst and leases one turn per phone. Superseded runs stop; busy runs wait and retry.
@@ -180,16 +180,18 @@ KITCHEN_WHATSAPP_NUMBER=
 BACKUP_WHATSAPP_NUMBER=
 ```
 
-Set these n8n Variables before activation (the export retains the prior values as fallbacks so an import does not silently lose the current configuration):
+Set these required n8n Variables before activation. The workflow intentionally has no fallback values:
 
 ```text
 ADMIN_WHATSAPP_PHONE=923...
 WHATSAPP_PHONE_NUMBER_ID=...
 ```
 
+`WHATSAPP_APP_SECRET` is not a workflow Variable in the installed n8n version because the native WhatsApp Trigger verifies signatures itself. The equivalent required production secret must be stored as **Client Secret** in the `whatsAppTriggerApi` credential; duplicating it in `$vars` would not configure the native verifier.
+
 Import/run order:
 
-1. Run `npm run migrate:workflow-runtime` from `backend/` (migration `012`; migration `011` must already be present).
+1. Follow `docs/runtime-hardening-013-015.md`; on an existing canonical-menu database, apply `012`, skip destructive `013`, apply `014` only after the legacy-reference audit, then apply `015`.
 2. Import `admin request.json` into n8n.
 3. Re-select the existing Postgres, WhatsApp Trigger, WhatsApp API, and Gemini credentials if the target n8n instance uses different credential IDs.
 4. Set the two n8n Variables above, confirm the trigger's production webhook is registered in Meta, then activate the new workflow only after deactivating the older version.
@@ -202,7 +204,7 @@ Note: Meta's temporary test-tier access tokens expire roughly every 24 hours. Fo
 - Keep the repository private during client development.
 - Store secrets only in n8n credentials or secure environment variables.
 - Do not commit exported credentials, production database dumps, customer phone numbers, or conversations.
-- Verify incoming Meta webhook signatures before production use.
+- Configure the Meta App Client Secret in the n8n WhatsApp Trigger credential. The installed native trigger verifies `x-hub-signature-256` over the raw request body and rejects invalid signatures before workflow execution.
 - Use parameterized SQL queries for all customer-provided values (followed throughout — every Postgres node uses query parameters, not string-concatenated input).
 
 ## Known issues found & fixed (friend-testing round)

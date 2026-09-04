@@ -1,5 +1,11 @@
 # n8n WhatsApp workflow audit and production upgrade
 
+> Update: the later FIX 1–12 hardening pass is documented in
+> `docs/runtime-hardening-013-015.md`. Where this earlier audit describes
+> fallback identifiers, resolution-time notification ownership, ignored media,
+> or incomplete deal-component validation, the newer document and workflow
+> are authoritative.
+
 ## Outcome
 
 `admin request.json` is now an importable, inactive-by-default workflow named **Pizza WhatsApp - Customer and Admin Router**. It preserves the existing customer ordering agent and tools, but places deterministic routing, durable duplicate handling, customer-turn serialization, and a non-AI admin decision handler in front of them.
@@ -151,7 +157,7 @@ The export is intentionally `active: false` to prevent duplicate webhook consume
 ## Remaining limits
 
 - The upgraded file has not been imported into the user's n8n Cloud instance from this workspace, so cloud credential resolution and real WhatsApp delivery still need the activation smoke test above.
-- PostgreSQL side effects are idempotent and leased, but no system spanning PostgreSQL, Gemini, and Meta can provide a mathematically atomic exactly-once transaction. If WhatsApp accepts a message and the following database write fails, a lease-expiry retry may send a duplicate. The workflow favors no message loss and suppresses normal webhook/admin duplicates.
-- Deal `selected_components` are canonicalized for exact configuration matching, and deal ids/activity are validated, but the current cart SQL does not fully enforce every choice against each `restaurant_deal_components.allowed_item_rule`. Tightening that contract safely requires agreeing on the selected-component JSON schema and migrating any existing cart snapshots.
-- Non-text WhatsApp media is currently ignored. Add a deliberate media/voice handler before enabling those message types.
+- PostgreSQL leasing prevents normal duplicate sends across Express and n8n. No database can atomically commit Meta's remote delivery and local state; the new reply marker closes the recoverable customer-turn crash window, while a process crash after provider acceptance but before the marker remains an unavoidable external-system boundary.
+- Deal `selected_components` are canonicalized and fully validated against selectable component groups, active choices, sizes, and `allowed_item_rule`; existing invalid configured deal lines are removed by the next cart validation and cannot be placed.
+- Non-text messages receive a deterministic text-only guidance reply without buffering, session creation, or AI processing. Actual media understanding remains out of scope.
 - Admin decision replies use `customers.preferred_language` when populated; otherwise they default to English. The customer Gemini path continues to mirror English, Urdu, or Roman Urdu from the conversation.

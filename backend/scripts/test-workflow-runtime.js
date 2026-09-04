@@ -4,6 +4,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
+const { CUSTOMER_NOTIFICATION_CLAIM_SQL } = require("../src/admin-routes");
 
 const workflowPath = path.resolve(__dirname, "../../admin request.json");
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
@@ -37,6 +38,9 @@ function structuralChecks() {
   assert(!/CREATE\s+TABLE|ALTER\s+TABLE|CREATE\s+(?:UNIQUE\s+)?INDEX/i.test(serialized), "Live workflow still contains DDL");
   assert(!nodeByName.has("Ensure Schema"), "Ensure Schema must not run per message");
   assert(!nodeByName.has("Combine and Mark Processed"), "Old premature buffer finalizer still exists");
+  assert(!serialized.includes("923135928082"), "Workflow contains a fallback admin phone");
+  assert(!serialized.includes("1328729090313034"), "Workflow contains a fallback phone-number id");
+  assert(node("WhatsApp Trigger").notes.includes("native HMAC-SHA256"), "Native webhook-signature verification is not documented");
 
   for (const match of serialized.matchAll(/\$\('([^']+)'\)/g)) {
     assert(nodeByName.has(match[1]), `Expression references missing node: ${match[1]}`);
@@ -51,6 +55,31 @@ function structuralChecks() {
   assert(customerPath.has("Pizza Ordering Agent"));
   assert(customerPath.has("Finalize Customer Turn"));
   assert(!customerPath.has("Resolve Admin Request"));
+
+  const statusOnlyPath = reachableFrom("Has Message", 1);
+  assert.equal(statusOnlyPath.size, 0, "Status-only webhook events must stop immediately");
+  const unsupportedPath = reachableFrom("Is Supported Text Message", 1);
+  assert(unsupportedPath.has("Send Unsupported Message"));
+  assert(!unsupportedPath.has("Insert Message to Buffer"));
+  assert(!unsupportedPath.has("Upsert Customer and Session"));
+  assert(!unsupportedPath.has("Pizza Ordering Agent"));
+  const recoveryPath = reachableFrom("Reply Already Sent For This Batch", 0);
+  assert(recoveryPath.has("Finalize Customer Turn"));
+  assert(!recoveryPath.has("Pizza Ordering Agent"));
+  assert(!recoveryPath.has("Send message"));
+  const fallbackPath = reachableFrom("Agent Output Valid", 1);
+  assert(fallbackPath.has("Send message") && fallbackPath.has("Record Reply Sent"));
+  assert.equal(node("Pizza Ordering Agent").continueOnFail, true);
+  assert(node("Upsert Customer and Session").parameters.query.includes("active_order.status AS active_order_status"));
+  assert(nodeByName.has("Update Placed Order Delivery Info"));
+  assert(node("Escalate To Human").parameters.query.includes("INSERT INTO admin_notifications"));
+
+  const normalizeSql = (sql) => sql.replace(/\s+/g, " ").trim().replace(/;$/, "");
+  assert.equal(
+    normalizeSql(node("Claim Customer Notification").parameters.query),
+    normalizeSql(CUSTOMER_NOTIFICATION_CLAIM_SQL),
+    "Express and n8n notification claim SQL diverged",
+  );
 
   const code = node("Parse Admin Command").parameters.jsCode;
   const parse = new Function("$input", code);
@@ -87,6 +116,8 @@ async function sqlChecks() {
   const claimAdminSql = node("Claim Admin Message").parameters.query;
   const resolveAdminSql = node("Resolve Admin Request").parameters.query;
   const recordNotificationSql = node("Record Customer Decision Notification").parameters.query;
+  const claimNotificationSql = node("Claim Customer Notification").parameters.query;
+  const recordReplySql = node("Record Reply Sent").parameters.query;
   const finalizeAdminSql = node("Finalize Admin Message").parameters.query;
 
   try {
@@ -122,7 +153,15 @@ async function sqlChecks() {
 
     const thirdReady = (await client.query(claimTurnSql, [customerPhone, third.buffer_id, message3])).rows[0];
     assert.equal(thirdReady.mode, "ready");
-    const thirdFinalized = (await client.query(finalizeCustomerSql, [customer.id, thirdReady.combined_text, "Pickup selected", message3, customerPhone])).rows[0];
+    const replyMarked = (await client.query(recordReplySql, [message3, "Pickup selected", customerPhone])).rows[0];
+    assert.equal(replyMarked.replies_recorded, 1, "Outbound reply state was not recorded");
+    await client.query(`UPDATE message_buffer SET received_at = NOW() - INTERVAL '6 minutes', batch_claimed_at = NOW() - INTERVAL '6 minutes' WHERE message_id = $1`, [message3]);
+    const retryAccepted = (await client.query(acceptSql, [message3, customerPhone, "pickup", "text"])).rows[0];
+    assert.equal(retryAccepted.accepted, true, "Stale unfinalized delivery was not recoverable");
+    const recovered = (await client.query(claimTurnSql, [customerPhone, retryAccepted.buffer_id, message3])).rows[0];
+    assert.equal(recovered.reply_already_sent, true, "Recovered batch did not detect its previously sent reply");
+    assert.equal(recovered.stored_reply_text, "Pickup selected");
+    const thirdFinalized = (await client.query(finalizeCustomerSql, [customer.id, recovered.combined_text, recovered.stored_reply_text, message3, customerPhone])).rows[0];
     assert.equal(thirdFinalized.buffered_messages_finalized, 1);
     const finalDuplicate = (await client.query(acceptSql, [message1, customerPhone, "one pizza", "text"])).rows[0];
     assert.equal(finalDuplicate.accepted, false);
@@ -154,7 +193,11 @@ async function sqlChecks() {
 
     const repeated = (await client.query(resolveAdminSql, [request.id, "approved", "duplicate", adminPhone, `${adminMessage}-repeat`])).rows[0];
     assert.equal(repeated.outcome, "already_approved");
-    assert.equal(repeated.notify_customer, false, "A concurrent command stole the active notification lease");
+    assert.equal(repeated.notify_customer, true, "Resolved request should remain eligible until the shared claim runs");
+    const notificationClaim = await client.query(claimNotificationSql, [request.id, adminMessage]);
+    assert.equal(notificationClaim.rows.length, 1, "First notification claim failed");
+    const competingClaim = await client.query(claimNotificationSql, [request.id, `${adminMessage}-competing`]);
+    assert.equal(competingClaim.rows.length, 0, "Concurrent notification claimant acquired the same lease");
     const recorded = (await client.query(recordNotificationSql, [request.id, "wamid-outbound-test", adminMessage])).rows[0];
     assert.equal(recorded.notification_recorded, true);
     const afterNotification = (await client.query(resolveAdminSql, [request.id, "approved", "duplicate", adminPhone, `${adminMessage}-repeat-2`])).rows[0];

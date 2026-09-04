@@ -55,6 +55,44 @@ async function main() {
     `);
     const deal = dealResult.rows[0];
     assert(deal, "Test menu needs one active configurable deal");
+    const componentRules = (await client.query(`
+      SELECT selection_group, allowed_item_rule
+      FROM restaurant_deal_components
+      WHERE deal_id = $1 AND selectable = TRUE
+      ORDER BY id
+    `, [deal.id])).rows;
+
+    async function validChoices(rule) {
+      if (rule.allowed === "any_active_pizza") {
+        return (await client.query(`
+          SELECT DISTINCT mi.name FROM restaurant_menu_items mi
+          JOIN restaurant_menu_variants mv ON mv.menu_item_id = mi.id AND mv.active = TRUE
+          WHERE mi.active = TRUE AND mi.item_type LIKE 'pizza%'
+            AND LOWER(mv.variant_label) = LOWER($1) ORDER BY mi.name`, [rule.size_label])).rows.map((row) => row.name);
+      }
+      if (rule.allowed === "active_wing_items") {
+        return (await client.query("SELECT name FROM restaurant_menu_items WHERE active = TRUE AND name ILIKE '%wing%' ORDER BY name")).rows.map((row) => row.name);
+      }
+      if (rule.allowed === "active_sauces") {
+        return (await client.query("SELECT name FROM restaurant_menu_items WHERE active = TRUE AND item_type = 'sauce' ORDER BY name")).rows.map((row) => row.name);
+      }
+      if (Array.isArray(rule.allowed_brands)) {
+        return (await client.query(`
+          SELECT DISTINCT mi.name FROM restaurant_menu_items mi
+          JOIN restaurant_menu_variants mv ON mv.menu_item_id = mi.id AND mv.active = TRUE
+          WHERE mi.active = TRUE AND mi.item_type = 'drink' AND mi.name = ANY($1::text[])
+            AND LOWER(mv.variant_label) = LOWER($2) ORDER BY mi.name`,
+          [rule.allowed_brands, rule.size || rule.size_label])).rows.map((row) => row.name);
+      }
+      return [];
+    }
+
+    const choiceSets = [];
+    for (const component of componentRules) {
+      const choices = await validChoices(component.allowed_item_rule);
+      assert(choices.length > 0, `No valid choice for ${component.selection_group}`);
+      choiceSets.push({ group: component.selection_group, choices });
+    }
 
     const customer = await client.query(
       `INSERT INTO customers (whatsapp_phone, name) VALUES ($1, 'Cart Workflow Test') RETURNING id`,
@@ -93,15 +131,13 @@ async function main() {
       quantity,
       selected_components: components,
     });
-    const configA = [
-      { selection_group: "pizza_selection", choice: itemA[0].name },
-      { selection_group: "drink_selection", choice: "Pepsi" },
-    ];
+    const configA = choiceSets.map(({ group, choices }) => ({ selection_group: group, choice: choices[0] }));
     const configAReordered = [...configA].reverse();
-    const configB = [
-      { selection_group: "pizza_selection", choice: itemB[0].name },
-      { selection_group: "drink_selection", choice: "Pepsi" },
-    ];
+    const alternateIndex = choiceSets.findIndex(({ choices }) => choices.length > 1);
+    assert(alternateIndex >= 0, "Configurable deal needs one component with multiple valid choices");
+    const configB = configA.map((entry, index) => index === alternateIndex
+      ? { ...entry, choice: choiceSets[index].choices[1] }
+      : { ...entry });
 
     // 1. Empty cart -> one pizza.
     await resetCart();
@@ -155,6 +191,14 @@ async function main() {
     result = await updateCart([{ record_type: "deal", deal_id: 999999999, quantity: 1, selected_components: [] }]);
     assert(result.rejected_item_count === 1 && JSON.stringify(result.cart) === beforeInvalid, "Test 11 failed: invalid deal changed cart");
 
+    // Deal component rules reject missing groups, unknown choices, and unknown groups.
+    result = await updateCart([dealLine(configA.slice(0, -1))]);
+    assert(result.rejected_item_count === 1 && JSON.stringify(result.cart) === beforeInvalid, "Missing deal component was accepted");
+    result = await updateCart([dealLine(configA.map((entry, index) => index ? entry : { ...entry, choice: "Not A Real Menu Choice" }))]);
+    assert(result.rejected_item_count === 1 && JSON.stringify(result.cart) === beforeInvalid, "Invalid deal choice was accepted");
+    result = await updateCart([dealLine([...configA, { selection_group: "unknown", choice: configA[0].choice }])]);
+    assert(result.rejected_item_count === 1 && JSON.stringify(result.cart) === beforeInvalid, "Unknown deal group was accepted");
+
     // 12. Existing mixed cart merges matching lines and preserves other lines.
     result = await updateCart([menuLine(itemA[0]), dealLine(configA)]);
     assert(result.items.length === 3, "Test 12 failed: mixed cart lines were lost");
@@ -169,7 +213,7 @@ async function main() {
 
     await client.query("ROLLBACK");
     console.log("Cart tests 1-12: passed");
-    console.log("Duplicate aggregation, canonical deal matching, decrement, removal, validation, and draft state: passed");
+    console.log("Duplicate aggregation, canonical deal matching, component-rule validation, decrement, removal, and draft state: passed");
     console.log("n8n $1 JSON string and $2 customer ID bindings: passed");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});

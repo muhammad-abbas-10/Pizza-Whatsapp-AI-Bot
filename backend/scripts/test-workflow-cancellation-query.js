@@ -16,6 +16,26 @@ function workflowQuery(name) {
 }
 
 async function createCustomer(client, suffix) {
+  const menuLine = (await client.query(`
+    SELECT mi.id AS menu_item_id, mi.name AS item_name, mv.id AS variant_id,
+           mv.variant_label AS size, mv.price
+    FROM restaurant_menu_items mi
+    JOIN restaurant_menu_variants mv ON mv.menu_item_id = mi.id
+    WHERE mi.active = TRUE AND mv.active = TRUE
+    ORDER BY mi.id, mv.id LIMIT 1
+  `)).rows[0];
+  if (!menuLine) throw new Error("Cancellation test needs one active menu variant");
+  const cartLine = {
+    record_type: "menu_item",
+    menu_item_id: Number(menuLine.menu_item_id),
+    variant_id: Number(menuLine.variant_id),
+    item_name: menuLine.item_name,
+    size: menuLine.size,
+    quantity: 1,
+    price: Number(menuLine.price),
+    line_total: Number(menuLine.price),
+    selected_components: [],
+  };
   const customer = await client.query(
     `INSERT INTO customers (whatsapp_phone, name) VALUES ($1, 'Workflow Cancellation Test') RETURNING id`,
     [`workflow-cancel-test-${suffix}-${Date.now()}`]
@@ -23,9 +43,9 @@ async function createCustomer(client, suffix) {
   await client.query(
     `INSERT INTO conversation_sessions (customer_id, cart, order_type)
      VALUES ($1, $2::jsonb, 'pickup')`,
-    [customer.rows[0].id, JSON.stringify({ items: [{ item_name: "Test Pizza", quantity: 1, price: 100, line_total: 100 }] })]
+    [customer.rows[0].id, JSON.stringify({ items: [cartLine] })]
   );
-  return customer.rows[0].id;
+  return { customerId: customer.rows[0].id, cartLine };
 }
 
 async function main() {
@@ -35,7 +55,7 @@ async function main() {
     const placeOrder = workflowQuery("Place Order");
     const requestCancellation = workflowQuery("Request Cancellation Approval");
 
-    const customerId = await createCustomer(client, "single");
+    const { customerId } = await createCustomer(client, "single");
     const noOrder = await client.query(requestCancellation, [customerId, null, null, "Cancel"]);
     if (noOrder.rows[0].error !== "no_cancellable_order" || noOrder.rows[0].admin_notification_allowed) {
       throw new Error("No-order cancellation guard failed");
@@ -58,11 +78,11 @@ async function main() {
       throw new Error("Duplicate pending request was not reused");
     }
 
-    const multiCustomerId = await createCustomer(client, "multiple");
+    const { customerId: multiCustomerId, cartLine: secondCartLine } = await createCustomer(client, "multiple");
     const first = await client.query(placeOrder, [multiCustomerId]);
     await client.query(
       `UPDATE conversation_sessions SET cart = $2::jsonb, order_type = 'pickup' WHERE customer_id = $1`,
-      [multiCustomerId, JSON.stringify({ items: [{ item_name: "Second Pizza", quantity: 1, price: 200, line_total: 200 }] })]
+      [multiCustomerId, JSON.stringify({ items: [{ ...secondCartLine, quantity: 2, line_total: Number(secondCartLine.price) * 2 }] })]
     );
     const second = await client.query(placeOrder, [multiCustomerId]);
     const ambiguous = await client.query(requestCancellation, [multiCustomerId, null, second.rows[0].id, "Cancel my order"]);

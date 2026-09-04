@@ -14,8 +14,13 @@
     "test:workflow-cancellation": "node scripts/test-workflow-cancellation-query.js",
     "test:workflow-cart": "node scripts/test-workflow-cart-query.js",
     "test:workflow-runtime": "node scripts/test-workflow-runtime.js",
+    "test:workflow-order-safety": "node scripts/test-workflow-order-safety.js",
+    "test:notification-claim": "node scripts/test-notification-claim.js",
     "workflow:upgrade": "node scripts/upgrade-n8n-workflow.js",
-    "migrate:workflow-runtime": "node scripts/run-migration.js 012_n8n_workflow_runtime_hardening.sql"
+    "migrate:workflow-runtime": "node scripts/run-migration.js 012_n8n_workflow_runtime_hardening.sql",
+    "migrate:menu-v2": "node scripts/run-migration.js 013_menu_v2.sql",
+    "migrate:drop-legacy-menu": "node scripts/run-migration.js 014_drop_legacy_menu_schema.sql",
+    "migrate:reply-idempotency": "node scripts/run-migration.js 015_reply_idempotency.sql"
   },
   "keywords": [],
   "author": "",

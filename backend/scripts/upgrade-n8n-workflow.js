@@ -6,6 +6,7 @@ const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 
 const postgresCredentials = workflow.nodes.find((node) => node.credentials?.postgres)?.credentials;
 const whatsappCredentials = workflow.nodes.find((node) => node.credentials?.whatsAppApi)?.credentials;
+const applyTargetedWorkflowFixes = require("./targeted-workflow-fixes");
 
 function findNode(name) {
   const node = workflow.nodes.find((entry) => entry.name === name);
@@ -639,6 +640,8 @@ workflow.nodes = workflow.nodes.filter((node) => ![
   "If",
 ].includes(node.name));
 
+applyTargetedWorkflowFixes(workflow, { postgresCredentials, whatsappCredentials });
+
 function edge(node, index = 0) {
   return { node, type: "main", index };
 }
@@ -650,9 +653,12 @@ const aiConnections = Object.fromEntries(
 workflow.connections = {
   ...aiConnections,
   "WhatsApp Trigger": { main: [[edge("Normalize Incoming Message")]] },
-  "Normalize Incoming Message": { main: [[edge("Is Supported Text Message")]] },
-  "Is Supported Text Message": { main: [[edge("Workflow Configuration")], []] },
-  "Workflow Configuration": { main: [[edge("Is Authorized Admin")]] },
+  "Normalize Incoming Message": { main: [[edge("Has Message")]] },
+  "Has Message": { main: [[edge("Workflow Configuration")], []] },
+  "Workflow Configuration": { main: [[edge("Configuration Present")]] },
+  "Configuration Present": { main: [[edge("Is Supported Text Message")], [edge("Configuration Error Reply")]] },
+  "Is Supported Text Message": { main: [[edge("Is Authorized Admin")], [edge("Unsupported Message Reply")]] },
+  "Unsupported Message Reply": { main: [[edge("Send Unsupported Message")]] },
   "Is Authorized Admin": { main: [[edge("Claim Admin Message")], [edge("Insert Message to Buffer")]] },
 
   "Insert Message to Buffer": { main: [[edge("Customer Message Accepted")]] },
@@ -662,19 +668,26 @@ workflow.connections = {
   "Customer Turn Ready": { main: [[edge("Upsert Customer and Session")], [edge("Customer Turn Busy")]] },
   "Customer Turn Busy": { main: [[edge("Wait For Active Customer Turn")], []] },
   "Wait For Active Customer Turn": { main: [[edge("Claim Latest Customer Turn")]] },
-  "Upsert Customer and Session": { main: [[edge("Load Active Menu")]] },
+  "Upsert Customer and Session": { main: [[edge("Reply Already Sent For This Batch")]] },
+  "Reply Already Sent For This Batch": { main: [[edge("Restore Stored Reply")], [edge("Load Active Menu")]] },
+  "Restore Stored Reply": { main: [[edge("Finalize Customer Turn")]] },
   "Load Active Menu": { main: [[edge("Get Restaurant Settings")]] },
   "Get Restaurant Settings": { main: [[edge("Pizza Ordering Agent")]] },
-  "Pizza Ordering Agent": { main: [[edge("Reply Text")]] },
+  "Pizza Ordering Agent": { main: [[edge("Agent Output Valid")]] },
+  "Agent Output Valid": { main: [[edge("Reply Text")], [edge("Agent Fallback Reply")]] },
   "Reply Text": { main: [[edge("Send message")]] },
-  "Send message": { main: [[edge("Finalize Customer Turn")]] },
+  "Agent Fallback Reply": { main: [[edge("Reply Text")]] },
+  "Send message": { main: [[edge("Record Reply Sent")]] },
+  "Record Reply Sent": { main: [[edge("Finalize Customer Turn")]] },
 
   "Claim Admin Message": { main: [[edge("Admin Message Claimed")]] },
   "Admin Message Claimed": { main: [[edge("Parse Admin Command")], []] },
   "Parse Admin Command": { main: [[edge("Admin Command Valid")]] },
   "Admin Command Valid": { main: [[edge("Resolve Admin Request")], [edge("Build Admin Help Reply")]] },
   "Resolve Admin Request": { main: [[edge("Customer Notification Required")]] },
-  "Customer Notification Required": { main: [[edge("Send Admin Decision to Customer")], [edge("Build Admin Decision Reply")]] },
+  "Customer Notification Required": { main: [[edge("Claim Customer Notification")], [edge("Build Admin Decision Reply")]] },
+  "Claim Customer Notification": { main: [[edge("Notification Claimed")]] },
+  "Notification Claimed": { main: [[edge("Send Admin Decision to Customer")], [edge("Build Admin Decision Reply")]] },
   "Send Admin Decision to Customer": { main: [[edge("Record Customer Decision Notification")]] },
   "Record Customer Decision Notification": { main: [[edge("Build Admin Decision Reply")]] },
   "Build Admin Decision Reply": { main: [[edge("Send Admin Reply")]] },

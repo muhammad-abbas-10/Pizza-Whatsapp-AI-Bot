@@ -14,6 +14,21 @@ const crypto = require("crypto");
 // deployments can be updated without changing application code.
 const WHATSAPP_API_VERSION = process.env.WHATSAPP_GRAPH_API_VERSION || "v23.0";
 
+// Keep this byte-for-byte equivalent to the n8n "Claim Customer Notification"
+// node. Both delivery paths use the same database lease, so only one caller can
+// send a resolved-request notification.
+const CUSTOMER_NOTIFICATION_CLAIM_SQL = `UPDATE admin_requests
+SET notification_claim_token = $2::text,
+    notification_claimed_at = NOW()
+WHERE id = $1::bigint
+  AND status IN ('approved', 'denied')
+  AND notification_sent = FALSE
+  AND (
+    notification_claim_token IS NULL
+    OR notification_claimed_at < NOW() - INTERVAL '2 minutes'
+  )
+RETURNING id;`;
+
 async function sendWhatsAppMessage(to, body) {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -152,7 +167,7 @@ const ALLOWED_STATUS_TRANSITIONS = {
   cancelled: [],
 };
 
-function registerAdminRoutes(app, pool) {
+function registerAdminRoutes(app, pool, { sendMessage = sendWhatsAppMessage } = {}) {
   app.use("/admin", requireAdminKey);
 
   // --------------------------------------------------
@@ -405,32 +420,36 @@ function registerAdminRoutes(app, pool) {
     return adminNote ? `${defaultMessage}\n\n${adminNote}` : defaultMessage;
   }
 
-  // Serialize attempts for a request so concurrent retry clicks cannot send a
-  // second message after the first one has succeeded.
+  // Claim first and commit before the provider call. n8n uses the same SQL, so
+  // dashboard and WhatsApp-admin decisions cannot both send the customer reply.
   async function notifyResolvedRequest(requestId) {
     const client = await pool.connect();
+    const claimToken = `req-${crypto.randomUUID()}`;
     try {
-      await client.query("BEGIN");
+      const claim = await client.query(CUSTOMER_NOTIFICATION_CLAIM_SQL, [requestId, claimToken]);
+      if (claim.rows.length === 0) {
+        return { found: true, whatsapp: { sent: true, alreadySent: true } };
+      }
+
       const { rows } = await client.query(
         `
-        SELECT r.status, r.request_type, r.order_id, r.admin_note, r.notification_sent, c.whatsapp_phone
+        SELECT r.status, r.request_type, r.order_id, r.admin_note, c.whatsapp_phone
         FROM admin_requests r
         JOIN customers c ON c.id = r.customer_id
-        WHERE r.id = $1 AND r.status IN ('approved', 'denied')
-        FOR UPDATE OF r
+        WHERE r.id = $1 AND r.notification_claim_token = $2
         `,
-        [requestId]
+        [requestId, claimToken]
       );
       if (rows.length === 0) {
-        await client.query("ROLLBACK");
-        return { found: false };
-      }
-      if (rows[0].notification_sent) {
-        await client.query("COMMIT");
         return { found: true, whatsapp: { sent: true, alreadySent: true } };
       }
       if (rows[0].status === "approved" && rows[0].request_type === "cancel_order" && !rows[0].order_id) {
-        await client.query("COMMIT");
+        await client.query(
+          `UPDATE admin_requests
+           SET notification_claim_token = NULL, notification_claimed_at = NULL
+           WHERE id = $1 AND notification_claim_token = $2`,
+          [requestId, claimToken]
+        );
         return {
           found: true,
           blocked: true,
@@ -443,31 +462,48 @@ function registerAdminRoutes(app, pool) {
         };
       }
 
-      const whatsapp = await sendWhatsAppMessage(
+      const whatsapp = await sendMessage(
         rows[0].whatsapp_phone,
         resolvedRequestMessage(rows[0].status, rows[0].admin_note)
       );
-      await client.query(
-        `
-        UPDATE admin_requests
-        SET notification_sent = $1,
-            notification_error = $2,
-            notification_attempts = notification_attempts + 1,
-            last_notification_attempt_at = NOW(),
-            notification_message_id = $3
-        WHERE id = $4
-        `,
-        [
-          whatsapp.sent,
-          whatsapp.sent ? null : String(whatsapp.reason || "unknown error"),
-          whatsapp.messageId || null,
-          requestId,
-        ]
-      );
-      await client.query("COMMIT");
+      if (whatsapp.sent) {
+        await client.query(
+          `UPDATE admin_requests
+           SET notification_sent = TRUE,
+               notification_error = NULL,
+               notification_attempts = notification_attempts + 1,
+               last_notification_attempt_at = NOW(),
+               notification_message_id = $3,
+               notification_claim_token = NULL,
+               notification_claimed_at = NULL
+           WHERE id = $1 AND notification_sent = FALSE
+             AND notification_claim_token = $2`,
+          [requestId, claimToken, whatsapp.messageId || null]
+        );
+      } else {
+        // A failed provider attempt is retryable immediately; a crashed process
+        // is retryable automatically when the shared two-minute lease expires.
+        await client.query(
+          `UPDATE admin_requests
+           SET notification_error = $3,
+               notification_attempts = notification_attempts + 1,
+               last_notification_attempt_at = NOW(),
+               notification_claim_token = NULL,
+               notification_claimed_at = NULL
+           WHERE id = $1 AND notification_sent = FALSE
+             AND notification_claim_token = $2`,
+          [requestId, claimToken, String(whatsapp.reason || "unknown error")]
+        );
+      }
       return { found: true, whatsapp };
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => {});
+      await client.query(
+        `UPDATE admin_requests
+         SET notification_claim_token = NULL, notification_claimed_at = NULL
+         WHERE id = $1 AND notification_sent = FALSE
+           AND notification_claim_token = $2`,
+        [requestId, claimToken]
+      ).catch(() => {});
       throw error;
     } finally {
       client.release();
@@ -1155,4 +1191,9 @@ function registerAdminRoutes(app, pool) {
   });
 }
 
-module.exports = { registerAdminRoutes, sendWhatsAppMessage, requireAdminKey };
+module.exports = {
+  registerAdminRoutes,
+  sendWhatsAppMessage,
+  requireAdminKey,
+  CUSTOMER_NOTIFICATION_CLAIM_SQL,
+};

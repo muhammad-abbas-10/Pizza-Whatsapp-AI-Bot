@@ -22,7 +22,9 @@
           "id": "K6jPiXJMYOY3bBGn",
           "name": "WhatsApp OAuth account"
         }
-      }
+      },
+      "notesInFlow": true,
+      "notes": "Security: n8n 2.34.5 WhatsApp Trigger performs native HMAC-SHA256 verification over req.rawBody. Configure the Meta App Client Secret in the WhatsApp Trigger credential; unsigned/invalid webhooks are rejected before this workflow runs."
     },
     {
       "parameters": {
@@ -68,6 +70,12 @@
               "id": "a0903647-b370-46dc-8c68-d626c577019b",
               "name": "is_supported_text",
               "value": "={{ Boolean($json.messages?.[0]?.id && $json.messages?.[0]?.from && $json.messages?.[0]?.type === 'text' && $json.messages?.[0]?.text?.body) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "dcfb7e91-a895-49c6-9ce8-cb855c90796c",
+              "name": "has_message",
+              "value": "={{ Boolean($json.messages?.[0]) }}",
               "type": "boolean"
             }
           ]
@@ -124,13 +132,13 @@
             {
               "id": "b77416b2-1c23-4f85-8018-5e14491956d9",
               "name": "admin_phone",
-              "value": "={{ String($vars.ADMIN_WHATSAPP_PHONE || '923135928082').replace(/\\D/g, '') }}",
+              "value": "={{ String($vars.ADMIN_WHATSAPP_PHONE || '').replace(/\\D/g, '') }}",
               "type": "string"
             },
             {
               "id": "275487fc-63f1-46b2-835b-9d2c431632cf",
               "name": "whatsapp_phone_number_id",
-              "value": "={{ String($vars.WHATSAPP_PHONE_NUMBER_ID || '1328729090313034') }}",
+              "value": "={{ String($vars.WHATSAPP_PHONE_NUMBER_ID || '') }}",
               "type": "string"
             }
           ]
@@ -182,7 +190,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH customer AS (\n    INSERT INTO customers (\n        whatsapp_phone,\n        name,\n        updated_at\n    )\n    VALUES ($1, NULLIF(BTRIM($2::text), ''), NOW())\n    ON CONFLICT (whatsapp_phone)\n    DO UPDATE SET\n        name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name),\n        updated_at = NOW()\n    RETURNING id, whatsapp_phone, name\n),\nsession AS (\n    INSERT INTO conversation_sessions (customer_id)\n    SELECT id FROM customer\n    ON CONFLICT (customer_id)\n    DO UPDATE SET updated_at = NOW()\n    RETURNING *\n)\nSELECT\n    customer.id AS customer_id,\n    customer.whatsapp_phone,\n    customer.name,\n    session.id AS session_id,\n    session.cart,\n    session.order_type,\n    session.delivery_address,\n    session.awaiting_confirmation,\n    session.awaiting_human,\n    session.delivery_name,\n    session.recent_messages,\n    session.order_status,\n    session.active_order_id,\n    session.pending_items\nFROM customer\nJOIN session ON session.customer_id = customer.id;",
+        "query": "WITH customer AS (\n    INSERT INTO customers (\n        whatsapp_phone,\n        name,\n        updated_at\n    )\n    VALUES ($1, NULLIF(BTRIM($2::text), ''), NOW())\n    ON CONFLICT (whatsapp_phone)\n    DO UPDATE SET\n        name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name),\n        updated_at = NOW()\n    RETURNING id, whatsapp_phone, name\n),\nsession AS (\n    INSERT INTO conversation_sessions (customer_id)\n    SELECT id FROM customer\n    ON CONFLICT (customer_id)\n    DO UPDATE SET updated_at = NOW()\n    RETURNING *\n)\nSELECT\n    customer.id AS customer_id,\n    customer.whatsapp_phone,\n    customer.name,\n    session.id AS session_id,\n    session.cart,\n    session.order_type,\n    session.delivery_address,\n    session.awaiting_confirmation,\n    session.awaiting_human,\n    session.delivery_name,\n    session.recent_messages,\n    session.order_status,\n    session.active_order_id,\n    active_order.status AS active_order_status,\n    session.pending_items\nFROM customer\nJOIN session ON session.customer_id = customer.id\nLEFT JOIN orders active_order ON active_order.id = session.active_order_id;",
         "options": {
           "queryReplacement": "={{ [   $('Normalize Incoming Message').item.json.customer_phone,   $('Normalize Incoming Message').item.json.customer_name ] }}"
         }
@@ -247,12 +255,12 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH input_payload AS (\n  SELECT CASE WHEN jsonb_typeof($1::jsonb) = 'array' THEN $1::jsonb ELSE '[]'::jsonb END AS items\n),\nlocked_session AS (\n  SELECT cs.id, cs.cart\n  FROM conversation_sessions cs\n  WHERE cs.customer_id = $2::bigint\n  FOR UPDATE\n),\nnew_items_raw AS (\n  SELECT elem, ordinal\n  FROM input_payload ip\n  CROSS JOIN LATERAL jsonb_array_elements(ip.items) WITH ORDINALITY AS raw(elem, ordinal)\n  WHERE jsonb_typeof(elem) = 'object'\n),\nnew_menu_items AS (\n  SELECT\n    (elem->>'menu_item_id')::bigint AS menu_item_id,\n    (elem->>'variant_id')::bigint AS variant_id,\n    COALESCE(elem->>'quantity', '1')::int AS quantity\n  FROM new_items_raw\n  WHERE elem->>'record_type' = 'menu_item'\n    AND COALESCE(elem->>'menu_item_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(elem->>'variant_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(elem->>'quantity', '1') ~ '^-?[0-9]{1,9}$'\n),\nvalidated_new_menu_items AS (\n  SELECT\n    format('menu:%s:%s', ni.menu_item_id, v.id) AS line_key,\n    'menu_item'::text AS record_type,\n    ni.menu_item_id,\n    v.id AS variant_id,\n    NULL::bigint AS deal_id,\n    mi.name AS item_name,\n    mi.category,\n    v.variant_label AS size,\n    ni.quantity,\n    v.price::numeric AS price,\n    '[]'::jsonb AS selected_components\n  FROM new_menu_items ni\n  JOIN restaurant_menu_variants v\n    ON v.id = ni.variant_id AND v.menu_item_id = ni.menu_item_id AND v.active = TRUE\n  JOIN restaurant_menu_items mi ON mi.id = ni.menu_item_id AND mi.active = TRUE\n),\nnew_deal_items AS (\n  SELECT\n    (raw.elem->>'deal_id')::bigint AS deal_id,\n    COALESCE(raw.elem->>'quantity', '1')::int AS quantity,\n    canonical.selected_components\n  FROM new_items_raw raw\n  CROSS JOIN LATERAL (\n    SELECT COALESCE(jsonb_agg(component ORDER BY component::text), '[]'::jsonb) AS selected_components\n    FROM jsonb_array_elements(COALESCE(raw.elem->'selected_components', '[]'::jsonb)) AS component\n  ) canonical\n  WHERE raw.elem->>'record_type' = 'deal'\n    AND COALESCE(raw.elem->>'deal_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(raw.elem->>'quantity', '1') ~ '^-?[0-9]{1,9}$'\n    AND (NOT raw.elem ? 'selected_components' OR jsonb_typeof(raw.elem->'selected_components') = 'array')\n),\nvalidated_new_deal_items AS (\n  SELECT\n    format('deal:%s:%s', ndi.deal_id, ndi.selected_components::text) AS line_key,\n    'deal'::text AS record_type,\n    NULL::bigint AS menu_item_id,\n    NULL::bigint AS variant_id,\n    d.id AS deal_id,\n    d.name AS item_name,\n    d.category,\n    NULL::text AS size,\n    ndi.quantity,\n    d.price::numeric AS price,\n    ndi.selected_components\n  FROM new_deal_items ndi\n  JOIN restaurant_deals d ON d.id = ndi.deal_id AND d.active = TRUE\n),\nvalidated_new_items AS (\n  SELECT * FROM validated_new_menu_items\n  UNION ALL\n  SELECT * FROM validated_new_deal_items\n),\nincoming_items AS (\n  SELECT\n    line_key, record_type, menu_item_id, variant_id, deal_id,\n    MAX(item_name) AS item_name, MAX(category) AS category, MAX(size) AS size,\n    SUM(quantity)::int AS quantity_delta, BOOL_OR(quantity = 0) AS remove_requested,\n    MAX(price) AS price, selected_components\n  FROM validated_new_items\n  GROUP BY line_key, record_type, menu_item_id, variant_id, deal_id, selected_components\n),\nexisting_items_raw AS (\n  SELECT existing\n  FROM locked_session ls\n  CROSS JOIN LATERAL jsonb_array_elements(\n    CASE WHEN jsonb_typeof(ls.cart->'items') = 'array' THEN ls.cart->'items' ELSE '[]'::jsonb END\n  ) AS existing\n  WHERE jsonb_typeof(existing) = 'object'\n),\nexisting_menu_items AS (\n  SELECT\n    (existing->>'menu_item_id')::bigint AS menu_item_id,\n    (existing->>'variant_id')::bigint AS variant_id,\n    (existing->>'quantity')::int AS quantity\n  FROM existing_items_raw\n  WHERE existing->>'record_type' = 'menu_item'\n    AND COALESCE(existing->>'menu_item_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(existing->>'variant_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(existing->>'quantity', '') ~ '^[0-9]{1,9}$'\n),\nvalidated_existing_menu_items AS (\n  SELECT\n    format('menu:%s:%s', emi.menu_item_id, v.id) AS line_key,\n    'menu_item'::text AS record_type, emi.menu_item_id, v.id AS variant_id, NULL::bigint AS deal_id,\n    mi.name AS item_name, mi.category, v.variant_label AS size, emi.quantity,\n    v.price::numeric AS price, '[]'::jsonb AS selected_components\n  FROM existing_menu_items emi\n  JOIN restaurant_menu_variants v\n    ON v.id = emi.variant_id AND v.menu_item_id = emi.menu_item_id AND v.active = TRUE\n  JOIN restaurant_menu_items mi ON mi.id = emi.menu_item_id AND mi.active = TRUE\n),\nexisting_deal_items AS (\n  SELECT\n    (raw.existing->>'deal_id')::bigint AS deal_id,\n    (raw.existing->>'quantity')::int AS quantity,\n    canonical.selected_components\n  FROM existing_items_raw raw\n  CROSS JOIN LATERAL (\n    SELECT COALESCE(jsonb_agg(component ORDER BY component::text), '[]'::jsonb) AS selected_components\n    FROM jsonb_array_elements(COALESCE(raw.existing->'selected_components', '[]'::jsonb)) AS component\n  ) canonical\n  WHERE raw.existing->>'record_type' = 'deal'\n    AND COALESCE(raw.existing->>'deal_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(raw.existing->>'quantity', '') ~ '^[0-9]{1,9}$'\n    AND (NOT raw.existing ? 'selected_components' OR jsonb_typeof(raw.existing->'selected_components') = 'array')\n),\nvalidated_existing_deal_items AS (\n  SELECT\n    format('deal:%s:%s', edi.deal_id, edi.selected_components::text) AS line_key,\n    'deal'::text AS record_type, NULL::bigint AS menu_item_id, NULL::bigint AS variant_id, d.id AS deal_id,\n    d.name AS item_name, d.category, NULL::text AS size, edi.quantity,\n    d.price::numeric AS price, edi.selected_components\n  FROM existing_deal_items edi\n  JOIN restaurant_deals d ON d.id = edi.deal_id AND d.active = TRUE\n),\nvalidated_existing_items AS (\n  SELECT * FROM validated_existing_menu_items\n  UNION ALL\n  SELECT * FROM validated_existing_deal_items\n),\ncombined_items AS (\n  SELECT ei.*\n  FROM validated_existing_items ei\n  WHERE NOT EXISTS (\n    SELECT 1 FROM incoming_items ni WHERE ni.line_key = ei.line_key AND ni.remove_requested\n  )\n  UNION ALL\n  SELECT\n    line_key, record_type, menu_item_id, variant_id, deal_id, item_name, category, size,\n    quantity_delta AS quantity, price, selected_components\n  FROM incoming_items\n  WHERE NOT remove_requested AND quantity_delta <> 0\n),\nmerged_items AS (\n  SELECT\n    line_key, record_type, menu_item_id, variant_id, deal_id,\n    MAX(item_name) AS item_name, MAX(category) AS category, MAX(size) AS size,\n    SUM(quantity)::int AS quantity, MAX(price) AS price, selected_components\n  FROM combined_items\n  GROUP BY line_key, record_type, menu_item_id, variant_id, deal_id, selected_components\n  HAVING SUM(quantity) > 0\n),\nfinal_items AS (\n  SELECT record_type, menu_item_id, variant_id, deal_id, item_name, category, size,\n         quantity, price, selected_components, price * quantity AS line_total\n  FROM merged_items\n),\nupdated AS (\n  UPDATE conversation_sessions cs\n  SET cart = jsonb_build_object(\n        'items',\n        (SELECT COALESCE(jsonb_agg(to_jsonb(fi) ORDER BY fi.record_type, COALESCE(fi.menu_item_id, fi.deal_id), fi.variant_id, fi.selected_components::text), '[]'::jsonb) FROM final_items fi)\n      ),\n      order_status = 'draft',\n      updated_at = NOW()\n  FROM locked_session ls\n  WHERE cs.id = ls.id\n  RETURNING cs.cart\n)\nSELECT\n  u.cart,\n  jsonb_array_length(ip.items) AS input_item_count,\n  (SELECT COUNT(*)::int FROM validated_new_items) AS accepted_item_count,\n  jsonb_array_length(ip.items) - (SELECT COUNT(*)::int FROM validated_new_items) AS rejected_item_count\nFROM updated u CROSS JOIN input_payload ip;",
+        "query": "WITH input_payload AS (\n  SELECT CASE WHEN jsonb_typeof($1::jsonb) = 'array' THEN $1::jsonb ELSE '[]'::jsonb END AS items\n),\nlocked_session AS (\n  SELECT cs.id, cs.cart\n  FROM conversation_sessions cs\n  WHERE cs.customer_id = $2::bigint\n  FOR UPDATE\n),\nnew_items_raw AS (\n  SELECT elem, ordinal\n  FROM input_payload ip\n  CROSS JOIN LATERAL jsonb_array_elements(ip.items) WITH ORDINALITY AS raw(elem, ordinal)\n  WHERE jsonb_typeof(elem) = 'object'\n),\nnew_menu_items AS (\n  SELECT\n    (elem->>'menu_item_id')::bigint AS menu_item_id,\n    (elem->>'variant_id')::bigint AS variant_id,\n    COALESCE(elem->>'quantity', '1')::int AS quantity\n  FROM new_items_raw\n  WHERE elem->>'record_type' = 'menu_item'\n    AND COALESCE(elem->>'menu_item_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(elem->>'variant_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(elem->>'quantity', '1') ~ '^-?[0-9]{1,9}$'\n),\nvalidated_new_menu_items AS (\n  SELECT\n    format('menu:%s:%s', ni.menu_item_id, v.id) AS line_key,\n    'menu_item'::text AS record_type,\n    ni.menu_item_id,\n    v.id AS variant_id,\n    NULL::bigint AS deal_id,\n    mi.name AS item_name,\n    mi.category,\n    v.variant_label AS size,\n    ni.quantity,\n    v.price::numeric AS price,\n    '[]'::jsonb AS selected_components\n  FROM new_menu_items ni\n  JOIN restaurant_menu_variants v\n    ON v.id = ni.variant_id AND v.menu_item_id = ni.menu_item_id AND v.active = TRUE\n  JOIN restaurant_menu_items mi ON mi.id = ni.menu_item_id AND mi.active = TRUE\n),\nnew_deal_items AS (\n  SELECT\n    (raw.elem->>'deal_id')::bigint AS deal_id,\n    COALESCE(raw.elem->>'quantity', '1')::int AS quantity,\n    canonical.selected_components\n  FROM new_items_raw raw\n  CROSS JOIN LATERAL (\n    SELECT COALESCE(jsonb_agg(component ORDER BY component::text), '[]'::jsonb) AS selected_components\n    FROM jsonb_array_elements(COALESCE(raw.elem->'selected_components', '[]'::jsonb)) AS component\n  ) canonical\n  WHERE raw.elem->>'record_type' = 'deal'\n    AND COALESCE(raw.elem->>'deal_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(raw.elem->>'quantity', '1') ~ '^-?[0-9]{1,9}$'\n    AND (NOT raw.elem ? 'selected_components' OR jsonb_typeof(raw.elem->'selected_components') = 'array')\n),\nvalidated_new_deal_items AS (\n  SELECT\n    format('deal:%s:%s', ndi.deal_id, ndi.selected_components::text) AS line_key,\n    'deal'::text AS record_type,\n    NULL::bigint AS menu_item_id,\n    NULL::bigint AS variant_id,\n    d.id AS deal_id,\n    d.name AS item_name,\n    d.category,\n    NULL::text AS size,\n    ndi.quantity,\n    d.price::numeric AS price,\n    ndi.selected_components\n  FROM new_deal_items ndi\n  JOIN restaurant_deals d ON d.id = ndi.deal_id AND d.active = TRUE\n  WHERE \n    NOT EXISTS (\n      SELECT 1 FROM restaurant_deal_components required\n      WHERE required.deal_id = d.id AND required.selectable = TRUE\n        AND NOT EXISTS (\n          SELECT 1 FROM jsonb_array_elements(ndi.selected_components) choice_json\n          JOIN restaurant_menu_items choice ON choice.active = TRUE\n            AND LOWER(choice.name) = LOWER(choice_json->>'choice')\n          WHERE choice_json->>'selection_group' = required.selection_group\n            AND CASE\n              WHEN required.allowed_item_rule->>'allowed' = 'any_active_pizza' THEN\n                choice.item_type LIKE 'pizza%' AND EXISTS (\n                  SELECT 1 FROM restaurant_menu_variants cv WHERE cv.menu_item_id = choice.id AND cv.active = TRUE\n                    AND LOWER(cv.variant_label) = LOWER(required.allowed_item_rule->>'size_label'))\n              WHEN required.allowed_item_rule->>'allowed' = 'active_wing_items' THEN\n                choice.name ILIKE '%wing%'\n              WHEN required.allowed_item_rule->>'allowed' = 'active_sauces' THEN\n                choice.item_type = 'sauce'\n              WHEN jsonb_typeof(required.allowed_item_rule->'allowed_brands') = 'array' THEN\n                choice.item_type = 'drink'\n                AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(required.allowed_item_rule->'allowed_brands') brand WHERE LOWER(brand) = LOWER(choice.name))\n                AND EXISTS (SELECT 1 FROM restaurant_menu_variants cv WHERE cv.menu_item_id = choice.id AND cv.active = TRUE\n                  AND LOWER(cv.variant_label) = LOWER(COALESCE(required.allowed_item_rule->>'size', required.allowed_item_rule->>'size_label')))\n              ELSE FALSE END\n        )\n    )\n    AND NOT EXISTS (\n      SELECT 1 FROM jsonb_array_elements(ndi.selected_components) choice_json\n      WHERE jsonb_typeof(choice_json) <> 'object'\n         OR NOT EXISTS (SELECT 1 FROM restaurant_deal_components known\n                        WHERE known.deal_id = d.id AND known.selectable = TRUE\n                          AND known.selection_group = choice_json->>'selection_group')\n    )\n    AND (SELECT COUNT(*) FROM jsonb_array_elements(ndi.selected_components)) =\n        (SELECT COUNT(*) FROM restaurant_deal_components required WHERE required.deal_id = d.id AND required.selectable = TRUE)\n    AND (SELECT COUNT(DISTINCT choice_json->>'selection_group') FROM jsonb_array_elements(ndi.selected_components) choice_json) =\n        (SELECT COUNT(*) FROM jsonb_array_elements(ndi.selected_components))\n),\nvalidated_new_items AS (\n  SELECT * FROM validated_new_menu_items\n  UNION ALL\n  SELECT * FROM validated_new_deal_items\n),\nincoming_items AS (\n  SELECT\n    line_key, record_type, menu_item_id, variant_id, deal_id,\n    MAX(item_name) AS item_name, MAX(category) AS category, MAX(size) AS size,\n    SUM(quantity)::int AS quantity_delta, BOOL_OR(quantity = 0) AS remove_requested,\n    MAX(price) AS price, selected_components\n  FROM validated_new_items\n  GROUP BY line_key, record_type, menu_item_id, variant_id, deal_id, selected_components\n),\nexisting_items_raw AS (\n  SELECT existing\n  FROM locked_session ls\n  CROSS JOIN LATERAL jsonb_array_elements(\n    CASE WHEN jsonb_typeof(ls.cart->'items') = 'array' THEN ls.cart->'items' ELSE '[]'::jsonb END\n  ) AS existing\n  WHERE jsonb_typeof(existing) = 'object'\n),\nexisting_menu_items AS (\n  SELECT\n    (existing->>'menu_item_id')::bigint AS menu_item_id,\n    (existing->>'variant_id')::bigint AS variant_id,\n    (existing->>'quantity')::int AS quantity\n  FROM existing_items_raw\n  WHERE existing->>'record_type' = 'menu_item'\n    AND COALESCE(existing->>'menu_item_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(existing->>'variant_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(existing->>'quantity', '') ~ '^[0-9]{1,9}$'\n),\nvalidated_existing_menu_items AS (\n  SELECT\n    format('menu:%s:%s', emi.menu_item_id, v.id) AS line_key,\n    'menu_item'::text AS record_type, emi.menu_item_id, v.id AS variant_id, NULL::bigint AS deal_id,\n    mi.name AS item_name, mi.category, v.variant_label AS size, emi.quantity,\n    v.price::numeric AS price, '[]'::jsonb AS selected_components\n  FROM existing_menu_items emi\n  JOIN restaurant_menu_variants v\n    ON v.id = emi.variant_id AND v.menu_item_id = emi.menu_item_id AND v.active = TRUE\n  JOIN restaurant_menu_items mi ON mi.id = emi.menu_item_id AND mi.active = TRUE\n),\nexisting_deal_items AS (\n  SELECT\n    (raw.existing->>'deal_id')::bigint AS deal_id,\n    (raw.existing->>'quantity')::int AS quantity,\n    canonical.selected_components\n  FROM existing_items_raw raw\n  CROSS JOIN LATERAL (\n    SELECT COALESCE(jsonb_agg(component ORDER BY component::text), '[]'::jsonb) AS selected_components\n    FROM jsonb_array_elements(COALESCE(raw.existing->'selected_components', '[]'::jsonb)) AS component\n  ) canonical\n  WHERE raw.existing->>'record_type' = 'deal'\n    AND COALESCE(raw.existing->>'deal_id', '') ~ '^[0-9]{1,18}$'\n    AND COALESCE(raw.existing->>'quantity', '') ~ '^[0-9]{1,9}$'\n    AND (NOT raw.existing ? 'selected_components' OR jsonb_typeof(raw.existing->'selected_components') = 'array')\n),\nvalidated_existing_deal_items AS (\n  SELECT\n    format('deal:%s:%s', edi.deal_id, edi.selected_components::text) AS line_key,\n    'deal'::text AS record_type, NULL::bigint AS menu_item_id, NULL::bigint AS variant_id, d.id AS deal_id,\n    d.name AS item_name, d.category, NULL::text AS size, edi.quantity,\n    d.price::numeric AS price, edi.selected_components\n  FROM existing_deal_items edi\n  JOIN restaurant_deals d ON d.id = edi.deal_id AND d.active = TRUE\n  WHERE \n    NOT EXISTS (\n      SELECT 1 FROM restaurant_deal_components required\n      WHERE required.deal_id = d.id AND required.selectable = TRUE\n        AND NOT EXISTS (\n          SELECT 1 FROM jsonb_array_elements(edi.selected_components) choice_json\n          JOIN restaurant_menu_items choice ON choice.active = TRUE\n            AND LOWER(choice.name) = LOWER(choice_json->>'choice')\n          WHERE choice_json->>'selection_group' = required.selection_group\n            AND CASE\n              WHEN required.allowed_item_rule->>'allowed' = 'any_active_pizza' THEN\n                choice.item_type LIKE 'pizza%' AND EXISTS (\n                  SELECT 1 FROM restaurant_menu_variants cv WHERE cv.menu_item_id = choice.id AND cv.active = TRUE\n                    AND LOWER(cv.variant_label) = LOWER(required.allowed_item_rule->>'size_label'))\n              WHEN required.allowed_item_rule->>'allowed' = 'active_wing_items' THEN\n                choice.name ILIKE '%wing%'\n              WHEN required.allowed_item_rule->>'allowed' = 'active_sauces' THEN\n                choice.item_type = 'sauce'\n              WHEN jsonb_typeof(required.allowed_item_rule->'allowed_brands') = 'array' THEN\n                choice.item_type = 'drink'\n                AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(required.allowed_item_rule->'allowed_brands') brand WHERE LOWER(brand) = LOWER(choice.name))\n                AND EXISTS (SELECT 1 FROM restaurant_menu_variants cv WHERE cv.menu_item_id = choice.id AND cv.active = TRUE\n                  AND LOWER(cv.variant_label) = LOWER(COALESCE(required.allowed_item_rule->>'size', required.allowed_item_rule->>'size_label')))\n              ELSE FALSE END\n        )\n    )\n    AND NOT EXISTS (\n      SELECT 1 FROM jsonb_array_elements(edi.selected_components) choice_json\n      WHERE jsonb_typeof(choice_json) <> 'object'\n         OR NOT EXISTS (SELECT 1 FROM restaurant_deal_components known\n                        WHERE known.deal_id = d.id AND known.selectable = TRUE\n                          AND known.selection_group = choice_json->>'selection_group')\n    )\n    AND (SELECT COUNT(*) FROM jsonb_array_elements(edi.selected_components)) =\n        (SELECT COUNT(*) FROM restaurant_deal_components required WHERE required.deal_id = d.id AND required.selectable = TRUE)\n    AND (SELECT COUNT(DISTINCT choice_json->>'selection_group') FROM jsonb_array_elements(edi.selected_components) choice_json) =\n        (SELECT COUNT(*) FROM jsonb_array_elements(edi.selected_components))\n),\nvalidated_existing_items AS (\n  SELECT * FROM validated_existing_menu_items\n  UNION ALL\n  SELECT * FROM validated_existing_deal_items\n),\ncombined_items AS (\n  SELECT ei.*\n  FROM validated_existing_items ei\n  WHERE NOT EXISTS (\n    SELECT 1 FROM incoming_items ni WHERE ni.line_key = ei.line_key AND ni.remove_requested\n  )\n  UNION ALL\n  SELECT\n    line_key, record_type, menu_item_id, variant_id, deal_id, item_name, category, size,\n    quantity_delta AS quantity, price, selected_components\n  FROM incoming_items\n  WHERE NOT remove_requested AND quantity_delta <> 0\n),\nmerged_items AS (\n  SELECT\n    line_key, record_type, menu_item_id, variant_id, deal_id,\n    MAX(item_name) AS item_name, MAX(category) AS category, MAX(size) AS size,\n    SUM(quantity)::int AS quantity, MAX(price) AS price, selected_components\n  FROM combined_items\n  GROUP BY line_key, record_type, menu_item_id, variant_id, deal_id, selected_components\n  HAVING SUM(quantity) > 0\n),\nfinal_items AS (\n  SELECT record_type, menu_item_id, variant_id, deal_id, item_name, category, size,\n         quantity, price, selected_components, price * quantity AS line_total\n  FROM merged_items\n),\nupdated AS (\n  UPDATE conversation_sessions cs\n  SET cart = jsonb_build_object(\n        'items',\n        (SELECT COALESCE(jsonb_agg(to_jsonb(fi) ORDER BY fi.record_type, COALESCE(fi.menu_item_id, fi.deal_id), fi.variant_id, fi.selected_components::text), '[]'::jsonb) FROM final_items fi)\n      ),\n      order_status = 'draft',\n      updated_at = NOW()\n  FROM locked_session ls\n  WHERE cs.id = ls.id\n  RETURNING cs.cart\n)\nSELECT\n  u.cart,\n  jsonb_array_length(ip.items) AS input_item_count,\n  (SELECT COUNT(*)::int FROM validated_new_items) AS accepted_item_count,\n  jsonb_array_length(ip.items) - (SELECT COUNT(*)::int FROM validated_new_items) AS rejected_item_count\nFROM updated u CROSS JOIN input_payload ip;",
         "options": {
           "queryReplacement": "={{ [ $fromAI('items_json', 'JSON array string of cart operations, following the exact tool description', 'string'), $('Upsert Customer and Session').item.json.customer_id ] }}"
         },
         "descriptionType": "manual",
-        "toolDescription": "Validate and update the customer's draft cart. Pass a JSON array string. Menu line format: {\"record_type\":\"menu_item\",\"menu_item_id\":1,\"variant_id\":3,\"quantity\":1}. Deal line format: {\"record_type\":\"deal\",\"deal_id\":5,\"quantity\":1,\"selected_components\":[...]}. Positive quantity adds that amount to the matching line; a negative quantity decreases it; quantity 0 removes the entire exact matching line. A menu line matches only the same menu_item_id and variant_id. A deal matches only the same deal_id and exact selected_components configuration; when removing a configured deal, repeat its selected_components from CURRENT_SESSION. Use only IDs from MENU_DATA. Inspect accepted_item_count and rejected_item_count and never claim rejected lines were added."
+        "toolDescription": "Validate and update the customer's draft cart. Pass a JSON array string. Menu line format: {\"record_type\":\"menu_item\",\"menu_item_id\":1,\"variant_id\":3,\"quantity\":1}. Deal line format: {\"record_type\":\"deal\",\"deal_id\":5,\"quantity\":1,\"selected_components\":[...]}. Positive quantity adds that amount to the matching line; a negative quantity decreases it; quantity 0 removes the entire exact matching line. A menu line matches only the same menu_item_id and variant_id. A deal matches only the same deal_id and exact selected_components configuration; when removing a configured deal, repeat its selected_components from CURRENT_SESSION. Use only IDs from MENU_DATA. Inspect accepted_item_count and rejected_item_count and never claim rejected lines were added. Every selectable deal component is validated by selection_group and choice against the deal's allowed_item_rule; incomplete, unknown, inactive, or disallowed configurations are rejected. Every selectable deal component is validated by selection_group and choice against the deal's allowed_item_rule; incomplete, unknown, inactive, or disallowed configurations are rejected. Every selectable deal component is validated by selection_group and choice against the deal's allowed_item_rule; incomplete, unknown, inactive, or disallowed configurations are rejected. Every selectable deal component is validated by selection_group and choice against the deal's allowed_item_rule; incomplete, unknown, inactive, or disallowed configurations are rejected. Every selectable deal component is validated by selection_group and choice against the deal's allowed_item_rule; incomplete, unknown, inactive, or disallowed configurations are rejected."
       },
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
@@ -318,10 +326,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH lock_customer AS (\n  SELECT pg_advisory_xact_lock(hashtext('order_create:' || $1::text))\n),\nsession_data AS (\n  SELECT cs.customer_id, cs.cart, cs.order_type, cs.delivery_address, cs.delivery_name\n  FROM conversation_sessions cs\n  CROSS JOIN lock_customer\n  WHERE cs.customer_id = $1::bigint\n),\ncart_totals AS (\n  SELECT customer_id, cart, order_type, delivery_address, delivery_name,\n    COALESCE((SELECT SUM((item->>'line_total')::numeric) FROM jsonb_array_elements(cart->'items') AS item), 0) AS subtotal\n  FROM session_data\n),\nsettings AS (SELECT delivery_charge FROM restaurant_settings WHERE id = 1),\nnew_order AS (\n  INSERT INTO orders (customer_id, items, order_type, delivery_address, delivery_name, subtotal, delivery_charge, total)\n  SELECT ct.customer_id, ct.cart->'items', ct.order_type, ct.delivery_address, ct.delivery_name, ct.subtotal,\n    CASE WHEN ct.order_type = 'delivery' THEN s.delivery_charge ELSE 0 END,\n    ct.subtotal + CASE WHEN ct.order_type = 'delivery' THEN s.delivery_charge ELSE 0 END\n  FROM cart_totals ct, settings s\n  WHERE jsonb_array_length(ct.cart->'items') > 0\n    AND ct.order_type IN ('delivery', 'pickup')\n    AND ( ct.order_type = 'pickup'\n          OR ( ct.order_type = 'delivery'\n               AND ct.delivery_name IS NOT NULL AND TRIM(ct.delivery_name) <> ''\n               AND ct.delivery_address IS NOT NULL AND TRIM(ct.delivery_address) <> '' ) )\n  RETURNING *\n),\ncleared_session AS (\n  UPDATE conversation_sessions\n  SET cart = '{\"items\": []}'::jsonb, order_type = NULL, delivery_address = NULL, delivery_name = NULL,\n      order_status = 'placed', active_order_id = (SELECT id FROM new_order)\n  WHERE customer_id = $1::bigint AND EXISTS (SELECT 1 FROM new_order)\n  RETURNING 1\n)\nSELECT (SELECT COUNT(*) FROM new_order) > 0 AS order_created, no.*\nFROM (SELECT 1) AS _one LEFT JOIN new_order no ON TRUE;",
+        "query": "WITH lock_customer AS (\n  SELECT pg_advisory_xact_lock(hashtext('order_create:' || $1::text))\n), session_data AS (\n  SELECT cs.customer_id, cs.cart, cs.order_type, cs.delivery_address, cs.delivery_name\n  FROM conversation_sessions cs CROSS JOIN lock_customer\n  WHERE cs.customer_id = $1::bigint\n), cart_lines AS (\n  SELECT item, ordinal\n  FROM session_data sd\n  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sd.cart->'items') = 'array' THEN sd.cart->'items' ELSE '[]'::jsonb END)\n    WITH ORDINALITY AS x(item, ordinal)\n), valid_menu AS (\n  SELECT cl.ordinal FROM cart_lines cl\n  JOIN restaurant_menu_items mi ON mi.active = TRUE AND mi.id = CASE WHEN cl.item->>'menu_item_id' ~ '^[0-9]{1,18}$' THEN (cl.item->>'menu_item_id')::bigint END\n  JOIN restaurant_menu_variants mv ON mv.active = TRUE AND mv.menu_item_id = mi.id\n    AND mv.id = CASE WHEN cl.item->>'variant_id' ~ '^[0-9]{1,18}$' THEN (cl.item->>'variant_id')::bigint END\n  WHERE cl.item->>'record_type' = 'menu_item'\n), valid_deal AS (\n  SELECT cl.ordinal FROM cart_lines cl\n  JOIN restaurant_deals d ON d.active = TRUE AND d.id = CASE WHEN cl.item->>'deal_id' ~ '^[0-9]{1,18}$' THEN (cl.item->>'deal_id')::bigint END\n  WHERE cl.item->>'record_type' = 'deal'\n    AND jsonb_typeof(COALESCE(cl.item->'selected_components', '[]'::jsonb)) = 'array'\n    AND \n    NOT EXISTS (\n      SELECT 1 FROM restaurant_deal_components required\n      WHERE required.deal_id = d.id AND required.selectable = TRUE\n        AND NOT EXISTS (\n          SELECT 1 FROM jsonb_array_elements(COALESCE(cl.item->'selected_components', '[]'::jsonb)) choice_json\n          JOIN restaurant_menu_items choice ON choice.active = TRUE\n            AND LOWER(choice.name) = LOWER(choice_json->>'choice')\n          WHERE choice_json->>'selection_group' = required.selection_group\n            AND CASE\n              WHEN required.allowed_item_rule->>'allowed' = 'any_active_pizza' THEN\n                choice.item_type = 'pizza' AND EXISTS (\n                  SELECT 1 FROM restaurant_menu_variants cv WHERE cv.menu_item_id = choice.id AND cv.active = TRUE\n                    AND LOWER(cv.variant_label) = LOWER(required.allowed_item_rule->>'size_label'))\n              WHEN required.allowed_item_rule->>'allowed' = 'active_wing_items' THEN\n                choice.name ILIKE '%wing%'\n              WHEN required.allowed_item_rule->>'allowed' = 'active_sauces' THEN\n                choice.item_type = 'sauce'\n              WHEN jsonb_typeof(required.allowed_item_rule->'allowed_brands') = 'array' THEN\n                choice.item_type = 'drink'\n                AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(required.allowed_item_rule->'allowed_brands') brand WHERE LOWER(brand) = LOWER(choice.name))\n                AND EXISTS (SELECT 1 FROM restaurant_menu_variants cv WHERE cv.menu_item_id = choice.id AND cv.active = TRUE\n                  AND LOWER(cv.variant_label) = LOWER(COALESCE(required.allowed_item_rule->>'size', required.allowed_item_rule->>'size_label')))\n              ELSE FALSE END\n        )\n    )\n    AND NOT EXISTS (\n      SELECT 1 FROM jsonb_array_elements(COALESCE(cl.item->'selected_components', '[]'::jsonb)) choice_json\n      WHERE jsonb_typeof(choice_json) <> 'object'\n         OR NOT EXISTS (SELECT 1 FROM restaurant_deal_components known\n                        WHERE known.deal_id = d.id AND known.selectable = TRUE\n                          AND known.selection_group = choice_json->>'selection_group')\n    )\n    AND (SELECT COUNT(*) FROM jsonb_array_elements(COALESCE(cl.item->'selected_components', '[]'::jsonb))) =\n        (SELECT COUNT(*) FROM restaurant_deal_components required WHERE required.deal_id = d.id AND required.selectable = TRUE)\n    AND (SELECT COUNT(DISTINCT choice_json->>'selection_group') FROM jsonb_array_elements(COALESCE(cl.item->'selected_components', '[]'::jsonb)) choice_json) =\n        (SELECT COUNT(*) FROM jsonb_array_elements(COALESCE(cl.item->'selected_components', '[]'::jsonb)))\n), valid_lines AS (SELECT ordinal FROM valid_menu UNION ALL SELECT ordinal FROM valid_deal),\ninvalid AS (\n  SELECT COALESCE(array_agg(COALESCE(cl.item->>'item_name', cl.item->>'name', 'cart line #' || cl.ordinal::text) ORDER BY cl.ordinal), ARRAY[]::text[]) AS invalid_items\n  FROM cart_lines cl WHERE NOT EXISTS (SELECT 1 FROM valid_lines vl WHERE vl.ordinal = cl.ordinal)\n), cart_totals AS (\n  SELECT sd.customer_id, sd.cart, sd.order_type, sd.delivery_address, sd.delivery_name,\n    COALESCE((SELECT SUM((item->>'line_total')::numeric) FROM cart_lines), 0) AS subtotal\n  FROM session_data sd\n), settings AS (SELECT delivery_charge FROM restaurant_settings WHERE id = 1),\nnew_order AS (\n  INSERT INTO orders (customer_id, items, order_type, delivery_address, delivery_name, subtotal, delivery_charge, total)\n  SELECT ct.customer_id, ct.cart->'items', ct.order_type, ct.delivery_address, ct.delivery_name, ct.subtotal,\n    CASE WHEN ct.order_type = 'delivery' THEN s.delivery_charge ELSE 0 END,\n    ct.subtotal + CASE WHEN ct.order_type = 'delivery' THEN s.delivery_charge ELSE 0 END\n  FROM cart_totals ct, settings s, invalid i\n  WHERE COALESCE(jsonb_array_length(ct.cart->'items'), 0) > 0\n    AND cardinality(i.invalid_items) = 0\n    AND ct.order_type IN ('delivery', 'pickup')\n    AND (ct.order_type = 'pickup' OR (ct.order_type = 'delivery'\n      AND NULLIF(TRIM(ct.delivery_name), '') IS NOT NULL\n      AND NULLIF(TRIM(ct.delivery_address), '') IS NOT NULL))\n  RETURNING *\n), cleared_session AS (\n  UPDATE conversation_sessions SET cart = '{\"items\": []}'::jsonb, order_type = NULL,\n    delivery_address = NULL, delivery_name = NULL, order_status = 'placed',\n    active_order_id = (SELECT id FROM new_order), updated_at = NOW()\n  WHERE customer_id = $1::bigint AND EXISTS (SELECT 1 FROM new_order) RETURNING 1\n)\nSELECT (SELECT COUNT(*) FROM new_order) > 0 AS order_created,\n  (SELECT invalid_items FROM invalid) AS invalid_items, no.*\nFROM (SELECT 1) AS one LEFT JOIN new_order no ON TRUE;",
         "options": {
           "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id ] }}"
-        }
+        },
+        "toolDescription": "Atomically place the current draft order only after every cart line is revalidated against active menu items, matching active variants, active deals, and allowed deal component choices. If order_created=false and invalid_items is non-empty, tell the customer those lines changed/unavailable and ask them to update the cart."
       },
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
@@ -364,10 +373,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE conversation_sessions SET awaiting_human = TRUE, updated_at = NOW() WHERE customer_id = $1 RETURNING awaiting_human;",
+        "query": "WITH escalated AS (\n  UPDATE conversation_sessions SET awaiting_human = TRUE, updated_at = NOW()\n  WHERE customer_id = $1::bigint RETURNING customer_id\n), notified AS (\n  INSERT INTO admin_notifications (notification_type, title, source_key, customer_id, message, created_at)\n  SELECT 'customer_request', 'Escalation requested',\n         'escalation:' || customer_id || ':' || gen_random_uuid(), customer_id,\n         COALESCE(NULLIF(BTRIM($2::text), ''), 'Customer requested human assistance.'), NOW() FROM escalated\n  RETURNING id\n)\nSELECT EXISTS (SELECT 1 FROM escalated) AS awaiting_human,\n       (SELECT id FROM notified) AS admin_notification_id;",
         "options": {
-          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id ] }}"
-        }
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $fromAI('reason', 'Specific reason staff must follow up, including the customer issue and relevant order context', 'string') ] }}"
+        },
+        "toolDescription": "Set the conversation to awaiting human support and create a durable admin dashboard notification. Provide a specific, useful reason. A separate Notify Admin WhatsApp call is optional, not the only alert."
       },
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
@@ -488,7 +498,7 @@
         "promptType": "define",
         "text": "=Customer's new message: \"{{ $('Claim Latest Customer Turn').item.json.combined_text }}\"",
         "options": {
-          "systemMessage": "=You are the WhatsApp ordering assistant for {{ $('Get Restaurant Settings').item.json.restaurant_name }}, a pizza restaurant. You chat naturally in whichever language/style the customer uses — English, Urdu, or Roman Urdu — and you decide for yourself what to do each turn. There is no fixed menu of commands: read what the customer actually wants and act accordingly.\n\nCONTEXT GIVEN TO YOU EACH TURN\n- RESTAURANT_SETTINGS: {{ JSON.stringify($('Get Restaurant Settings').item.json) }}\n- MENU_DATA (source of truth for every item/deal/price/id — never invent one): {{ JSON.stringify($('Load Active Menu').item.json.menu) }}\n- MENU_RULES (sizes, crust availability, deal-selection policy, hours, contact info, etc.): {{ JSON.stringify($('Load Active Menu').item.json.menu_rules) }}\n- CURRENT_SESSION (cart, order_type, delivery info, order_status, awaiting_human, pending_items): {{ JSON.stringify($('Upsert Customer and Session').item.json) }}\n- RECENT_MESSAGES (last turns of this conversation, oldest first): {{ JSON.stringify($('Upsert Customer and Session').item.json.recent_messages) }}\n- Customer's new message(s), combined oldest-first: \"{{ $('Claim Latest Customer Turn').item.json.combined_text }}\"\n\nHOW TO ANSWER QUESTIONS\nAny question about the menu, a specific deal's contents, prices, sizes, crusts, hours, or policies should be answered directly from MENU_DATA / MENU_RULES / RESTAURANT_SETTINGS above — you do not need a tool for that, you already have the data.\n\nGROUNDING RULE (read this before every reply that mentions a product):\n- Before naming ANY item, sauce, deal, price, size, or component in your reply, you must be able to point to the exact record in MENU_DATA (or the exact rule in MENU_RULES) that it came from. Names and prices must match MENU_DATA byte-for-byte — not \"close enough\", not a plausible-sounding variant, not something a typical pizza place might have.\n- If the customer asks about a category (e.g. \"what sauces/dips do you have\") first find every MENU_DATA record where category or item_type matches that category, and list only those exact names and prices. If you find none, say plainly that you don't see that on the current menu and offer to check with the team — never fill the gap with an invented item.\n- If order_type is delivery, the total you mention must always include the delivery charge from restaurant_settings.\n- As soon as the customer says delivery or pickup, call Set Order Type immediately — do not wait until order confirmation to ask.\n- Never invent an item, price, id, component, flavor, or rule that isn't literally present in MENU_DATA/MENU_RULES. If you're not fully sure something is on the menu, treat it as NOT on the menu rather than guessing.\n- When a deal has selectable components (selection_group with selectable:true) and the customer hasn't said which flavor/type they want, ask; fixed (selectable:false) components should never be asked about.\n\nWHEN TO USE TOOLS\nOnly call a tool when you need to change something or take a real-world action:\n- Track Pending Item — when the customer clearly states they want a specific menu item, deal, or drink (with real order intent) but the conversation moves to something else before it is added to the cart or confirmed. Do not call this for items already in the cart, or for casual browsing/menu questions with no order intent.\n- If the customer later refers to an item vaguely (e.g. \"wohi\", \"same\", \"that one\", \"vo hi\"), first check CURRENT_SESSION.pending_items for the most recent matching item before asking the customer to repeat themselves. If it's empty or has no clear match, ask the customer to clarify — do not guess. Once resolved, proceed normally (e.g. call Update Cart with the matching MENU_DATA item).\n- Update Cart — whenever the cart should change (add, change quantity, or remove by setting quantity 0). Use the exact ids from MENU_DATA. If a new item mention shows up unexpectedly alongside unrelated info in the same message (e.g. next to a name or delivery address, or mid another task), briefly confirm with the customer before adding it, instead of adding it silently. After calling it, tell the customer their updated cart + total in a short, clear summary, in their language.\n- Set Order Type — only once the customer has explicitly said \"delivery\" or \"pickup\" in this conversation. Never default or assume.\n- Set Delivery Info — once the customer gives their delivery name and/or address.\n- Place Order — only after you've shown the customer a cart summary with total and they've clearly confirmed, AND order_type is set, AND (if delivery) name+address are saved. If the tool reports order_created=false, something above is still missing — figure out what and ask, don't claim the order went through. After a successful Place Order, call Notify Admin with a clear kitchen ticket (items, sizes, qty, order type, delivery info if any, total, customer phone), then tell the customer their order is confirmed.\n- Cancel Order — when the customer wants to cancel and CURRENT_SESSION.order_status is 'draft' (nothing placed yet). If the result says cancelled=false, the order was already placed — do NOT try this tool again; use Request Cancellation Approval instead.\n- Request Cancellation Approval — when the customer wants to cancel an order that has already been placed (order_status is not 'draft'). This does not cancel anything itself — it puts the request in front of the restaurant owner for a yes/no decision. After calling it, tell the customer clearly that you're checking with the team and will confirm shortly; do not say the order is cancelled, and do not say the team will message them directly — they will hear back from you, in this chat. Also call Notify Admin with a short heads-up. Never call this twice for the same unresolved request in one conversation.\n- Escalate To Human — for anything that isn't a structured yes/no decision: the customer asks for a person, or reports a problem with a past order. Always pair it with a Notify Admin call describing the issue and the customer's phone number.\n- Send Menu Image 1 / Send Menu Image 2 — when the customer wants to see the menu visually (call both, in order), then still describe in text how to order from it. Before calling these, check RECENT_MESSAGES: if one of your own earlier replies in this conversation already mentions sending/showing the menu, you've already sent the photos — don't call these tools again, just answer their new question directly (e.g. from a fresh menu request point them back to the photos you already sent, or just answer with text/MENU_DATA).\n\nSTYLE\n- Keep replies short, warm, and WhatsApp-appropriate; light emoji is fine, don't overdo it.\n- Never claim an action (cart updated, order placed, order cancelled, team notified) happened unless the matching tool result actually confirms it.\n- Never make up prices, item names, ids, delivery times, or policies that aren't in the data you were given.\n- Only your final reply to the customer should be plain conversational text — no JSON, no markdown code fences.\n- If MENU_DATA above is empty or missing for this turn, say you're having trouble pulling up the menu right now and offer to have the team follow up — do NOT answer menu questions from general knowledge of what pizza places typically sell.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, complains about a current/active order (e.g. delivery is late, wrong item received, order taking too long), or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number. You may apologize to the customer, but only say the team has been notified or the issue is being escalated if you actually called Escalate To Human and Notify Admin in this same turn — never make that claim without calling the tools.",
+          "systemMessage": "=You are the WhatsApp ordering assistant for {{ $('Get Restaurant Settings').item.json.restaurant_name }}, a pizza restaurant. You chat naturally in whichever language/style the customer uses — English, Urdu, or Roman Urdu — and you decide for yourself what to do each turn. There is no fixed menu of commands: read what the customer actually wants and act accordingly.\n\nCONTEXT GIVEN TO YOU EACH TURN\n- RESTAURANT_SETTINGS: {{ JSON.stringify($('Get Restaurant Settings').item.json) }}\n- MENU_DATA (source of truth for every item/deal/price/id — never invent one): {{ JSON.stringify($('Load Active Menu').item.json.menu) }}\n- MENU_RULES (sizes, crust availability, deal-selection policy, hours, contact info, etc.): {{ JSON.stringify($('Load Active Menu').item.json.menu_rules) }}\n- CURRENT_SESSION (cart, order_type, delivery info, order_status, awaiting_human, pending_items): {{ JSON.stringify($('Upsert Customer and Session').item.json) }}\n- ACTIVE_ORDER_STATUS: {{ $('Upsert Customer and Session').item.json.active_order_status || 'none' }}\n- RECENT_MESSAGES (last turns of this conversation, oldest first): {{ JSON.stringify($('Upsert Customer and Session').item.json.recent_messages) }}\n- Customer's new message(s), combined oldest-first: \"{{ $('Claim Latest Customer Turn').item.json.combined_text }}\"\n\nHOW TO ANSWER QUESTIONS\nAny question about the menu, a specific deal's contents, prices, sizes, crusts, hours, or policies should be answered directly from MENU_DATA / MENU_RULES / RESTAURANT_SETTINGS above — you do not need a tool for that, you already have the data.\n\nGROUNDING RULE (read this before every reply that mentions a product):\n- Before naming ANY item, sauce, deal, price, size, or component in your reply, you must be able to point to the exact record in MENU_DATA (or the exact rule in MENU_RULES) that it came from. Names and prices must match MENU_DATA byte-for-byte — not \"close enough\", not a plausible-sounding variant, not something a typical pizza place might have.\n- If the customer asks about a category (e.g. \"what sauces/dips do you have\") first find every MENU_DATA record where category or item_type matches that category, and list only those exact names and prices. If you find none, say plainly that you don't see that on the current menu and offer to check with the team — never fill the gap with an invented item.\n- If order_type is delivery, the total you mention must always include the delivery charge from restaurant_settings.\n- As soon as the customer says delivery or pickup, call Set Order Type immediately — do not wait until order confirmation to ask.\n- Never invent an item, price, id, component, flavor, or rule that isn't literally present in MENU_DATA/MENU_RULES. If you're not fully sure something is on the menu, treat it as NOT on the menu rather than guessing.\n- When a deal has selectable components (selection_group with selectable:true) and the customer hasn't said which flavor/type they want, ask; fixed (selectable:false) components should never be asked about.\n\nWHEN TO USE TOOLS\nOnly call a tool when you need to change something or take a real-world action:\n- Track Pending Item — when the customer clearly states they want a specific menu item, deal, or drink (with real order intent) but the conversation moves to something else before it is added to the cart or confirmed. Do not call this for items already in the cart, or for casual browsing/menu questions with no order intent.\n- If the customer later refers to an item vaguely (e.g. \"wohi\", \"same\", \"that one\", \"vo hi\"), first check CURRENT_SESSION.pending_items for the most recent matching item before asking the customer to repeat themselves. If it's empty or has no clear match, ask the customer to clarify — do not guess. Once resolved, proceed normally (e.g. call Update Cart with the matching MENU_DATA item).\n- Update Cart — whenever the cart should change (add, change quantity, or remove by setting quantity 0). Use the exact ids from MENU_DATA. If a new item mention shows up unexpectedly alongside unrelated info in the same message (e.g. next to a name or delivery address, or mid another task), briefly confirm with the customer before adding it, instead of adding it silently. After calling it, tell the customer their updated cart + total in a short, clear summary, in their language.\n- Set Order Type — only once the customer has explicitly said \"delivery\" or \"pickup\" in this conversation. Never default or assume.\n- Set Delivery Info — once the customer gives their delivery name and/or address.\n- Place Order — only after you've shown the customer a cart summary with total and they've clearly confirmed, AND order_type is set, AND (if delivery) name+address are saved. If the tool reports order_created=false, something above is still missing — figure out what and ask, don't claim the order went through. After a successful Place Order, call Notify Admin with a clear kitchen ticket (items, sizes, qty, order type, delivery info if any, total, customer phone), then tell the customer their order is confirmed.\n- Cancel Order — when the customer wants to cancel and CURRENT_SESSION.order_status is 'draft' (nothing placed yet). If the result says cancelled=false, the order was already placed — do NOT try this tool again; use Request Cancellation Approval instead.\n- Request Cancellation Approval — when the customer wants to cancel an order that has already been placed (order_status is not 'draft'). This does not cancel anything itself — it puts the request in front of the restaurant owner for a yes/no decision. After calling it, tell the customer clearly that you're checking with the team and will confirm shortly; do not say the order is cancelled, and do not say the team will message them directly — they will hear back from you, in this chat. Also call Notify Admin with a short heads-up. Never call this twice for the same unresolved request in one conversation.\n- Escalate To Human — for anything that isn't a structured yes/no decision: the customer asks for a person, or reports a problem with a past order. Always pair it with a Notify Admin call describing the issue and the customer's phone number.\n- Send Menu Image 1 / Send Menu Image 2 — when the customer wants to see the menu visually (call both, in order), then still describe in text how to order from it. Before calling these, check RECENT_MESSAGES: if one of your own earlier replies in this conversation already mentions sending/showing the menu, you've already sent the photos — don't call these tools again, just answer their new question directly (e.g. from a fresh menu request point them back to the photos you already sent, or just answer with text/MENU_DATA).\n\nSTYLE\n- Keep replies short, warm, and WhatsApp-appropriate; light emoji is fine, don't overdo it.\n- Never claim an action (cart updated, order placed, order cancelled, team notified) happened unless the matching tool result actually confirms it.\n- Never make up prices, item names, ids, delivery times, or policies that aren't in the data you were given.\n- Only your final reply to the customer should be plain conversational text — no JSON, no markdown code fences.\n- If MENU_DATA above is empty or missing for this turn, say you're having trouble pulling up the menu right now and offer to have the team follow up — do NOT answer menu questions from general knowledge of what pizza places typically sell.\n- Escalate To Human — when the customer asks for a person, reports a problem with a past order, complains about a current/active order (e.g. delivery is late, wrong item received, order taking too long), or a cancellation attempt fails on an already-placed order. Always pair it with a Notify Admin call describing the issue and the customer's phone number. You may apologize to the customer, but only say the team has been notified or the issue is being escalated if you actually called Escalate To Human and Notify Admin in this same turn — never make that claim without calling the tools.\n\nACTIVE ORDER RULES\n- active_order_status is the authoritative current database status for active_order_id. Explain it plainly when asked; never infer status from the session's older order_status field.\n- If a customer corrects the delivery name or address after placement, call Update Placed Order Delivery Info. If it returns no row, explain the order can no longer be edited automatically and call Escalate To Human with a specific reason.\n- Place Order revalidates every cart line. If it returns invalid_items, do not claim success; identify those items and ask the customer to update the cart.\n- Escalate To Human already creates the durable dashboard alert. Use Notify Admin only when an immediate WhatsApp alert is useful.",
           "maxIterations": 8
         }
       },
@@ -499,7 +509,8 @@
         0
       ],
       "id": "85f2dbce-4bcb-4ca1-a1c8-b142e01019e6",
-      "name": "Pizza Ordering Agent"
+      "name": "Pizza Ordering Agent",
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -508,7 +519,7 @@
             {
               "id": "b3673a01-dc58-42f5-b754-9c870350a090",
               "name": "reply_text",
-              "value": "={{ $json.output }}",
+              "value": "={{ $json.reply_text || $json.output }}",
               "type": "string"
             }
           ]
@@ -553,13 +564,13 @@
         "operation": "executeQuery",
         "query": "WITH appended AS (\n  SELECT COALESCE(recent_messages, '[]'::jsonb)\n         || jsonb_build_array(\n              jsonb_build_object('role', 'customer', 'text', $2::text),\n              jsonb_build_object('role', 'bot', 'text', $3::text)\n            ) AS msgs\n  FROM conversation_sessions\n  WHERE customer_id = $1::bigint\n  FOR UPDATE\n),\ntrimmed AS (\n  SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb) AS msgs\n  FROM appended,\n       LATERAL jsonb_array_elements(appended.msgs) WITH ORDINALITY AS t(elem, idx)\n  WHERE idx > (SELECT jsonb_array_length(msgs) FROM appended) - 12\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET recent_messages = (SELECT msgs FROM trimmed),\n      updated_at = NOW()\n  WHERE cs.customer_id = $1::bigint\n  RETURNING cs.id\n),\nbuffer_finalized AS (\n  UPDATE message_buffer mb\n  SET processed = TRUE,\n      processed_at = NOW()\n  WHERE mb.customer_phone = $5::text\n    AND mb.batch_key = $4::text\n    AND mb.processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING mb.message_id\n),\nmessages_recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT bf.message_id, $5::text, NOW()\n  FROM buffer_finalized bf\n  WHERE bf.message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING\n  RETURNING message_id\n)\nSELECT\n  EXISTS (SELECT 1 FROM session_updated) AS session_updated,\n  (SELECT COUNT(*)::int FROM buffer_finalized) AS buffered_messages_finalized,\n  (SELECT COUNT(*)::int FROM messages_recorded) AS message_ids_recorded;",
         "options": {
-          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Claim Latest Customer Turn').item.json.combined_text || '', $('Reply Text').item.json.reply_text || '', $('Claim Latest Customer Turn').item.json.batch_key, $('Normalize Incoming Message').item.json.customer_phone ] }}"
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Claim Latest Customer Turn').item.json.combined_text || '', $json.reply_text || $('Claim Latest Customer Turn').item.json.stored_reply_text || '', $('Claim Latest Customer Turn').item.json.batch_key, $('Normalize Incoming Message').item.json.customer_phone ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2128,
+        2336,
         0
       ],
       "id": "4abbdf28-164d-4af9-94b9-26bb995f48d4",
@@ -661,7 +672,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH serialized AS (\n  SELECT pg_advisory_xact_lock(hashtextextended('customer-turn:' || $1::text, 0))\n),\ncurrent_row AS (\n  SELECT mb.*\n  FROM message_buffer mb\n  CROSS JOIN serialized\n  WHERE mb.id = $2::bigint\n    AND mb.customer_phone = $1::text\n),\nactive_batch AS (\n  SELECT EXISTS (\n    SELECT 1\n    FROM message_buffer mb\n    WHERE mb.customer_phone = $1::text\n      AND mb.processed = FALSE\n      AND mb.batch_key IS NOT NULL\n      AND mb.batch_claimed_at >= NOW() - INTERVAL '5 minutes'\n  ) AS present\n),\nlatest_available AS (\n  SELECT MAX(mb.id) AS id\n  FROM message_buffer mb\n  WHERE mb.customer_phone = $1::text\n    AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND (mb.batch_key IS NULL\n         OR mb.batch_claimed_at < NOW() - INTERVAL '5 minutes')\n),\ndecision AS (\n  SELECT CASE\n    WHEN NOT EXISTS (SELECT 1 FROM current_row WHERE processed = FALSE) THEN 'superseded'\n    WHEN EXISTS (SELECT 1 FROM current_row WHERE batch_key IS NOT NULL) THEN 'superseded'\n    WHEN (SELECT present FROM active_batch) THEN 'busy'\n    WHEN (SELECT id FROM latest_available) IS DISTINCT FROM (SELECT id FROM current_row) THEN 'superseded'\n    ELSE 'ready'\n  END AS mode\n),\nclaimed AS (\n  UPDATE message_buffer mb\n  SET batch_key = $3::text,\n      batch_claimed_at = NOW()\n  WHERE mb.customer_phone = $1::text\n    AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND (mb.batch_key IS NULL\n         OR mb.batch_claimed_at < NOW() - INTERVAL '5 minutes')\n    AND (SELECT mode FROM decision) = 'ready'\n  RETURNING mb.id, mb.message_id, mb.message_text, mb.received_at\n)\nSELECT\n  d.mode,\n  $3::text AS batch_key,\n  (SELECT string_agg(c.message_text, E'\\n' ORDER BY c.id) FROM claimed c) AS combined_text,\n  (SELECT COUNT(*)::int FROM claimed) AS message_count,\n  (SELECT jsonb_agg(c.message_id ORDER BY c.id) FROM claimed c) AS message_ids\nFROM decision d;",
+        "query": "WITH serialized AS (\n  SELECT pg_advisory_xact_lock(hashtextextended('customer-turn:' || $1::text, 0))\n), current_row AS (\n  SELECT mb.* FROM message_buffer mb CROSS JOIN serialized\n  WHERE mb.id = $2::bigint AND mb.customer_phone = $1::text\n), active_batch AS (\n  SELECT EXISTS (SELECT 1 FROM message_buffer mb\n    WHERE mb.customer_phone = $1::text AND mb.processed = FALSE\n      AND mb.batch_key IS NOT NULL\n      AND mb.batch_claimed_at >= NOW() - INTERVAL '5 minutes') AS present\n), latest_available AS (\n  SELECT MAX(mb.id) AS id FROM message_buffer mb\n  WHERE mb.customer_phone = $1::text AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND (mb.batch_key IS NULL OR mb.batch_claimed_at < NOW() - INTERVAL '5 minutes')\n), decision AS (\n  SELECT CASE\n    WHEN NOT EXISTS (SELECT 1 FROM current_row WHERE processed = FALSE) THEN 'superseded'\n    WHEN EXISTS (SELECT 1 FROM current_row WHERE batch_key IS NOT NULL AND batch_claimed_at >= NOW() - INTERVAL '5 minutes') THEN 'superseded'\n    WHEN (SELECT present FROM active_batch) THEN 'busy'\n    WHEN (SELECT id FROM latest_available) IS DISTINCT FROM (SELECT id FROM current_row) THEN 'superseded'\n    ELSE 'ready' END AS mode\n), claimed AS (\n  UPDATE message_buffer mb\n  SET batch_key = $3::text, batch_claimed_at = NOW()\n  WHERE mb.customer_phone = $1::text AND mb.processed = FALSE AND mb.message_id IS NOT NULL\n    AND (mb.batch_key IS NULL OR mb.batch_claimed_at < NOW() - INTERVAL '5 minutes')\n    AND (SELECT mode FROM decision) = 'ready'\n  RETURNING mb.id, mb.message_id, mb.message_text, mb.received_at, mb.reply_text, mb.replied_at\n)\nSELECT d.mode, $3::text AS batch_key,\n  (SELECT string_agg(c.message_text, E'\\n' ORDER BY c.id) FROM claimed c) AS combined_text,\n  (SELECT COUNT(*)::int FROM claimed) AS message_count,\n  (SELECT jsonb_agg(c.message_id ORDER BY c.id) FROM claimed c) AS message_ids,\n  COALESCE((SELECT COUNT(*) > 0 AND BOOL_AND(c.replied_at IS NOT NULL) FROM claimed c), FALSE) AS reply_already_sent,\n  (SELECT c.reply_text FROM claimed c WHERE c.replied_at IS NOT NULL ORDER BY c.id DESC LIMIT 1) AS stored_reply_text\nFROM decision d;",
         "options": {
           "queryReplacement": "={{ [ $('Normalize Incoming Message').item.json.customer_phone, $('Insert Message to Buffer').item.json.buffer_id, $('Normalize Incoming Message').item.json.message_id ] }}"
         }
@@ -905,7 +916,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH input AS (\n  SELECT\n    $1::bigint AS request_id,\n    $2::text AS decision,\n    NULLIF(BTRIM($3::text), '') AS admin_note,\n    $4::text AS admin_phone,\n    $5::text AS admin_message_id\n),\nlocked_request AS MATERIALIZED (\n  SELECT r.*\n  FROM admin_requests r\n  JOIN input i ON i.request_id = r.id\n  FOR UPDATE OF r\n),\nlocked_order AS MATERIALIZED (\n  SELECT o.*\n  FROM orders o\n  JOIN locked_request r ON r.order_id = o.id\n  FOR UPDATE OF o\n),\nrequest_context AS (\n  SELECT\n    r.id, r.customer_id, r.order_id, r.request_type,\n    r.status AS request_status, r.admin_note AS existing_admin_note,\n    r.notification_sent, r.notification_message_id,\n    r.notification_claim_token, r.notification_claimed_at,\n    o.status AS order_status, o.customer_id AS order_customer_id,\n    c.whatsapp_phone AS customer_phone,\n    c.preferred_language,\n    i.decision, i.admin_note, i.admin_phone, i.admin_message_id\n  FROM locked_request r\n  JOIN input i ON TRUE\n  JOIN customers c ON c.id = r.customer_id\n  LEFT JOIN locked_order o ON o.id = r.order_id\n),\neligibility AS (\n  SELECT rc.*,\n    CASE\n      WHEN rc.request_status <> 'pending' THEN 'already_' || rc.request_status\n      WHEN rc.decision NOT IN ('approved', 'denied') THEN 'invalid_decision'\n      WHEN rc.request_type <> 'cancel_order' THEN 'unsupported_request_type'\n      WHEN rc.decision = 'denied' THEN 'denied'\n      WHEN rc.order_id IS NULL OR rc.order_status IS NULL\n        OR rc.order_customer_id IS DISTINCT FROM rc.customer_id THEN 'invalid_order_link'\n      WHEN rc.order_status NOT IN ('received', 'preparing', 'out_for_delivery', 'cancelled')\n        THEN 'order_not_cancellable'\n      ELSE 'approved'\n    END AS outcome\n  FROM request_context rc\n),\norder_cancelled AS (\n  UPDATE orders o\n  SET status = 'cancelled', updated_at = NOW()\n  FROM eligibility e\n  WHERE e.outcome = 'approved'\n    AND o.id = e.order_id\n    AND o.status IN ('received', 'preparing', 'out_for_delivery')\n  RETURNING o.id\n),\nrequest_resolved AS (\n  UPDATE admin_requests r\n  SET status = e.decision,\n      admin_note = e.admin_note,\n      resolved_at = NOW(),\n      resolved_by_phone = e.admin_phone,\n      resolved_by_message_id = e.admin_message_id,\n      notification_claim_token = CASE WHEN e.notification_sent THEN NULL ELSE e.admin_message_id END,\n      notification_claimed_at = CASE WHEN e.notification_sent THEN NULL ELSE NOW() END\n  FROM eligibility e\n  WHERE r.id = e.id\n    AND e.request_status = 'pending'\n    AND (\n      e.outcome = 'denied'\n      OR (e.outcome = 'approved'\n          AND (e.order_status = 'cancelled' OR EXISTS (SELECT 1 FROM order_cancelled)))\n    )\n  RETURNING r.id, r.status, r.customer_id, r.order_id, r.admin_note,\n            r.notification_claim_token, r.notification_claimed_at\n),\nnotification_reclaimed AS (\n  UPDATE admin_requests r\n  SET notification_claim_token = e.admin_message_id,\n      notification_claimed_at = NOW()\n  FROM eligibility e\n  WHERE r.id = e.id\n    AND e.request_status IN ('approved', 'denied')\n    AND e.notification_sent = FALSE\n    AND (e.notification_claim_token IS NULL\n         OR e.notification_claimed_at < NOW() - INTERVAL '5 minutes')\n  RETURNING r.id, r.notification_claim_token, r.notification_claimed_at\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET awaiting_human = EXISTS (\n        SELECT 1 FROM admin_requests pending\n        WHERE pending.customer_id = rr.customer_id\n          AND pending.status = 'pending'\n          AND pending.id <> rr.id\n      ),\n      order_status = CASE\n        WHEN rr.status = 'approved' AND cs.active_order_id = rr.order_id THEN 'cancelled'\n        ELSE cs.order_status\n      END,\n      updated_at = NOW()\n  FROM request_resolved rr\n  WHERE cs.customer_id = rr.customer_id\n  RETURNING cs.id\n),\nresult AS (\n  SELECT\n    i.request_id,\n    COALESCE(e.id, 0) AS matched_request_id,\n    COALESCE(rr.status, e.request_status) AS final_status,\n    COALESCE(\n      CASE WHEN rr.id IS NOT NULL THEN rr.status END,\n      e.outcome,\n      'not_found'\n    ) AS outcome,\n    e.order_id,\n    e.customer_phone,\n    e.preferred_language,\n    COALESCE(rr.admin_note, e.existing_admin_note) AS admin_note,\n    COALESCE(e.notification_sent, FALSE) AS notification_sent,\n    COALESCE(rr.notification_claim_token, nr.notification_claim_token, e.notification_claim_token) AS notification_claim_token,\n    i.admin_message_id\n  FROM input i\n  LEFT JOIN eligibility e ON TRUE\n  LEFT JOIN request_resolved rr ON rr.id = e.id\n  LEFT JOIN notification_reclaimed nr ON nr.id = e.id\n)\nSELECT\n  request_id::text AS request_id,\n  NULLIF(matched_request_id, 0)::text AS matched_request_id,\n  order_id::text AS order_id,\n  outcome,\n  final_status,\n  customer_phone,\n  notification_sent,\n  (final_status IN ('approved', 'denied')\n    AND customer_phone IS NOT NULL\n    AND notification_sent = FALSE\n    AND notification_claim_token = admin_message_id) AS notify_customer,\n  CASE\n    WHEN final_status = 'approved' AND lower(COALESCE(preferred_language, '')) IN ('ur', 'urdu', 'roman_urdu')\n      THEN 'Aap ki cancellation request #' || request_id || ' approve ho gayi hai. Order #' || order_id || ' cancel kar diya gaya hai. ✅'\n    WHEN final_status = 'approved'\n      THEN 'Your cancellation request #' || request_id || ' has been approved. Order #' || order_id || ' is cancelled. ✅'\n    WHEN final_status = 'denied' AND lower(COALESCE(preferred_language, '')) IN ('ur', 'urdu', 'roman_urdu')\n      THEN 'Aap ki cancellation request #' || request_id || ' approve nahi ho saki. Order #' || order_id || ' active rahega.'\n    WHEN final_status = 'denied'\n      THEN 'Your cancellation request #' || request_id || ' was denied. Order #' || order_id || ' remains active.'\n    ELSE NULL\n  END || CASE WHEN admin_note IS NOT NULL THEN E'\\n\\nAdmin note: ' || admin_note ELSE '' END AS customer_reply,\n  CASE outcome\n    WHEN 'approved' THEN 'Request #' || request_id || ' approved; order #' || order_id || ' cancelled.'\n    WHEN 'denied' THEN 'Request #' || request_id || ' denied; order #' || order_id || ' was not changed.'\n    WHEN 'already_approved' THEN 'Request #' || request_id || ' was already approved. No duplicate update was made.'\n    WHEN 'already_denied' THEN 'Request #' || request_id || ' was already denied. No duplicate update was made.'\n    WHEN 'not_found' THEN 'Request #' || request_id || ' was not found.'\n    WHEN 'invalid_order_link' THEN 'Request #' || request_id || ' has no valid linked order and was not changed.'\n    WHEN 'order_not_cancellable' THEN 'Order #' || COALESCE(order_id::text, '?') || ' can no longer be cancelled; request #' || request_id || ' was not changed.'\n    WHEN 'unsupported_request_type' THEN 'Request #' || request_id || ' is not a supported cancellation request.'\n    ELSE 'Request #' || request_id || ' could not be resolved (' || outcome || ').'\n  END AS admin_reply\nFROM result;",
+        "query": "WITH input AS (\n  SELECT\n    $1::bigint AS request_id,\n    $2::text AS decision,\n    NULLIF(BTRIM($3::text), '') AS admin_note,\n    $4::text AS admin_phone,\n    $5::text AS admin_message_id\n),\nlocked_request AS MATERIALIZED (\n  SELECT r.*\n  FROM admin_requests r\n  JOIN input i ON i.request_id = r.id\n  FOR UPDATE OF r\n),\nlocked_order AS MATERIALIZED (\n  SELECT o.*\n  FROM orders o\n  JOIN locked_request r ON r.order_id = o.id\n  FOR UPDATE OF o\n),\nrequest_context AS (\n  SELECT\n    r.id, r.customer_id, r.order_id, r.request_type,\n    r.status AS request_status, r.admin_note AS existing_admin_note,\n    r.notification_sent, r.notification_message_id,\n    r.notification_claim_token, r.notification_claimed_at,\n    o.status AS order_status, o.customer_id AS order_customer_id,\n    c.whatsapp_phone AS customer_phone,\n    c.preferred_language,\n    i.decision, i.admin_note, i.admin_phone, i.admin_message_id\n  FROM locked_request r\n  JOIN input i ON TRUE\n  JOIN customers c ON c.id = r.customer_id\n  LEFT JOIN locked_order o ON o.id = r.order_id\n),\neligibility AS (\n  SELECT rc.*,\n    CASE\n      WHEN rc.request_status <> 'pending' THEN 'already_' || rc.request_status\n      WHEN rc.decision NOT IN ('approved', 'denied') THEN 'invalid_decision'\n      WHEN rc.request_type <> 'cancel_order' THEN 'unsupported_request_type'\n      WHEN rc.decision = 'denied' THEN 'denied'\n      WHEN rc.order_id IS NULL OR rc.order_status IS NULL\n        OR rc.order_customer_id IS DISTINCT FROM rc.customer_id THEN 'invalid_order_link'\n      WHEN rc.order_status NOT IN ('received', 'preparing', 'out_for_delivery', 'cancelled')\n        THEN 'order_not_cancellable'\n      ELSE 'approved'\n    END AS outcome\n  FROM request_context rc\n),\norder_cancelled AS (\n  UPDATE orders o\n  SET status = 'cancelled', updated_at = NOW()\n  FROM eligibility e\n  WHERE e.outcome = 'approved'\n    AND o.id = e.order_id\n    AND o.status IN ('received', 'preparing', 'out_for_delivery')\n  RETURNING o.id\n),\nrequest_resolved AS (\n  UPDATE admin_requests r\n  SET status = e.decision,\n      admin_note = e.admin_note,\n      resolved_at = NOW(),\n      resolved_by_phone = e.admin_phone,\n      resolved_by_message_id = e.admin_message_id\n  FROM eligibility e\n  WHERE r.id = e.id\n    AND e.request_status = 'pending'\n    AND (\n      e.outcome = 'denied'\n      OR (e.outcome = 'approved'\n          AND (e.order_status = 'cancelled' OR EXISTS (SELECT 1 FROM order_cancelled)))\n    )\n  RETURNING r.id, r.status, r.customer_id, r.order_id, r.admin_note,\n            r.notification_claim_token, r.notification_claimed_at\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET awaiting_human = EXISTS (\n        SELECT 1 FROM admin_requests pending\n        WHERE pending.customer_id = rr.customer_id\n          AND pending.status = 'pending'\n          AND pending.id <> rr.id\n      ),\n      order_status = CASE\n        WHEN rr.status = 'approved' AND cs.active_order_id = rr.order_id THEN 'cancelled'\n        ELSE cs.order_status\n      END,\n      updated_at = NOW()\n  FROM request_resolved rr\n  WHERE cs.customer_id = rr.customer_id\n  RETURNING cs.id\n),\nresult AS (\n  SELECT\n    i.request_id,\n    COALESCE(e.id, 0) AS matched_request_id,\n    COALESCE(rr.status, e.request_status) AS final_status,\n    COALESCE(\n      CASE WHEN rr.id IS NOT NULL THEN rr.status END,\n      e.outcome,\n      'not_found'\n    ) AS outcome,\n    e.order_id,\n    e.customer_phone,\n    e.preferred_language,\n    COALESCE(rr.admin_note, e.existing_admin_note) AS admin_note,\n    COALESCE(e.notification_sent, FALSE) AS notification_sent,\n    i.admin_message_id\n  FROM input i\n  LEFT JOIN eligibility e ON TRUE\n  LEFT JOIN request_resolved rr ON rr.id = e.id\n)\nSELECT\n  request_id::text AS request_id,\n  NULLIF(matched_request_id, 0)::text AS matched_request_id,\n  order_id::text AS order_id,\n  outcome,\n  final_status,\n  customer_phone,\n  notification_sent,\n  (final_status IN ('approved', 'denied')\n    AND customer_phone IS NOT NULL\n    AND notification_sent = FALSE) AS notify_customer,\n  CASE\n    WHEN final_status = 'approved' AND lower(COALESCE(preferred_language, '')) IN ('ur', 'urdu', 'roman_urdu')\n      THEN 'Aap ki cancellation request #' || request_id || ' approve ho gayi hai. Order #' || order_id || ' cancel kar diya gaya hai. ✅'\n    WHEN final_status = 'approved'\n      THEN 'Your cancellation request #' || request_id || ' has been approved. Order #' || order_id || ' is cancelled. ✅'\n    WHEN final_status = 'denied' AND lower(COALESCE(preferred_language, '')) IN ('ur', 'urdu', 'roman_urdu')\n      THEN 'Aap ki cancellation request #' || request_id || ' approve nahi ho saki. Order #' || order_id || ' active rahega.'\n    WHEN final_status = 'denied'\n      THEN 'Your cancellation request #' || request_id || ' was denied. Order #' || order_id || ' remains active.'\n    ELSE NULL\n  END || CASE WHEN admin_note IS NOT NULL THEN E'\\n\\nAdmin note: ' || admin_note ELSE '' END AS customer_reply,\n  CASE outcome\n    WHEN 'approved' THEN 'Request #' || request_id || ' approved; order #' || order_id || ' cancelled.'\n    WHEN 'denied' THEN 'Request #' || request_id || ' denied; order #' || order_id || ' was not changed.'\n    WHEN 'already_approved' THEN 'Request #' || request_id || ' was already approved. No duplicate update was made.'\n    WHEN 'already_denied' THEN 'Request #' || request_id || ' was already denied. No duplicate update was made.'\n    WHEN 'not_found' THEN 'Request #' || request_id || ' was not found.'\n    WHEN 'invalid_order_link' THEN 'Request #' || request_id || ' has no valid linked order and was not changed.'\n    WHEN 'order_not_cancellable' THEN 'Order #' || COALESCE(order_id::text, '?') || ' can no longer be cancelled; request #' || request_id || ' was not changed.'\n    WHEN 'unsupported_request_type' THEN 'Request #' || request_id || ' is not a supported cancellation request.'\n    ELSE 'Request #' || request_id || ' could not be resolved (' || outcome || ').'\n  END AS admin_reply\nFROM result;",
         "options": {
           "queryReplacement": "={{ [ $('Parse Admin Command').item.json.request_id, $('Parse Admin Command').item.json.decision, $('Parse Admin Command').item.json.admin_note, $('Normalize Incoming Message').item.json.customer_phone, $('Normalize Incoming Message').item.json.message_id ] }}"
         }
@@ -970,8 +981,8 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1.1,
       "position": [
-        1504,
-        -464
+        1920,
+        -528
       ],
       "id": "a684a82e-1128-4379-8f0f-df2e5ae1cd2a",
       "name": "Send Admin Decision to Customer",
@@ -987,14 +998,14 @@
         "operation": "executeQuery",
         "query": "WITH updated AS (\n  UPDATE admin_requests\n  SET notification_sent = TRUE,\n      notification_error = NULL,\n      notification_attempts = notification_attempts + 1,\n      last_notification_attempt_at = NOW(),\n      notification_message_id = $2::text,\n      notification_claim_token = NULL,\n      notification_claimed_at = NULL\n  WHERE id = $1::bigint\n    AND status IN ('approved', 'denied')\n    AND notification_sent = FALSE\n    AND notification_claim_token = $3::text\n  RETURNING id\n)\nSELECT EXISTS (SELECT 1 FROM updated) AS notification_recorded;",
         "options": {
-          "queryReplacement": "={{ [ $('Resolve Admin Request').item.json.request_id, $json.messages?.[0]?.id || null, $('Normalize Incoming Message').item.json.message_id ] }}"
+          "queryReplacement": "={{ [ $('Resolve Admin Request').item.json.matched_request_id, $json.messages?.[0]?.id || null, $('Normalize Incoming Message').item.json.message_id ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        1712,
-        -464
+        2128,
+        -528
       ],
       "id": "c5853bf2-fc41-4f4c-9706-8361358822e6",
       "name": "Record Customer Decision Notification",
@@ -1096,6 +1107,356 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cd758b47-0126-49a5-ab12-c9a8591a17ef",
+              "leftValue": "={{ $json.has_message }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -352,
+        16
+      ],
+      "id": "cd758b47-0126-49a5-ab12-c9a8591a17ef",
+      "name": "Has Message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e44f67a6-9b18-49fd-98fc-e47d8ff0e4cb",
+              "leftValue": "={{ Boolean($json.admin_phone && $json.whatsapp_phone_number_id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -96,
+        16
+      ],
+      "id": "e44f67a6-9b18-49fd-98fc-e47d8ff0e4cb",
+      "name": "Configuration Present"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "console.error('Workflow configuration missing: set ADMIN_WHATSAPP_PHONE and WHATSAPP_PHONE_NUMBER_ID in n8n variables. No WhatsApp message was sent.');\nreturn [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        144
+      ],
+      "id": "bc9bff84-b129-445a-8646-8872dd85f9d4",
+      "name": "Configuration Error Reply"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "21bead9c-4537-4aba-9959-95005577b914",
+              "name": "reply_text",
+              "value": "I can only read text messages right now — could you type that for me?",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        144,
+        128
+      ],
+      "id": "cf4f6fc0-6d14-4a4a-abd3-15ad8618159e",
+      "name": "Unsupported Message Reply"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $('Workflow Configuration').item.json.whatsapp_phone_number_id }}",
+        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
+        "textBody": "={{ $json.reply_text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        128
+      ],
+      "id": "a2c99e21-46ed-40cc-af63-3cce557e1d16",
+      "name": "Send Unsupported Message",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dqMKIC3trqbrRPNF",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ecbce292-bb1a-43a9-a608-a72b86965fe6",
+              "name": "reply_text",
+              "value": "={{ $('Claim Latest Customer Turn').item.json.stored_reply_text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1552,
+        144
+      ],
+      "id": "9bdf5e89-b813-44a3-a98f-ec7616235ba0",
+      "name": "Restore Stored Reply"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH marked AS (\n  UPDATE message_buffer\n  SET reply_text = $2::text, replied_at = NOW()\n  WHERE batch_key = $1::text\n    AND customer_phone = $3::text\n    AND processed = FALSE\n    AND replied_at IS NULL\n  RETURNING id\n)\nSELECT $2::text AS reply_text, COUNT(*)::int AS replies_recorded FROM marked;",
+        "options": {
+          "queryReplacement": "={{ [ $('Claim Latest Customer Turn').item.json.batch_key, $('Reply Text').item.json.reply_text, $('Normalize Incoming Message').item.json.customer_phone ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2112,
+        0
+      ],
+      "id": "23456a47-47f8-4b65-afd6-1b1289ee502f",
+      "name": "Record Reply Sent",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE orders\nSET delivery_name = COALESCE(NULLIF(BTRIM($3::text), ''), delivery_name),\n    delivery_address = COALESCE(NULLIF(BTRIM($4::text), ''), delivery_address),\n    updated_at = NOW()\nWHERE id = $2::bigint\n  AND customer_id = $1::bigint\n  AND status IN ('received', 'preparing')\nRETURNING id, status, delivery_name, delivery_address;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Upsert Customer and Session').item.json.active_order_id, $fromAI('delivery_name', 'Corrected delivery name, or empty string to keep it unchanged', 'string'), $fromAI('delivery_address', 'Corrected delivery address, or empty string to keep it unchanged', 'string') ] }}"
+        },
+        "descriptionType": "manual",
+        "toolDescription": "Use only after an order is placed (session order_status is not draft). Correct the active order's delivery name/address only while status is received or preparing. If zero rows are returned, the order is too far along to redirect: call Escalate To Human and Notify Admin instead."
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        2080,
+        416
+      ],
+      "id": "7be8f28d-e8fb-4eb2-903d-f5884a2d22e5",
+      "name": "Update Placed Order Delivery Info",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "78e83b64-0d25-4f56-a45d-926ad02b9575",
+              "leftValue": "={{ Boolean(!$json.error && $json.output) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1648,
+        0
+      ],
+      "id": "78e83b64-0d25-4f56-a45d-926ad02b9575",
+      "name": "Agent Output Valid"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "57ef067d-bbe8-49e9-8080-eed896a196e0",
+              "name": "reply_text",
+              "value": "Sorry, I’m having trouble processing that right now. Please try again in a moment.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1856,
+        128
+      ],
+      "id": "317a73b0-7626-4262-8a88-6ea7e2e29673",
+      "name": "Agent Fallback Reply"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE admin_requests\nSET notification_claim_token = $2::text,\n    notification_claimed_at = NOW()\nWHERE id = $1::bigint\n  AND status IN ('approved', 'denied')\n  AND notification_sent = FALSE\n  AND (\n    notification_claim_token IS NULL\n    OR notification_claimed_at < NOW() - INTERVAL '2 minutes'\n  )\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Resolve Admin Request').item.json.matched_request_id, $('Normalize Incoming Message').item.json.message_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1504,
+        -464
+      ],
+      "id": "c6889fc9-6801-4971-a018-fbe503d1d701",
+      "name": "Claim Customer Notification",
+      "credentials": {
+        "postgres": {
+          "id": "dw4LfSY4r5SsxibM",
+          "name": "Postgres account"
+        }
+      },
+      "alwaysOutputData": true,
+      "notesInFlow": true,
+      "notes": "Shared lease: SQL must stay equivalent to CUSTOMER_NOTIFICATION_CLAIM_SQL in backend/src/admin-routes.js."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e234abf6-e7ad-4532-af20-7404cb503319",
+              "leftValue": "={{ Boolean($json.id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1712,
+        -464
+      ],
+      "id": "e234abf6-e7ad-4532-af20-7404cb503319",
+      "name": "Notification Claimed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "db9e582c-d989-4d0b-a627-0ab81af3fa27",
+              "leftValue": "={{ $json.reply_already_sent }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1328,
+        160
+      ],
+      "id": "db9e582c-d989-4d0b-a627-0ab81af3fa27",
+      "name": "Reply Already Sent For This Batch"
     }
   ],
   "pinData": {},
@@ -1232,6 +1593,17 @@
         ]
       ]
     },
+    "Update Placed Order Delivery Info": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "WhatsApp Trigger": {
       "main": [
         [
@@ -1247,14 +1619,14 @@
       "main": [
         [
           {
-            "node": "Is Supported Text Message",
+            "node": "Has Message",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Is Supported Text Message": {
+    "Has Message": {
       "main": [
         [
           {
@@ -1270,7 +1642,54 @@
       "main": [
         [
           {
+            "node": "Configuration Present",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration Present": {
+      "main": [
+        [
+          {
+            "node": "Is Supported Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Configuration Error Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Supported Text Message": {
+      "main": [
+        [
+          {
             "node": "Is Authorized Admin",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unsupported Message Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsupported Message Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Unsupported Message",
             "type": "main",
             "index": 0
           }
@@ -1385,7 +1804,36 @@
       "main": [
         [
           {
+            "node": "Reply Already Sent For This Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply Already Sent For This Batch": {
+      "main": [
+        [
+          {
+            "node": "Restore Stored Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Load Active Menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Stored Reply": {
+      "main": [
+        [
+          {
+            "node": "Finalize Customer Turn",
             "type": "main",
             "index": 0
           }
@@ -1418,7 +1866,25 @@
       "main": [
         [
           {
+            "node": "Agent Output Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Output Valid": {
+      "main": [
+        [
+          {
             "node": "Reply Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent Fallback Reply",
             "type": "main",
             "index": 0
           }
@@ -1436,7 +1902,29 @@
         ]
       ]
     },
+    "Agent Fallback Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Send message": {
+      "main": [
+        [
+          {
+            "node": "Record Reply Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Reply Sent": {
       "main": [
         [
           {
@@ -1511,6 +1999,35 @@
       ]
     },
     "Customer Notification Required": {
+      "main": [
+        [
+          {
+            "node": "Claim Customer Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Admin Decision Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Customer Notification": {
+      "main": [
+        [
+          {
+            "node": "Notification Claimed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notification Claimed": {
       "main": [
         [
           {
