@@ -1,5 +1,27 @@
 const configuredBase = String(import.meta.env.VITE_API_URL || "").trim();
-export const API_BASE = configuredBase.replace(/\/$/, "") || window.location.origin;
+const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function resolveApiBase(value) {
+  const fallback = window.location.origin;
+  const normalized = value.replace(/\/$/, "");
+  if (!normalized) return fallback;
+
+  try {
+    const configuredHost = new URL(normalized, fallback).hostname.toLowerCase();
+    const pageHost = window.location.hostname.toLowerCase();
+
+    // Never let a deployed site call a service on the visitor's computer.
+    if (!loopbackHosts.has(pageHost) && loopbackHosts.has(configuredHost)) {
+      return fallback;
+    }
+  } catch {
+    return fallback;
+  }
+
+  return normalized;
+}
+
+export const API_BASE = resolveApiBase(configuredBase);
 
 export function getAdminKey() {
   return sessionStorage.getItem("pizzaBarAdminKey") || "";
@@ -19,7 +41,7 @@ export async function api(path, options = {}) {
   try {
     response = await fetch(`${API_BASE}${path}`, { ...options, headers });
   } catch {
-    throw new Error("Cannot reach the Pizza Bar backend. Check VITE_API_URL and confirm the backend is running.");
+    throw new Error("Cannot reach the Pizza Bar backend. Confirm the deployment and network connection.");
   }
 
   const isJson = response.headers.get("content-type")?.includes("application/json");
@@ -37,7 +59,7 @@ export async function download(path, filename) {
   try {
     response = await fetch(`${API_BASE}${path}`, { headers: { "x-admin-key": getAdminKey() } });
   } catch {
-    throw new Error("Cannot reach the Pizza Bar backend. Check VITE_API_URL and confirm the backend is running.");
+    throw new Error("Cannot reach the Pizza Bar backend. Confirm the deployment and network connection.");
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
