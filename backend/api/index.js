@@ -19,11 +19,27 @@ if (!process.env.DATABASE_URL) {
 // CORS
 // --------------------------------------------------
 
-const allowedOrigins = process.env.CORS_ORIGINS
+function normalizeOrigin(value) {
+  const candidate = String(value || "").trim().replace(/\/$/, "");
+  if (!candidate) return null;
+  try {
+    const withProtocol = /^[a-z][a-z\d+.-]*:\/\//i.test(candidate)
+      ? candidate
+      : `https://${candidate}`;
+    return new URL(withProtocol).origin;
+  } catch {
+    return null;
+  }
+}
+
+const configuredOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean)
   : ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"];
+const allowedOrigins = new Set(
+  [...configuredOrigins, process.env.FRONTEND_URL]
+    .map(normalizeOrigin)
+    .filter(Boolean)
+);
 
 app.use(
   cors({
@@ -34,7 +50,7 @@ app.use(
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.has(normalizeOrigin(origin))) {
         return callback(null, true);
       }
 
@@ -62,7 +78,7 @@ app.use((req, res, next) => {
 });
 
 app.get(["/dashboard", "/dashboard/"], (req, res) => {
-  return res.redirect(302, process.env.FRONTEND_URL || "http://localhost:5173");
+  return res.redirect(302, normalizeOrigin(process.env.FRONTEND_URL) || "http://localhost:5173");
 });
 
 // --------------------------------------------------
