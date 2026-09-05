@@ -8,7 +8,7 @@ const express = require("express");
 const { Pool } = require("pg");
 const { registerAdminRoutes } = require("../src/admin-routes");
 const { publicEvent } = require("../src/customer-notification-events");
-const workflow = require("../../admin request.json");
+const workflow = require("../../workflow.json");
 
 const migrationPath = path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql");
 const migration = fs.readFileSync(migrationPath, "utf8")

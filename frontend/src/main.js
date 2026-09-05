@@ -1,5 +1,5 @@
 import "./styles.css";
-import { API_BASE, api, download, getAdminKey, isAbortError, setAdminKey } from "./api.js";
+import { API_BASE, api, clearApiCache, download, getAdminKey, isAbortError, setAdminKey } from "./api.js";
 import {
   dateOnly, dateTime, escapeHtml, itemSummary, money, percentChange,
   queryString, relativeTime, statusLabel,
@@ -333,7 +333,7 @@ async function loadDashboard(requestOptions = {}) {
     </section>
     <section class="dashboard-grid">
       <article class="panel"><div class="panel-head"><div><div class="panel-title">Order activity</div><div class="panel-subtitle">Daily orders in Pakistan time</div></div><div class="segmented">${[1,7,30].map((days) => `<button class="segment ${state.dashboardDays === days ? "active" : ""}" data-dashboard-days="${days}">${days === 1 ? "Today" : `${days} days`}</button>`).join("")}</div></div><div class="panel-body"><div class="chart">${data.activity.map((point) => `<div class="chart-column"><div class="chart-track"><span class="chart-value">${point.orders}</span><div class="chart-bar" style="height:${Math.max(2, Math.round(Number(point.orders) / maxOrders * 100))}%"></div></div><div class="chart-label">${escapeHtml(new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${String(point.day).slice(0, 10)}T00:00:00Z`)))}</div></div>`).join("")}</div></div></article>
-      <article class="panel"><div class="panel-head"><div><div class="panel-title">Order status</div><div class="panel-subtitle">All-time distribution</div></div></div><div class="panel-body"><div class="status-list">${statuses.map((status, index) => { const count = statusMap[status] || 0; const colors = ["#e6a83c", "#f26a2e", "#ef5b32", "#5d8ee2", "#47b978", "#e25d5d"]; return `<div class="status-row"><div><div class="status-meta"><span>${escapeHtml(statusLabel(status))}</span><span class="status-count">${count}</span></div><div class="status-track"><div class="status-fill" style="--status-color:${colors[index]};width:${Math.round(count / totalStatuses * 100)}%"></div></div></div></div>`; }).join("")}</div></div></article>
+      <article class="panel"><div class="panel-head"><div><div class="panel-title">Order status</div><div class="panel-subtitle">All-time distribution</div></div></div><div class="panel-body"><div class="status-list">${statuses.map((status, index) => { const count = statusMap[status] || 0; const colors = ["#e6a83c", "#f26a2e", "#ef5b32", "#5d8ee2", "#47b978", "#e25d5d"]; return `<div class="status-row" data-dashboard-status="${status}"><div><div class="status-meta"><span>${escapeHtml(statusLabel(status))}</span><span class="status-count" data-status-count>${count}</span></div><div class="status-track"><div class="status-fill" data-status-fill style="--status-color:${colors[index]};width:${Math.round(count / totalStatuses * 100)}%"></div></div></div></div>`; }).join("")}</div></div></article>
     </section>
     <section class="dashboard-grid">
       <article class="panel"><div class="panel-head"><div><div class="panel-title">Recent orders</div><div class="panel-subtitle">Latest WhatsApp orders</div></div><button class="btn btn-sm" data-route-jump="orders">View all</button></div>${renderCompactOrders(data.recent_orders, currency)}</article>
@@ -351,7 +351,59 @@ function statCard(label, value, iconName, trend, trendCopy, color) {
 
 function renderCompactOrders(orders, currency) {
   if (!orders.length) return emptyState("No orders yet", "Confirmed WhatsApp orders will appear here.", "▤");
-  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>${orders.map((order) => `<tr><td class="primary-cell">#${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer_name || order.customer_phone)}</td><td class="muted">${escapeHtml(itemSummary(order.items))}</td><td class="mono">${escapeHtml(money(order.total, currency))}</td><td>${badge(order.status)}</td><td><button class="btn btn-sm" data-view-order="${escapeHtml(order.id)}">View</button></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>${orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell">#${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer_name || order.customer_phone)}</td><td class="muted">${escapeHtml(itemSummary(order.items))}</td><td class="mono">${escapeHtml(money(order.total, currency))}</td><td data-order-status-cell>${badge(order.status)}</td><td><button class="btn btn-sm" data-view-order="${escapeHtml(order.id)}">View</button></td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function supersedeStaleOrderLoads() {
+  pageLoadId += 1;
+  pageController?.abort();
+  pageController = null;
+  pageLoadInFlight = false;
+  pollController?.abort();
+  clearApiCache();
+}
+
+function updateDashboardStatusCounts(previousStatus, nextStatus) {
+  if (state.route !== "dashboard" || !previousStatus || previousStatus === nextStatus) return;
+  const rows = [...app.querySelectorAll("[data-dashboard-status]")];
+  const previous = rows.find((row) => row.dataset.dashboardStatus === previousStatus);
+  const next = rows.find((row) => row.dataset.dashboardStatus === nextStatus);
+  if (!previous || !next) return;
+  const setCount = (row, value) => {
+    row.querySelector("[data-status-count]").textContent = Math.max(0, value);
+  };
+  setCount(previous, Number(previous.querySelector("[data-status-count]").textContent) - 1);
+  setCount(next, Number(next.querySelector("[data-status-count]").textContent) + 1);
+  const total = Math.max(1, rows.reduce((sum, row) => sum + Number(row.querySelector("[data-status-count]").textContent), 0));
+  rows.forEach((row) => {
+    const count = Number(row.querySelector("[data-status-count]").textContent);
+    row.querySelector("[data-status-fill]").style.width = `${Math.round(count / total * 100)}%`;
+  });
+}
+
+function orderBelongsOnCurrentPage(status) {
+  if (!["orders", "history"].includes(state.route)) return true;
+  const terminal = ["completed", "cancelled"].includes(status);
+  if (state.route === "orders" && terminal) return false;
+  if (state.route === "history" && !terminal) return false;
+  const selectedStatus = state.filters[state.route].status;
+  return !selectedStatus || selectedStatus === status;
+}
+
+function applyOrderStatusToView(order, fallbackPreviousStatus, { enforceScope = false } = {}) {
+  if (!order?.id || !order.status) return;
+  const matchingRows = [...app.querySelectorAll("[data-order-row]")]
+    .filter((row) => String(row.dataset.orderRow) === String(order.id));
+  const renderedPreviousStatus = matchingRows[0]?.dataset.orderStatus || fallbackPreviousStatus;
+  matchingRows.forEach((row) => {
+    row.dataset.orderStatus = order.status;
+    const statusCell = row.querySelector("[data-order-status-cell]");
+    if (statusCell) statusCell.innerHTML = badge(order.status);
+    if (enforceScope && !orderBelongsOnCurrentPage(order.status)) row.remove();
+  });
+  const modalStatus = modalRoot.querySelector("[data-order-modal-status]");
+  if (modalStatus) modalStatus.innerHTML = badge(order.status);
+  updateDashboardStatusCounts(renderedPreviousStatus, order.status);
 }
 
 function renderDashboardRequests(requests) {
@@ -375,7 +427,7 @@ async function loadOrders(route, requestOptions = {}) {
       <div class="filter-control date-control"><input class="input date-field" data-filter="date_from" type="date" value="${escapeHtml(filters.date_from)}" aria-label="From date"><span class="filter-control-icon">${icon("calendar")}</span></div>
       <div class="filter-control date-control"><input class="input date-field" data-filter="date_to" type="date" value="${escapeHtml(filters.date_to)}" aria-label="To date"><span class="filter-control-icon">${icon("calendar")}</span></div>
     </div>
-    <section class="panel orders-table-panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table orders-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th class="action-heading">Action</th></tr></thead><tbody>${data.orders.map((order) => `<tr><td class="primary-cell order-id">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted items-cell">${escapeHtml(itemSummary(order.items))}</td><td class="mono order-total">${escapeHtml(money(order.total, currency))}</td><td class="type-cell">${escapeHtml(statusLabel(order.order_type))}</td><td>${badge(order.status)}</td><td class="order-date">${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm order-view-button" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section></div>`;
+    <section class="panel orders-table-panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table orders-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th class="action-heading">Action</th></tr></thead><tbody>${data.orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell order-id">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted items-cell">${escapeHtml(itemSummary(order.items))}</td><td class="mono order-total">${escapeHtml(money(order.total, currency))}</td><td class="type-cell">${escapeHtml(statusLabel(order.order_type))}</td><td data-order-status-cell>${badge(order.status)}</td><td class="order-date">${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm order-view-button" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section></div>`;
   bindFilterControls(route);
   bindLocalSearch(route);
   bindCommonActions();
@@ -438,21 +490,28 @@ async function openOrder(orderId) {
         <div class="detail-block"><div class="fact-label">Fulfilment</div><div class="fact-value">${escapeHtml(statusLabel(order.order_type))}<br>${escapeHtml(order.delivery_address || "Pickup")}</div></div>
         <div class="detail-block wide"><div class="fact-label">Items</div><div class="line-items" style="margin-top:10px">${(order.items || []).map((item) => `<div class="line-item"><div><strong>${escapeHtml(item.quantity || 1)}× ${escapeHtml(item.item_name || item.name || "Item")}</strong><div class="secondary-cell">${escapeHtml(item.size || item.variant || "Standard")}${Array.isArray(item.extras) && item.extras.length ? ` · ${escapeHtml(item.extras.join(", "))}` : ""}</div></div><span>${escapeHtml(money(item.line_total || Number(item.price || 0) * Number(item.quantity || 1), currency))}</span></div>`).join("")}</div></div>
         <div class="detail-block"><div class="fact-label">Totals</div><div class="fact-value">Subtotal ${escapeHtml(money(order.subtotal, currency))}<br>Delivery ${escapeHtml(money(order.delivery_charge, currency))}<br><strong>Total ${escapeHtml(money(order.total, currency))}</strong></div></div>
-        <div class="detail-block"><div class="fact-label">Status</div><div class="fact-value">${badge(order.status)}<br><span class="subtle">${escapeHtml(dateTime(order.created_at))}</span></div></div>
+        <div class="detail-block"><div class="fact-label">Status</div><div class="fact-value"><span data-order-modal-status>${badge(order.status)}</span><br><span class="subtle">${escapeHtml(dateTime(order.created_at))}</span></div></div>
         <div class="detail-block wide"><div class="fact-label">Customer notification</div><div class="fact-value">${escapeHtml(notificationCopy)}</div>${latestNotification?.delivery_status === "failed" ? `<button class="btn btn-sm" style="margin-top:10px" data-retry-order-event="${escapeHtml(latestNotification.id)}" data-order-id="${escapeHtml(order.id)}">Retry notification</button>` : ""}</div>
         <div class="detail-block wide"><div class="fact-label">Timeline</div><div class="timeline" style="margin-top:12px">${data.history.map((event) => `<div class="timeline-item"><span class="timeline-dot"></span><div><div class="primary-cell">${escapeHtml(statusLabel(event.status))}</div><div class="secondary-cell">${escapeHtml(dateTime(event.created_at))}</div></div></div>`).join("")}</div></div>
       </div></div>
       <div class="modal-foot">${transitions.length ? transitions.map(([status, label]) => `<button class="btn ${status === "cancelled" ? "btn-danger" : "btn-primary"}" data-order-status="${status}" data-order-id="${escapeHtml(order.id)}">${escapeHtml(label)}</button>`).join("") : '<span class="muted">No further actions</span>'}</div>`, { label: `Order ${order.id}` });
     modalRoot.querySelectorAll("[data-order-status]").forEach((button) => button.addEventListener("click", async () => {
       const original = button.textContent;
+      const previousStatus = order.status;
+      const requestedStatus = button.dataset.orderStatus;
       const actionButtons = [...modalRoot.querySelectorAll("[data-order-status]")];
       actionButtons.forEach((actionButton) => { actionButton.disabled = true; });
+      supersedeStaleOrderLoads();
+      applyOrderStatusToView({ id: order.id, status: requestedStatus }, previousStatus);
       button.textContent = "Updating…";
       try {
         const result = await api(`/admin/orders/${button.dataset.orderId}/status`, {
           method: "PATCH",
-          body: JSON.stringify({ status: button.dataset.orderStatus, expected_status: order.status, request_id: crypto.randomUUID() }),
+          timeoutMs: 30000,
+          body: JSON.stringify({ status: requestedStatus, expected_status: previousStatus, request_id: crypto.randomUUID() }),
         });
+        const canonicalOrder = result.order || { ...order, status: requestedStatus };
+        applyOrderStatusToView(canonicalOrder, requestedStatus, { enforceScope: true });
         const deliveryStatus = result.notification?.delivery_status;
         const notificationMessage = deliveryStatus === "sent"
           ? "Customer notified."
@@ -461,10 +520,38 @@ async function openOrder(orderId) {
           : deliveryStatus === "failed"
             ? "Customer notification failed — open the order to retry."
             : "Customer notification queued.";
-        toast(`Order #${button.dataset.orderId} marked ${statusLabel(button.dataset.orderStatus)}. ${notificationMessage}`, deliveryStatus === "failed" ? "error" : "success");
+        toast(`Order #${button.dataset.orderId} marked ${statusLabel(canonicalOrder.status)}. ${notificationMessage}`, deliveryStatus === "failed" ? "error" : "success");
         closeModal();
-        loadCurrentPage();
-      } catch (error) { toast(error.message, "error"); actionButtons.forEach((actionButton) => { actionButton.disabled = false; }); button.textContent = original; }
+        if (["dashboard", "orders", "history"].includes(state.route)) {
+          loadCurrentPage({ background: true, forceRefresh: true });
+        }
+        refreshActivity().catch(() => {});
+      } catch (error) {
+        let canonicalOrder = null;
+        try {
+          canonicalOrder = (await api(`/admin/orders/${button.dataset.orderId}`, {
+            forceRefresh: true,
+            timeoutMs: 10000,
+          })).order;
+        } catch {
+          // If reconciliation also fails, the last confirmed pre-mutation state is safest.
+        }
+        const confirmedStatusChanged = canonicalOrder && canonicalOrder.status !== previousStatus;
+        applyOrderStatusToView(canonicalOrder || { ...order, status: previousStatus }, requestedStatus, {
+          enforceScope: Boolean(confirmedStatusChanged),
+        });
+        if (confirmedStatusChanged) {
+          closeModal();
+          toast(`Order #${button.dataset.orderId} is ${statusLabel(canonicalOrder.status)}. ${error.message}`, "error");
+          if (["dashboard", "orders", "history"].includes(state.route)) {
+            loadCurrentPage({ background: true, forceRefresh: true });
+          }
+        } else {
+          toast(error.message, "error");
+          actionButtons.forEach((actionButton) => { actionButton.disabled = false; });
+          button.textContent = original;
+        }
+      }
     }));
     modalRoot.querySelector("[data-retry-order-event]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
