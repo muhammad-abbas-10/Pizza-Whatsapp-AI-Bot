@@ -10,15 +10,15 @@ const modalRoot = document.querySelector("#modal-root");
 const toastRoot = document.querySelector("#toast-root");
 
 const routes = {
-  dashboard: { label: "Dashboard", icon: "◫", subtitle: "Live restaurant performance" },
-  orders: { label: "Orders", icon: "▤", subtitle: "Active kitchen and delivery queue" },
-  requests: { label: "Pending Requests", icon: "◉", subtitle: "Customer decisions requiring attention" },
-  history: { label: "Order History", icon: "↺", subtitle: "Completed and cancelled orders" },
-  customers: { label: "Customers", icon: "♙", subtitle: "Customer activity and spending" },
-  feedback: { label: "Feedback", icon: "☆", subtitle: "Customer ratings from WhatsApp" },
-  menu: { label: "Menu", icon: "♨", subtitle: "Products, deals, prices and availability" },
-  notifications: { label: "Notifications", icon: "♢", subtitle: "Orders, requests and system events" },
-  settings: { label: "Settings", icon: "⚙", subtitle: "Restaurant and admin configuration" },
+  dashboard: { label: "Dashboard", icon: "dashboard", subtitle: "Live restaurant performance" },
+  orders: { label: "Orders", icon: "orders", subtitle: "Active kitchen and delivery queue" },
+  requests: { label: "Pending Requests", icon: "requests", subtitle: "Customer decisions requiring attention" },
+  history: { label: "Order History", icon: "history", subtitle: "Completed and cancelled orders" },
+  customers: { label: "Customers", icon: "customers", subtitle: "Customer activity and spending" },
+  feedback: { label: "Feedback", icon: "feedback", subtitle: "Customer ratings from WhatsApp" },
+  menu: { label: "Menu", icon: "menu", subtitle: "Products, deals, prices and availability" },
+  notifications: { label: "Notifications", icon: "notifications", subtitle: "Orders, requests and system events" },
+  settings: { label: "Settings", icon: "settings", subtitle: "Restaurant and admin configuration" },
 };
 
 const state = {
@@ -44,6 +44,34 @@ let pollTimer;
 function initials(name) {
   const parts = String(name || "Customer").trim().split(/\s+/).filter(Boolean);
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "C";
+}
+
+const iconPaths = {
+  dashboard: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+  orders: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 12h6M9 16h6"/>',
+  requests: '<path d="M18 8a6 6 0 1 1-6-6"/><path d="M18 2v6h-6M12 11v4M12 18h.01"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>',
+  customers: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  feedback: '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2Z"/>',
+  menu: '<path d="M4 3v18M4 8h3a3 3 0 0 0 0-6M14 3v8a3 3 0 0 0 6 0V3M17 3v18"/>',
+  notifications: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.83 2.83-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21h-4v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06-2.83-2.83.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3v-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.83-2.83.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3h4v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06 2.83 2.83-.06.06A1.65 1.65 0 0 0 19.4 9c.12.6.6 1.06 1.2 1.17H21v4h-.4A1.65 1.65 0 0 0 19.4 15Z"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  download: '<path d="M12 3v14M6 11l6 6 6-6"/><path d="M5 21h14"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  menuToggle: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  logout: '<path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>',
+  revenue: '<path d="M3 3v18h18M7 15l4-4 3 3 6-7"/><path d="M16 7h4v4"/>',
+};
+
+function icon(name, className = "ui-icon") {
+  return `<svg class="${className}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconPaths[name] || iconPaths.dashboard}</svg>`;
+}
+
+function pizzaMark() {
+  return '<svg class="pizza-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4.3 19.7 20.1 4.1c-4-2.1-9.7-1.6-13.2 1.9-3.6 3.5-4.1 9.5-2.6 13.7Z" fill="currentColor" opacity=".95"/><path d="M20.1 4.1c.8 1 .8 2.4-.1 3.3L7.5 19.8c-.9.9-2.2.8-3.2-.1" stroke="white" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="10" r="1.35" fill="#E05600"/><circle cx="7.7" cy="14.2" r="1.2" fill="#E05600"/><path d="M13.8 6.3c.9.2 1.5.6 2.2 1.1" stroke="#E05600" stroke-width="1.6" stroke-linecap="round"/></svg>';
 }
 
 function badge(status) {
@@ -103,7 +131,7 @@ function pagination(meta, route) {
 function renderLogin(message = "") {
   clearInterval(pollTimer);
   app.innerHTML = `<main class="login-page"><section class="login-card">
-    <div class="brand"><div class="brand-mark">🍕</div><div><div class="brand-name">Pizza Bar</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
+    <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name">Pizza Bar</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
     <h1>Welcome back</h1><p>Sign in with the private admin key configured on the Pizza Bar backend.</p>
     <form id="login-form" class="stack">
       <div class="field"><label for="admin-key">Admin key</label><input class="input" id="admin-key" name="adminKey" type="password" autocomplete="current-password" required placeholder="Enter your admin key"></div>
@@ -135,17 +163,17 @@ function renderShell() {
   const admin = state.session?.admin?.display_name || "Administrator";
   app.innerHTML = `<div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><div class="brand-mark">🍕</div><div><div class="brand-name">${escapeHtml(restaurant)}</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
-      <nav class="nav" aria-label="Main navigation">${Object.entries(routes).map(([key, route]) => `<button class="nav-link" data-route="${key}"><span class="nav-icon">${route.icon}</span><span>${escapeHtml(route.label)}</span>${key === "notifications" ? '<span class="nav-count" id="nav-unread" hidden>0</span>' : ""}</button>`).join("")}</nav>
-      <div class="sidebar-footer"><div class="admin-profile"><div class="avatar">${escapeHtml(initials(admin))}</div><div><div class="admin-name">${escapeHtml(admin)}</div><div class="online">● Active</div></div><button class="btn btn-quiet icon-btn" data-action="logout" aria-label="Log out">↪</button></div></div>
+      <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name">${escapeHtml(restaurant)}</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
+      <nav class="nav" aria-label="Main navigation">${Object.entries(routes).map(([key, route]) => `<button class="nav-link" data-route="${key}"><span class="nav-icon">${icon(route.icon)}</span><span>${escapeHtml(route.label)}</span>${key === "notifications" ? '<span class="nav-count" id="nav-unread" hidden>0</span>' : ""}</button>`).join("")}</nav>
+      <div class="sidebar-footer"><div class="admin-profile"><div class="avatar">${escapeHtml(initials(admin))}</div><div class="admin-details"><div class="admin-name">${escapeHtml(admin)}</div><div class="online"><span></span> Active</div></div><button class="btn btn-quiet icon-btn" data-action="logout" aria-label="Log out">${icon("logout")}</button></div></div>
     </aside>
     <div class="sidebar-scrim" id="sidebar-scrim"></div>
     <div class="main-shell">
       <header class="topbar">
-        <button class="btn icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="Open navigation">☰</button>
+        <button class="btn icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="Open navigation">${icon("menuToggle")}</button>
         <div class="topbar-title"><h1 id="topbar-title"></h1><p id="topbar-subtitle"></p></div>
-        <div class="search-wrap" id="global-search-wrap"><span class="search-icon">⌕</span><label class="sr-only" for="global-search">Search</label><input class="input" id="global-search" type="search" placeholder="Search this page…"></div>
-        <div class="top-actions"><span class="restaurant-online"><span></span> Restaurant online</span><button class="btn icon-btn notification-button" data-route="notifications" aria-label="Notifications">♢<span class="notification-dot" id="notification-dot" hidden></span></button><button class="btn admin-mini" data-route="settings"><span class="avatar" style="width:26px;height:26px;border-radius:7px;font-size:9px">${escapeHtml(initials(admin))}</span>${escapeHtml(admin)}</button></div>
+        <div class="search-wrap" id="global-search-wrap"><span class="search-icon">${icon("search")}</span><label class="sr-only" for="global-search">Search</label><input class="input" id="global-search" type="search" placeholder="Search this page…"></div>
+        <div class="top-actions"><span class="restaurant-online"><span></span> Restaurant online</span><button class="btn icon-btn notification-button" data-route="notifications" aria-label="Notifications">${icon("notifications")}<span class="notification-dot" id="notification-dot" hidden></span></button><button class="btn admin-mini" data-route="settings"><span class="avatar" style="width:28px;height:28px;border-radius:8px;font-size:9px">${escapeHtml(initials(admin))}</span><span class="admin-mini-copy"><strong>${escapeHtml(admin)}</strong><small>Administrator</small></span></button></div>
       </header>
       <main class="page" id="page-content"></main>
     </div>
@@ -243,12 +271,12 @@ async function loadDashboard() {
   const totalStatuses = Math.max(1, Object.values(statusMap).reduce((sum, count) => sum + count, 0));
   const statuses = ["received", "preparing", "oven", "out_for_delivery", "completed", "cancelled"];
 
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Restaurant overview", "Live operational data from the Pizza Bar backend and Neon database.")}
+  app.querySelector("#page-content").innerHTML = `${pageHeading("Restaurant overview", "Live view of Pizza Bar performance and status.")}
     <section class="stats-grid">
-      ${statCard("Today's orders", data.stats.today_orders, "▤", orderTrend, "vs yesterday", "#f26a2e")}
-      ${statCard("Pending requests", data.stats.pending_requests, "◉", null, "requires attention", "#e6a83c")}
-      ${statCard("Today's revenue", money(data.stats.today_revenue, currency), "↗", revenueTrend, "vs yesterday", "#47b978")}
-      ${statCard("Active customers", data.stats.active_customers, "♙", null, "in the last 24 hours", "#5d8ee2")}
+      ${statCard("Today's orders", data.stats.today_orders, "orders", orderTrend, "vs yesterday", "#FF6B00")}
+      ${statCard("Pending requests", data.stats.pending_requests, "requests", null, "requires attention", "#F59E0B")}
+      ${statCard("Today's revenue", money(data.stats.today_revenue, currency), "revenue", revenueTrend, "vs yesterday", "#10B981")}
+      ${statCard("Active customers", data.stats.active_customers, "customers", null, "in the last 24 hours", "#3B82F6")}
     </section>
     <section class="dashboard-grid">
       <article class="panel"><div class="panel-head"><div><div class="panel-title">Order activity</div><div class="panel-subtitle">Daily orders in Pakistan time</div></div><div class="segmented">${[1,7,30].map((days) => `<button class="segment ${state.dashboardDays === days ? "active" : ""}" data-dashboard-days="${days}">${days === 1 ? "Today" : `${days} days`}</button>`).join("")}</div></div><div class="panel-body"><div class="chart">${data.activity.map((point) => `<div class="chart-column"><div class="chart-track"><span class="chart-value">${point.orders}</span><div class="chart-bar" style="height:${Math.max(2, Math.round(Number(point.orders) / maxOrders * 100))}%"></div></div><div class="chart-label">${escapeHtml(new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${String(point.day).slice(0, 10)}T00:00:00Z`)))}</div></div>`).join("")}</div></div></article>
@@ -263,9 +291,9 @@ async function loadDashboard() {
   bindCommonActions();
 }
 
-function statCard(label, value, icon, trend, trendCopy, color) {
+function statCard(label, value, iconName, trend, trendCopy, color) {
   const trendClass = trend > 0 ? "up" : trend < 0 ? "down" : "";
-  return `<article class="stat-card" style="--stat-color:${color};--tone:${color}15"><div class="stat-head"><span>${escapeHtml(label)}</span><span class="stat-icon">${icon}</span></div><div class="stat-value mono">${escapeHtml(value)}</div><div class="trend ${trendClass}">${trend === null ? "•" : `${trend >= 0 ? "↑" : "↓"} ${Math.abs(trend)}%`} <span class="muted">${escapeHtml(trendCopy)}</span></div></article>`;
+  return `<article class="stat-card" style="--stat-color:${color};--tone:${color}15"><div class="stat-head"><span>${escapeHtml(label)}</span><span class="stat-icon">${icon(iconName)}</span></div><div class="stat-value mono">${escapeHtml(value)}</div><div class="trend ${trendClass}">${trend === null ? "•" : `${trend >= 0 ? "↑" : "↓"} ${Math.abs(trend)}%`} <span class="muted">${escapeHtml(trendCopy)}</span></div></article>`;
 }
 
 function renderCompactOrders(orders, currency) {
@@ -285,14 +313,16 @@ async function loadOrders(route) {
   if (state.route !== route) return;
   const history = route === "history";
   const currency = state.session?.restaurant?.currency || "PKR";
-  const actions = history ? '<button class="btn" data-action="export-history">⇩ Export CSV</button>' : "";
-  app.querySelector("#page-content").innerHTML = `${pageHeading(history ? "Order history" : "Orders", history ? "Search completed and cancelled orders." : "Manage orders currently moving through the kitchen.", actions)}
-    <div class="toolbar"><input class="input mobile-page-search" data-local-search="${route}" type="search" value="${escapeHtml(filters.search)}" placeholder="Search order, customer or phone…">
-      <select class="select" data-filter="status"><option value="">All statuses</option>${(history ? ["completed", "cancelled"] : ["received", "preparing", "oven", "out_for_delivery"]).map((status) => `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(statusLabel(status))}</option>`).join("")}</select>
-      <select class="select" data-filter="order_type"><option value="">Delivery & pickup</option><option value="delivery" ${filters.order_type === "delivery" ? "selected" : ""}>Delivery</option><option value="pickup" ${filters.order_type === "pickup" ? "selected" : ""}>Pickup</option></select>
-      <input class="input date-field" data-filter="date_from" type="date" value="${escapeHtml(filters.date_from)}" aria-label="From date"><input class="input date-field" data-filter="date_to" type="date" value="${escapeHtml(filters.date_to)}" aria-label="To date">
+  const actions = history ? `<button class="btn history-export" data-action="export-history">${icon("download")}<span>Export CSV</span></button>` : "";
+  const pageClass = history ? "history-page" : "orders-page";
+  app.querySelector("#page-content").innerHTML = `<div class="${pageClass}">${pageHeading(history ? "Order history" : "Orders", history ? "Search completed and cancelled orders." : "Manage orders currently moving through the kitchen.", actions)}
+    <div class="toolbar orders-toolbar"><input class="input mobile-page-search" data-local-search="${route}" type="search" value="${escapeHtml(filters.search)}" placeholder="Search order, customer or phone…">
+      <div class="filter-control"><label class="sr-only" for="${route}-status">Filter by status</label><select class="select" id="${route}-status" data-filter="status"><option value="">All statuses</option>${(history ? ["completed", "cancelled"] : ["received", "preparing", "oven", "out_for_delivery"]).map((status) => `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(statusLabel(status))}</option>`).join("")}</select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+      <div class="filter-control"><label class="sr-only" for="${route}-type">Filter by fulfilment type</label><select class="select" id="${route}-type" data-filter="order_type"><option value="">Delivery & pickup</option><option value="delivery" ${filters.order_type === "delivery" ? "selected" : ""}>Delivery</option><option value="pickup" ${filters.order_type === "pickup" ? "selected" : ""}>Pickup</option></select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+      <div class="filter-control date-control"><input class="input date-field" data-filter="date_from" type="date" value="${escapeHtml(filters.date_from)}" aria-label="From date"><span class="filter-control-icon">${icon("calendar")}</span></div>
+      <div class="filter-control date-control"><input class="input date-field" data-filter="date_to" type="date" value="${escapeHtml(filters.date_to)}" aria-label="To date"><span class="filter-control-icon">${icon("calendar")}</span></div>
     </div>
-    <section class="panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>${data.orders.map((order) => `<tr><td class="primary-cell">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted">${escapeHtml(itemSummary(order.items))}</td><td class="mono">${escapeHtml(money(order.total, currency))}</td><td>${escapeHtml(statusLabel(order.order_type))}</td><td>${badge(order.status)}</td><td>${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section>`;
+    <section class="panel orders-table-panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table orders-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th class="action-heading">Action</th></tr></thead><tbody>${data.orders.map((order) => `<tr><td class="primary-cell order-id">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted items-cell">${escapeHtml(itemSummary(order.items))}</td><td class="mono order-total">${escapeHtml(money(order.total, currency))}</td><td class="type-cell">${escapeHtml(statusLabel(order.order_type))}</td><td>${badge(order.status)}</td><td class="order-date">${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm order-view-button" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section></div>`;
   bindFilterControls(route);
   bindLocalSearch(route);
   bindCommonActions();
@@ -409,9 +439,12 @@ async function loadRequests() {
   const data = await api(`/admin/requests${queryString({ ...filters, page: state.pages.requests, limit: 20 })}`);
   if (state.route !== "requests") return;
   const currency = state.session?.restaurant?.currency || "PKR";
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Pending requests", "Review and respond to requests from WhatsApp customers.")}
-    <div class="toolbar"><input class="input mobile-page-search" data-local-search="requests" type="search" value="${escapeHtml(filters.search)}" placeholder="Search customer or request…"><select class="select" data-filter="status"><option value="">All statuses</option>${["pending","approved","denied"].map((value) => `<option value="${value}" ${filters.status === value ? "selected" : ""}>${escapeHtml(statusLabel(value))}</option>`).join("")}</select><select class="select" data-filter="type"><option value="">All request types</option><option value="cancel_order" ${filters.type === "cancel_order" ? "selected" : ""}>Cancellation</option><option value="modification" ${filters.type === "modification" ? "selected" : ""}>Modification</option><option value="delivery" ${filters.type === "delivery" ? "selected" : ""}>Delivery</option><option value="other" ${filters.type === "other" ? "selected" : ""}>Other</option></select></div>
-    ${data.requests.length ? `<div class="request-grid">${data.requests.map((request) => renderRequestCard(request, currency)).join("")}</div>${pagination(data.pagination, "requests")}` : `<section class="panel">${emptyState("No requests found", "New customer requests from WhatsApp will appear here.", "✓")}</section>`}`;
+  app.querySelector("#page-content").innerHTML = `<div class="pending-requests-page">${pageHeading("Pending requests", "Review and respond to requests from WhatsApp customers.")}
+    <div class="toolbar requests-toolbar"><input class="input mobile-page-search" data-local-search="requests" type="search" value="${escapeHtml(filters.search)}" placeholder="Search customer or request…">
+      <div class="filter-control"><label class="sr-only" for="requests-status">Filter by status</label><select class="select" id="requests-status" data-filter="status"><option value="">All statuses</option>${["pending","approved","denied"].map((value) => `<option value="${value}" ${filters.status === value ? "selected" : ""}>${escapeHtml(statusLabel(value))}</option>`).join("")}</select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+      <div class="filter-control"><label class="sr-only" for="requests-type">Filter by request type</label><select class="select" id="requests-type" data-filter="type"><option value="">All request types</option><option value="cancel_order" ${filters.type === "cancel_order" ? "selected" : ""}>Cancellation request</option><option value="modification" ${filters.type === "modification" ? "selected" : ""}>Order modification</option><option value="delivery" ${filters.type === "delivery" ? "selected" : ""}>Delivery issue</option><option value="other" ${filters.type === "other" ? "selected" : ""}>Other</option></select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+    </div>
+    ${data.requests.length ? `<div class="request-grid">${data.requests.map((request) => renderRequestCard(request, currency)).join("")}</div>${pagination(data.pagination, "requests")}` : `<section class="panel requests-empty-panel">${emptyState("No requests found", "New customer requests from WhatsApp will appear here.", "✓")}</section>`}</div>`;
   bindFilterControls("requests");
   bindLocalSearch("requests");
   bindCommonActions();
@@ -424,7 +457,7 @@ function renderRequestCard(request, currency) {
   const deliveryStatus = request.notification_delivery_status || (request.notification_sent ? "sent" : request.notification_error ? "failed" : null);
   const notificationRetryable = request.status !== "pending" && deliveryStatus === "failed" && Boolean(request.notification_event_id);
   const typeLabel = ({ cancel_order: "Cancellation request", modification: "Order modification", delivery: "Delivery issue" })[request.request_type] || "Customer request";
-  return `<article class="request-card"><div class="request-card-top"><div><div class="request-number">REQUEST #${escapeHtml(request.id)}</div><div class="request-type">${escapeHtml(typeLabel)}</div></div>${badge(request.status)}</div>
+  return `<article class="request-card"><div class="request-card-top"><div class="request-number">REQUEST #${escapeHtml(request.id)}</div>${badge(request.status)}</div><div class="request-type">${escapeHtml(typeLabel)}</div>
     <div class="request-question">${escapeHtml(request.question)}</div>
     <div class="request-facts"><div><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(request.customer_name || "Unnamed")}<br><span class="subtle">${escapeHtml(request.customer_phone)}</span></div></div><div><div class="fact-label">Order</div><div class="fact-value">${request.order_id ? `#${escapeHtml(request.order_id)}<br>${escapeHtml(itemSummary(request.order_items, 1))}` : "Not linked"}</div></div><div><div class="fact-label">Total</div><div class="fact-value">${request.order_total ? escapeHtml(money(request.order_total, currency)) : "—"}</div></div><div><div class="fact-label">Delivery</div><div class="fact-value">${escapeHtml(request.delivery_address || (request.order_type ? statusLabel(request.order_type) : "—"))}</div></div><div><div class="fact-label">Requested</div><div class="fact-value">${escapeHtml(relativeTime(request.created_at))}</div></div><div><div class="fact-label">Notification</div><div class="fact-value">${deliveryStatus === "sent" ? '<span class="success-text">Delivered</span>' : deliveryStatus === "failed" ? '<span class="danger-text">Failed</span>' : deliveryStatus === "processing" ? "Processing" : deliveryStatus === "pending" ? "Queued" : deliveryStatus === "superseded" ? "Superseded" : "Not sent"}</div></div></div>
     ${request.request_type === "cancel_order" && !cancellable && request.status === "pending" ? `<div class="notification-failure">Order #${escapeHtml(request.order_id || "?")} can no longer be cancelled at status ${escapeHtml(statusLabel(request.order_status))}. The backend will reject approval.</div>` : ""}
@@ -476,9 +509,9 @@ async function loadCustomers() {
   const data = await api(`/admin/customers${queryString({ search: state.filters.customers.search, page: state.pages.customers, limit: 20 })}`);
   if (state.route !== "customers") return;
   const currency = state.session?.restaurant?.currency || "PKR";
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Customers", "Real customer profiles aggregated from WhatsApp orders.")}
-    <div class="toolbar"><input class="input mobile-page-search" data-local-search="customers" type="search" value="${escapeHtml(state.filters.customers.search)}" placeholder="Search name or phone…"></div>
-    <section class="panel">${data.customers.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Total spending</th><th>Last order</th><th>Status</th><th></th></tr></thead><tbody>${data.customers.map((customer) => `<tr><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(customer.name))}</div><div class="primary-cell">${escapeHtml(customer.name || "Unnamed customer")}</div></div></td><td>${escapeHtml(customer.whatsapp_phone)}</td><td class="mono">${customer.total_orders}</td><td class="mono">${escapeHtml(money(customer.total_spending, currency))}</td><td>${escapeHtml(customer.last_order ? relativeTime(customer.last_order) : "No orders")}</td><td>${badge(customer.status)}</td><td><button class="btn btn-sm" data-view-customer="${escapeHtml(customer.id)}">View</button></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, "customers")}` : emptyState("No customers found", "Customers are created by the WhatsApp ordering flow.", "♙")}</section>`;
+  app.querySelector("#page-content").innerHTML = `<div class="customers-page">${pageHeading("Customers", "Real customer profiles aggregated from WhatsApp orders.")}
+    <div class="toolbar customers-toolbar"><input class="input mobile-page-search" data-local-search="customers" type="search" value="${escapeHtml(state.filters.customers.search)}" placeholder="Search name or phone…"></div>
+    <section class="panel customers-table-panel">${data.customers.length ? `<div class="table-wrap"><table class="data-table customers-table"><thead><tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Total spending</th><th>Last order</th><th>Status</th><th class="customer-action-heading"><span class="sr-only">Actions</span></th></tr></thead><tbody>${data.customers.map((customer) => `<tr><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(customer.name))}</div><div class="primary-cell customer-name">${escapeHtml(customer.name || "Unnamed customer")}</div></div></td><td class="mono customer-phone">${escapeHtml(customer.whatsapp_phone)}</td><td class="customer-orders">${customer.total_orders}</td><td class="mono customer-spending">${escapeHtml(money(customer.total_spending, currency))}</td><td class="customer-last-order">${escapeHtml(customer.last_order ? relativeTime(customer.last_order) : "No orders")}</td><td>${badge(customer.status)}</td><td><button class="btn btn-sm customer-view-button" data-view-customer="${escapeHtml(customer.id)}">View</button></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, "customers")}` : emptyState("No customers found", "Customers are created by the WhatsApp ordering flow.", "♙")}</section></div>`;
   bindLocalSearch("customers");
   bindCommonActions();
 }
@@ -520,10 +553,10 @@ async function loadMenu() {
   if (!categories.includes(state.filters.menu.category)) state.filters.menu.category = "All";
   const records = allRecords.filter((record) => (state.filters.menu.category === "All" || record.category === state.filters.menu.category) && (!search || `${record.name} ${record.description || ""}`.toLowerCase().includes(search)));
   const currency = state.session?.restaurant?.currency || "PKR";
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Menu management", "Live products, variants, deals and images from Neon.", '<button class="btn btn-primary" data-action="add-menu-item">+ Add item</button>')}
-    <div class="toolbar"><input class="input mobile-page-search" data-local-search="menu" type="search" value="${escapeHtml(state.filters.menu.search)}" placeholder="Search menu…"></div>
+  app.querySelector("#page-content").innerHTML = `<div class="menu-page">${pageHeading("Menu management", "Live products, variants, deals and images from Neon.", `<button class="btn btn-primary menu-add-button" data-action="add-menu-item">${icon("plus")}<span>Add item</span></button>`)}
+    <div class="toolbar menu-toolbar"><input class="input mobile-page-search" data-local-search="menu" type="search" value="${escapeHtml(state.filters.menu.search)}" placeholder="Search menu…"></div>
     <div class="category-tabs">${categories.map((category) => `<button class="category-tab ${state.filters.menu.category === category ? "active" : ""}" data-menu-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div>
-    <div class="menu-layout"><section>${records.length ? `<div class="menu-grid">${records.map((record) => renderMenuCard(record, currency)).join("")}</div>` : `<div class="panel">${emptyState("No menu items found", "Try a different category or search term.", "♨")}</div>`}</section><aside class="panel menu-gallery"><div class="panel-head"><div><div class="panel-title">Menu images</div><div class="panel-subtitle">Stored in Neon BYTEA</div></div></div><div class="panel-body">${data.images.length ? data.images.map((image) => `<img class="menu-image" src="${escapeHtml(`${API_BASE}${image.url}`)}" alt="${escapeHtml(image.name)}" loading="lazy">`).join("") : `<div class="muted">No active images.</div>`}</div></aside></div>`;
+    <div class="menu-layout"><section class="menu-products">${records.length ? `<div class="menu-grid">${records.map((record) => renderMenuCard(record, currency)).join("")}</div>` : `<div class="panel menu-empty-panel">${emptyState("No menu items found", "Try a different category or search term.", "♨")}</div>`}</section><aside class="panel menu-gallery"><div class="panel-head"><div><div class="panel-title">Menu images</div><div class="panel-subtitle">Stored in Neon BYTEA</div></div><span class="menu-image-count">${data.images.length} ${data.images.length === 1 ? "file" : "files"}</span></div><div class="panel-body">${data.images.length ? data.images.map((image) => `<figure class="menu-image-card"><div class="menu-image-frame"><img class="menu-image" src="${escapeHtml(`${API_BASE}${image.url}`)}" alt="${escapeHtml(image.name)}" loading="lazy"></div><figcaption><span>${escapeHtml(image.name)}</span><small>Stored</small></figcaption></figure>`).join("") : `<div class="menu-images-empty">No active images.</div>`}</div></aside></div></div>`;
   app.querySelectorAll("[data-menu-category]").forEach((button) => button.addEventListener("click", () => { state.filters.menu.category = button.dataset.menuCategory; loadCurrentPage(); }));
   bindLocalSearch("menu");
   app.querySelector("[data-action='add-menu-item']").addEventListener("click", openAddMenuItem);
@@ -532,7 +565,7 @@ async function loadMenu() {
 }
 
 function renderMenuCard(record, currency) {
-  return `<article class="menu-card ${record.active ? "" : "disabled"}"><div class="split"><div><div class="request-number">${escapeHtml(record.category)} · ${escapeHtml(record.kind === "deals" ? "Deal" : record.item_type)}</div><h3>${escapeHtml(record.name)}</h3></div><button class="btn btn-sm ${record.active ? "" : "btn-primary"}" data-toggle-menu="${escapeHtml(record.id)}" data-menu-kind="${record.kind}" data-menu-active="${record.active}">${record.active ? "Available" : "Unavailable"}</button></div><p>${escapeHtml(record.description || "No description")}</p>${record.kind === "deals" ? `<div class="variant-row"><span>Deal price</span><button class="btn btn-sm" data-edit-price="${escapeHtml(record.id)}" data-menu-kind="deals" data-current-price="${record.price}">${escapeHtml(money(record.price, currency))}</button></div>` : `<div class="variant-list">${record.variants.map((variant) => `<div class="variant-row"><span>${escapeHtml(variant.label || "Standard")}</span><button class="btn btn-sm" data-edit-price="${escapeHtml(variant.id)}" data-item-id="${escapeHtml(record.id)}" data-menu-kind="variant" data-current-price="${variant.price}">${escapeHtml(money(variant.price, currency))}</button></div>`).join("")}</div>`}</article>`;
+  return `<article class="menu-card ${record.active ? "" : "disabled"}"><div class="menu-card-head"><div class="menu-meta">${escapeHtml(record.category)} · ${escapeHtml(record.kind === "deals" ? "Deal" : record.item_type)}</div><button class="btn btn-sm menu-availability ${record.active ? "" : "btn-primary"}" data-toggle-menu="${escapeHtml(record.id)}" data-menu-kind="${record.kind}" data-menu-active="${record.active}">${record.active ? "Available" : "Unavailable"}</button></div><h3 class="menu-title">${escapeHtml(record.name)}</h3><p class="menu-description">${escapeHtml(record.description || "No description")}</p>${record.kind === "deals" ? `<div class="variant-row menu-variant-row"><span>Deal price</span><button class="btn btn-sm menu-price-button" data-edit-price="${escapeHtml(record.id)}" data-menu-kind="deals" data-current-price="${record.price}">${escapeHtml(money(record.price, currency))}</button></div>` : `<div class="variant-list">${record.variants.map((variant) => `<div class="variant-row menu-variant-row"><span>${escapeHtml(variant.label || "Standard")}</span><button class="btn btn-sm menu-price-button" data-edit-price="${escapeHtml(variant.id)}" data-item-id="${escapeHtml(record.id)}" data-menu-kind="variant" data-current-price="${variant.price}">${escapeHtml(money(variant.price, currency))}</button></div>`).join("")}</div>`}</article>`;
 }
 
 async function toggleMenuRecord(button) {
@@ -603,14 +636,14 @@ async function loadSettings() {
   if (state.route !== "settings") return;
   const restaurant = data.restaurant || {};
   const admin = data.admin || {};
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Settings", "Public restaurant configuration and integration health. Secrets stay on the backend.")}
+  app.querySelector("#page-content").innerHTML = `<div class="settings-page">${pageHeading("Settings", "Public restaurant configuration and integration health. Secrets stay on the backend.")}
     <form id="settings-form" class="settings-grid">
-      <section class="panel settings-section"><h3>Restaurant information</h3><p>Used by the bot and admin dashboard.</p><div class="stack"><div class="field"><label for="restaurant-name">Restaurant name</label><input class="input" id="restaurant-name" name="restaurant_name" value="${escapeHtml(restaurant.restaurant_name)}" required></div><div class="detail-grid"><div class="field"><label for="currency">Currency</label><input class="input" id="currency" name="currency" value="${escapeHtml(restaurant.currency)}" maxlength="3" required></div><div class="field"><label for="delivery-charge">Delivery charge</label><input class="input" id="delivery-charge" name="delivery_charge" type="number" min="0" step="0.01" value="${escapeHtml(restaurant.delivery_charge)}" required></div></div><div class="field"><label for="opening-hours">Opening hours (JSON)</label><textarea class="textarea" id="opening-hours" name="opening_hours">${escapeHtml(JSON.stringify(restaurant.opening_hours || {}, null, 2))}</textarea></div></div></section>
-      <section class="panel settings-section"><h3>Admin account</h3><p>The API key remains server-only and is never returned to this page.</p><div class="field"><label for="display-name">Display name</label><input class="input" id="display-name" name="display_name" value="${escapeHtml(admin.display_name)}" required></div><div class="integration-row"><div><div class="primary-cell">Authentication</div><div class="secondary-cell">Protected with x-admin-key</div></div>${badge("active")}</div></section>
-      <section class="panel settings-section"><h3>Customer status updates</h3><p>The backend securely dispatches durable events to n8n; no integration secret is exposed here.</p><div class="integration-row"><div><div class="primary-cell">n8n status webhook</div><div class="secondary-cell">Server-to-server authentication</div></div>${badge(data.integrations.n8n_status_webhook_configured ? "active" : "inactive")}</div></section>
-      <section class="panel settings-section"><h3>Notifications & security</h3><p>Lightweight polling keeps staff informed without another external service.</p><div class="integration-row"><div><div class="primary-cell">Refresh interval</div><div class="secondary-cell">Orders, requests and notifications</div></div><span>${data.integrations.polling_seconds}s</span></div><div class="integration-row"><div><div class="primary-cell">Database access</div><div class="secondary-cell">Backend only</div></div>${badge("active")}</div></section>
-      <div><button class="btn btn-primary" type="submit">Save settings</button></div>
-    </form>`;
+      <section class="panel settings-section"><div class="settings-card-head"><h3>Restaurant information</h3><p>Used by the bot and admin dashboard.</p></div><div class="stack"><div class="field"><label for="restaurant-name">Restaurant name</label><input class="input" id="restaurant-name" name="restaurant_name" value="${escapeHtml(restaurant.restaurant_name)}" required></div><div class="detail-grid"><div class="field"><label for="currency">Currency</label><input class="input" id="currency" name="currency" value="${escapeHtml(restaurant.currency)}" maxlength="3" required></div><div class="field"><label for="delivery-charge">Delivery charge</label><input class="input" id="delivery-charge" name="delivery_charge" type="number" min="0" step="0.01" value="${escapeHtml(restaurant.delivery_charge)}" required></div></div><div class="field"><label for="opening-hours">Opening hours (JSON)</label><textarea class="textarea settings-json" id="opening-hours" name="opening_hours" spellcheck="false">${escapeHtml(JSON.stringify(restaurant.opening_hours || {}, null, 2))}</textarea></div></div></section>
+      <section class="panel settings-section"><div class="settings-card-head"><h3>Admin account</h3><p>The API key remains server-only and is never returned to this page.</p></div><div class="field"><label for="display-name">Display name</label><input class="input" id="display-name" name="display_name" value="${escapeHtml(admin.display_name)}" required></div><div class="integration-row"><div><div class="primary-cell">Authentication</div><div class="secondary-cell">Protected with x-admin-key</div></div>${badge("active")}</div></section>
+      <section class="panel settings-section"><div class="settings-card-head"><h3>Customer status updates</h3><p>The backend securely dispatches durable events to n8n; no integration secret is exposed here.</p></div><div class="integration-row"><div><div class="primary-cell">n8n status webhook</div><div class="secondary-cell">Server-to-server authentication</div></div>${badge(data.integrations.n8n_status_webhook_configured ? "active" : "inactive")}</div></section>
+      <section class="panel settings-section"><div class="settings-card-head"><h3>Notifications & security</h3><p>Lightweight polling keeps staff informed without another external service.</p></div><div class="integration-row"><div><div class="primary-cell">Refresh interval</div><div class="secondary-cell">Orders, requests and notifications</div></div><span class="polling-value">${data.integrations.polling_seconds}s</span></div><div class="integration-row"><div><div class="primary-cell">Database access</div><div class="secondary-cell">Backend only</div></div>${badge("active")}</div></section>
+      <div class="settings-actions"><button class="btn btn-primary settings-save" type="submit">Save settings</button></div>
+    </form></div>`;
   app.querySelector("#settings-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
