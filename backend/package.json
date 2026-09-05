@@ -24,6 +24,7 @@
     "migrate:drop-legacy-menu": "node scripts/run-migration.js 014_drop_legacy_menu_schema.sql",
     "migrate:reply-idempotency": "node scripts/run-migration.js 015_reply_idempotency.sql",
     "migrate:dashboard-status": "node scripts/run-migration.js 016_dashboard_customer_status_events.sql",
+    "migrate:admin-performance": "node scripts/run-migration.js 017_admin_read_performance.sql",
     "workflow:dashboard-status": "node scripts/upgrade-dashboard-status-workflow.js"
   },
   "keywords": [],
@@ -31,6 +32,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@vercel/functions": "^3.9.5",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

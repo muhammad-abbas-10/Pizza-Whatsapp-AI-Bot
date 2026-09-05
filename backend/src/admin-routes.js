@@ -67,6 +67,19 @@ function csvCell(value) {
 const ORDER_STATUSES = ["received", "preparing", "oven", "out_for_delivery", "completed", "cancelled"];
 const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function setPrivateCache(res, maxAgeSeconds, staleWhileRevalidateSeconds = 0) {
+  const stale = staleWhileRevalidateSeconds > 0
+    ? `, stale-while-revalidate=${staleWhileRevalidateSeconds}`
+    : "";
+  res.setHeader("Cache-Control", `private, max-age=${maxAgeSeconds}${stale}`);
+  res.vary("x-admin-key");
+}
+
+function latestTimestamp(...values) {
+  const timestamps = values.filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
+  return timestamps.length ? new Date(Math.max(...timestamps)).toISOString() : null;
+}
+
 function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
   const deliverEvent = dispatchEvent || ((eventId) => dispatchCustomerNotificationEvent(pool, eventId));
   app.use("/admin", requireAdminKey);
@@ -696,16 +709,33 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
 
   app.get("/admin/session", async (req, res) => {
     try {
-      const [settingsResult, profileResult, unreadResult] = await Promise.all([
-        pool.query(`SELECT restaurant_name, currency, delivery_charge, opening_hours, updated_at FROM restaurant_settings WHERE id = 1`),
-        pool.query(`SELECT display_name, updated_at FROM admin_profile WHERE id = 1`),
-        pool.query(`SELECT COUNT(*)::int AS count FROM admin_notifications WHERE read_at IS NULL`),
-      ]);
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT restaurant_name FROM restaurant_settings WHERE id = 1) AS restaurant_name,
+          (SELECT currency FROM restaurant_settings WHERE id = 1) AS currency,
+          (SELECT delivery_charge FROM restaurant_settings WHERE id = 1) AS delivery_charge,
+          (SELECT opening_hours FROM restaurant_settings WHERE id = 1) AS opening_hours,
+          (SELECT updated_at FROM restaurant_settings WHERE id = 1) AS restaurant_updated_at,
+          (SELECT display_name FROM admin_profile WHERE id = 1) AS display_name,
+          (SELECT updated_at FROM admin_profile WHERE id = 1) AS profile_updated_at,
+          (SELECT COUNT(*)::int FROM admin_notifications WHERE read_at IS NULL) AS unread_notifications
+      `);
+      const row = rows[0] || {};
+      setPrivateCache(res, 60, 300);
       return res.json({
         success: true,
-        restaurant: settingsResult.rows[0] || null,
-        admin: profileResult.rows[0] || null,
-        unread_notifications: unreadResult.rows[0]?.count || 0,
+        restaurant: row.restaurant_name == null ? null : {
+          restaurant_name: row.restaurant_name,
+          currency: row.currency,
+          delivery_charge: row.delivery_charge,
+          opening_hours: row.opening_hours,
+          updated_at: row.restaurant_updated_at,
+        },
+        admin: row.display_name == null ? null : {
+          display_name: row.display_name,
+          updated_at: row.profile_updated_at,
+        },
+        unread_notifications: row.unread_notifications || 0,
         integrations: {
           n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL),
           database_connected: true,
@@ -717,70 +747,154 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
     }
   });
 
+  app.get("/admin/activity", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT
+          (SELECT COUNT(*)::int FROM admin_notifications WHERE read_at IS NULL) AS unread_notifications,
+          (SELECT MAX(updated_at) FROM orders) AS orders_version,
+          (SELECT MAX(GREATEST(created_at, COALESCE(resolved_at, created_at), COALESCE(last_notification_attempt_at, created_at))) FROM admin_requests) AS requests_version,
+          (SELECT MAX(created_at) FROM feedback) AS feedback_version,
+          (SELECT MAX(GREATEST(created_at, COALESCE(read_at, created_at))) FROM admin_notifications) AS notifications_version,
+          (SELECT MAX(updated_at) FROM conversation_sessions) AS customers_version
+      `);
+      const activity = rows[0] || {};
+      res.setHeader("Cache-Control", "private, no-store");
+      res.vary("x-admin-key");
+      return res.json({
+        success: true,
+        unread_notifications: activity.unread_notifications || 0,
+        orders_version: activity.orders_version || null,
+        requests_version: activity.requests_version || null,
+        feedback_version: activity.feedback_version || null,
+        notifications_version: activity.notifications_version || null,
+        customers_version: activity.customers_version || null,
+        dashboard_version: latestTimestamp(
+          activity.orders_version,
+          activity.requests_version,
+          activity.feedback_version,
+          activity.customers_version
+        ),
+      });
+    } catch (error) {
+      console.error("Admin activity error:", error);
+      return res.status(500).json({ success: false, message: "Failed to load admin activity" });
+    }
+  });
+
   app.get("/admin/dashboard", async (req, res) => {
     const range = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
     try {
-      const [stats, statuses, activity, recentOrders, recentRequests, recentFeedback] = await Promise.all([
-        pool.query(`
-          WITH today AS (
-            SELECT COUNT(*)::int AS orders,
-              COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'), 0) AS revenue
+      const { rows } = await pool.query(`
+          WITH bounds AS (
+            SELECT
+              (NOW() AT TIME ZONE 'Asia/Karachi')::date AS local_today,
+              ((NOW() AT TIME ZONE 'Asia/Karachi')::date::timestamp AT TIME ZONE 'Asia/Karachi') AS today_start,
+              (((NOW() AT TIME ZONE 'Asia/Karachi')::date - 1)::timestamp AT TIME ZONE 'Asia/Karachi') AS yesterday_start,
+              (((NOW() AT TIME ZONE 'Asia/Karachi')::date + 1)::timestamp AT TIME ZONE 'Asia/Karachi') AS tomorrow_start,
+              (((NOW() AT TIME ZONE 'Asia/Karachi')::date - ($1::int - 1))::timestamp AT TIME ZONE 'Asia/Karachi') AS activity_start
+          ), stats AS (
+            SELECT
+              COUNT(*) FILTER (WHERE o.created_at >= b.today_start)::int AS today_orders,
+              COALESCE(SUM(o.total) FILTER (WHERE o.created_at >= b.today_start AND o.status <> 'cancelled'), 0) AS today_revenue,
+              COUNT(*) FILTER (WHERE o.created_at < b.today_start)::int AS previous_orders,
+              COALESCE(SUM(o.total) FILTER (WHERE o.created_at < b.today_start AND o.status <> 'cancelled'), 0) AS previous_revenue
+            FROM orders o CROSS JOIN bounds b
+            WHERE o.created_at >= b.yesterday_start AND o.created_at < b.tomorrow_start
+          ), statuses AS (
+            SELECT status, COUNT(*)::int AS count
             FROM orders
-            WHERE (created_at AT TIME ZONE 'Asia/Karachi')::date = (NOW() AT TIME ZONE 'Asia/Karachi')::date
-          ), yesterday AS (
-            SELECT COUNT(*)::int AS orders,
-              COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'), 0) AS revenue
-            FROM orders
-            WHERE (created_at AT TIME ZONE 'Asia/Karachi')::date = (NOW() AT TIME ZONE 'Asia/Karachi')::date - 1
-          )
-          SELECT today.orders AS today_orders, today.revenue AS today_revenue,
-            yesterday.orders AS previous_orders, yesterday.revenue AS previous_revenue,
-            (SELECT COUNT(*)::int FROM admin_requests WHERE status = 'pending') AS pending_requests,
-            (SELECT COUNT(DISTINCT customer_id)::int FROM conversation_sessions WHERE updated_at >= NOW() - INTERVAL '24 hours') AS active_customers
-          FROM today, yesterday
-        `),
-        pool.query(`SELECT status, COUNT(*)::int AS count FROM orders GROUP BY status`),
-        pool.query(`
-          WITH days AS (
+            GROUP BY status
+          ), days AS (
             SELECT generate_series(
-              (NOW() AT TIME ZONE 'Asia/Karachi')::date - ($1::int - 1),
-              (NOW() AT TIME ZONE 'Asia/Karachi')::date,
+              (SELECT local_today - ($1::int - 1) FROM bounds),
+              (SELECT local_today FROM bounds),
               INTERVAL '1 day'
             )::date AS day
+          ), activity AS (
+            SELECT (o.created_at AT TIME ZONE 'Asia/Karachi')::date AS day,
+              COUNT(*)::int AS orders,
+              COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'), 0) AS revenue
+            FROM orders o CROSS JOIN bounds b
+            WHERE o.created_at >= b.activity_start AND o.created_at < b.tomorrow_start
+            GROUP BY (o.created_at AT TIME ZONE 'Asia/Karachi')::date
           )
-          SELECT d.day, COUNT(o.id)::int AS orders,
-            COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'), 0) AS revenue
-          FROM days d
-          LEFT JOIN orders o ON (o.created_at AT TIME ZONE 'Asia/Karachi')::date = d.day
-          GROUP BY d.day ORDER BY d.day
-        `, [range]),
-        pool.query(`
-          SELECT o.id, o.items, o.order_type, o.total, o.status, o.created_at,
-            c.name AS customer_name, c.whatsapp_phone AS customer_phone
-          FROM orders o JOIN customers c ON c.id = o.customer_id
-          ORDER BY o.created_at DESC LIMIT 6
-        `),
-        pool.query(`
-          SELECT r.id, r.request_type, r.question, r.status, r.created_at,
-            c.name AS customer_name, c.whatsapp_phone AS customer_phone, r.order_id
-          FROM admin_requests r JOIN customers c ON c.id = r.customer_id
-          WHERE r.status = 'pending' ORDER BY r.created_at DESC LIMIT 4
-        `),
-        pool.query(`
-          SELECT f.id, f.rating, f.message, f.created_at, f.order_id,
-            c.name AS customer_name, c.whatsapp_phone AS customer_phone
-          FROM feedback f JOIN customers c ON c.id = f.customer_id
-          ORDER BY f.created_at DESC LIMIT 4
-        `),
-      ]);
+          SELECT s.today_orders, s.today_revenue, s.previous_orders, s.previous_revenue,
+            (SELECT COUNT(*)::int FROM admin_requests WHERE status = 'pending') AS pending_requests,
+            (SELECT COUNT(DISTINCT customer_id)::int FROM conversation_sessions WHERE updated_at >= NOW() - INTERVAL '24 hours') AS active_customers,
+            COALESCE((SELECT jsonb_agg(jsonb_build_object('status', status, 'count', count) ORDER BY status) FROM statuses), '[]'::jsonb) AS status_counts,
+            COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                'day', d.day,
+                'orders', COALESCE(a.orders, 0),
+                'revenue', COALESCE(a.revenue, 0)::text
+              ) ORDER BY d.day)
+              FROM days d LEFT JOIN activity a ON a.day = d.day
+            ), '[]'::jsonb) AS activity,
+            COALESCE((
+              SELECT jsonb_agg(to_jsonb(recent_order))
+              FROM (
+                SELECT o.id, o.items, o.order_type, o.total::text AS total, o.status, o.created_at,
+                  c.name AS customer_name, c.whatsapp_phone AS customer_phone
+                FROM orders o JOIN customers c ON c.id = o.customer_id
+                ORDER BY o.created_at DESC LIMIT 6
+              ) recent_order
+            ), '[]'::jsonb) AS recent_orders,
+            COALESCE((
+              SELECT jsonb_agg(to_jsonb(recent_request))
+              FROM (
+                SELECT r.id, r.request_type, r.question, r.status, r.created_at,
+                  c.name AS customer_name, c.whatsapp_phone AS customer_phone, r.order_id
+                FROM admin_requests r JOIN customers c ON c.id = r.customer_id
+                WHERE r.status = 'pending' ORDER BY r.created_at DESC LIMIT 4
+              ) recent_request
+            ), '[]'::jsonb) AS recent_requests,
+            COALESCE((
+              SELECT jsonb_agg(to_jsonb(recent_feedback))
+              FROM (
+                SELECT f.id, f.rating, f.message, f.created_at, f.order_id,
+                  c.name AS customer_name, c.whatsapp_phone AS customer_phone
+                FROM feedback f JOIN customers c ON c.id = f.customer_id
+                ORDER BY f.created_at DESC LIMIT 4
+              ) recent_feedback
+            ), '[]'::jsonb) AS recent_feedback
+          FROM stats s
+        `, [range]);
+      const aggregate = rows[0] || {};
+      setPrivateCache(res, 5, 10);
       return res.json({
         success: true,
-        stats: stats.rows[0],
-        status_counts: statuses.rows,
-        activity: activity.rows,
-        recent_orders: recentOrders.rows,
-        pending_requests: recentRequests.rows,
-        recent_feedback: recentFeedback.rows,
+        stats: {
+          today_orders: aggregate.today_orders || 0,
+          today_revenue: String(aggregate.today_revenue || 0),
+          previous_orders: aggregate.previous_orders || 0,
+          previous_revenue: String(aggregate.previous_revenue || 0),
+          pending_requests: aggregate.pending_requests || 0,
+          active_customers: aggregate.active_customers || 0,
+        },
+        status_counts: aggregate.status_counts || [],
+        activity: (aggregate.activity || []).map((point) => ({
+          ...point,
+          day: new Date(`${point.day}T00:00:00.000Z`).toISOString(),
+          revenue: String(point.revenue || 0),
+        })),
+        recent_orders: (aggregate.recent_orders || []).map((order) => ({
+          ...order,
+          id: String(order.id),
+          created_at: new Date(order.created_at).toISOString(),
+        })),
+        pending_requests: (aggregate.recent_requests || []).map((request) => ({
+          ...request,
+          id: String(request.id),
+          order_id: request.order_id == null ? null : String(request.order_id),
+          created_at: new Date(request.created_at).toISOString(),
+        })),
+        recent_feedback: (aggregate.recent_feedback || []).map((feedbackItem) => ({
+          ...feedbackItem,
+          id: String(feedbackItem.id),
+          order_id: feedbackItem.order_id == null ? null : String(feedbackItem.order_id),
+          created_at: new Date(feedbackItem.created_at).toISOString(),
+        })),
       });
     } catch (error) {
       console.error("Dashboard error:", error);
@@ -843,16 +957,33 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
       }
       params.push(limit, offset);
       const { rows } = await pool.query(`
+        WITH paged_customers AS MATERIALIZED (
+          SELECT c.id, c.name, c.whatsapp_phone, c.preferred_language, c.created_at,
+            latest.last_order, COUNT(*) OVER() AS total_count
+          FROM customers c
+          LEFT JOIN LATERAL (
+            SELECT MAX(o.created_at) AS last_order
+            FROM orders o
+            WHERE o.customer_id = c.id
+          ) latest ON TRUE
+          ${where}
+          ORDER BY latest.last_order DESC NULLS LAST, c.created_at DESC
+          LIMIT $${params.length - 1} OFFSET $${params.length}
+        )
         SELECT c.id, c.name, c.whatsapp_phone, c.preferred_language, c.created_at,
-          COUNT(o.id)::int AS total_orders,
-          COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'), 0) AS total_spending,
-          MAX(o.created_at) AS last_order,
-          CASE WHEN MAX(o.created_at) >= NOW() - INTERVAL '90 days' THEN 'active' ELSE 'inactive' END AS status,
-          COUNT(*) OVER() AS total_count
-        FROM customers c LEFT JOIN orders o ON o.customer_id = c.id
-        ${where}
-        GROUP BY c.id ORDER BY MAX(o.created_at) DESC NULLS LAST, c.created_at DESC
-        LIMIT $${params.length - 1} OFFSET $${params.length}
+          COALESCE(order_stats.total_orders, 0)::int AS total_orders,
+          COALESCE(order_stats.total_spending, 0) AS total_spending,
+          c.last_order,
+          CASE WHEN c.last_order >= NOW() - INTERVAL '90 days' THEN 'active' ELSE 'inactive' END AS status,
+          c.total_count
+        FROM paged_customers c
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS total_orders,
+            COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'), 0) AS total_spending
+          FROM orders o
+          WHERE o.customer_id = c.id
+        ) order_stats ON TRUE
+        ORDER BY c.last_order DESC NULLS LAST, c.created_at DESC
       `, params);
       const total = rows.length ? Number(rows[0].total_count) : 0;
       const customers = rows.map(({ total_count, ...customer }) => customer);
@@ -966,26 +1097,49 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
 
   app.get("/admin/menu", async (req, res) => {
     try {
-      const [items, deals, images] = await Promise.all([
-        pool.query(`
-          SELECT i.id, i.category, i.item_type, i.name, i.description, i.active,
-            i.is_popular, i.is_featured, i.sort_order,
-            COALESCE(jsonb_agg(jsonb_build_object(
-              'id', v.id, 'label', v.variant_label, 'price', v.price, 'quantity', v.quantity,
-              'unit', v.unit, 'active', v.active, 'sort_order', v.sort_order
-            ) ORDER BY v.sort_order) FILTER (WHERE v.id IS NOT NULL), '[]'::jsonb) AS variants
-          FROM restaurant_menu_items i
-          LEFT JOIN restaurant_menu_variants v ON v.menu_item_id = i.id
-          GROUP BY i.id ORDER BY i.sort_order, i.name
-        `),
-        pool.query(`SELECT id, category, name, description, price, unit, active, is_popular, is_featured, availability, sort_order FROM restaurant_deals ORDER BY sort_order, name`),
-        pool.query(`SELECT id, name, mime_type, active, display_order, created_at FROM menu_images WHERE active = TRUE ORDER BY display_order, created_at DESC`),
-      ]);
+      const { rows } = await pool.query(`
+        SELECT
+          COALESCE((
+            SELECT jsonb_agg(to_jsonb(menu_item) ORDER BY menu_item.sort_order, menu_item.name)
+            FROM (
+              SELECT i.id, i.category, i.item_type, i.name, i.description, i.active,
+                i.is_popular, i.is_featured, i.sort_order,
+                COALESCE(jsonb_agg(jsonb_build_object(
+                  'id', v.id, 'label', v.variant_label, 'price', v.price, 'quantity', v.quantity,
+                  'unit', v.unit, 'active', v.active, 'sort_order', v.sort_order
+                ) ORDER BY v.sort_order) FILTER (WHERE v.id IS NOT NULL), '[]'::jsonb) AS variants
+              FROM restaurant_menu_items i
+              LEFT JOIN restaurant_menu_variants v ON v.menu_item_id = i.id
+              GROUP BY i.id
+            ) menu_item
+          ), '[]'::jsonb) AS items,
+          COALESCE((
+            SELECT jsonb_agg(to_jsonb(deal) ORDER BY deal.sort_order, deal.name)
+            FROM (
+              SELECT id, category, name, description, price, unit, active,
+                is_popular, is_featured, availability, sort_order
+              FROM restaurant_deals
+            ) deal
+          ), '[]'::jsonb) AS deals,
+          COALESCE((
+            SELECT jsonb_agg(to_jsonb(image) ORDER BY image.display_order, image.created_at DESC)
+            FROM (
+              SELECT id, name, mime_type, active, display_order, created_at
+              FROM menu_images WHERE active = TRUE
+            ) image
+          ), '[]'::jsonb) AS images
+      `);
+      const menu = rows[0] || { items: [], deals: [], images: [] };
+      setPrivateCache(res, 300, 600);
       return res.json({
         success: true,
-        items: items.rows,
-        deals: deals.rows,
-        images: images.rows.map((image) => ({ ...image, url: `/images/${image.id}` })),
+        items: (menu.items || []).map((item) => ({ ...item, id: String(item.id) })),
+        deals: (menu.deals || []).map((deal) => ({ ...deal, id: String(deal.id) })),
+        images: (menu.images || []).map((image) => ({
+          ...image,
+          created_at: new Date(image.created_at).toISOString(),
+          url: `/images/${image.id}`,
+        })),
       });
     } catch (error) {
       console.error("List menu error:", error);
@@ -1135,6 +1289,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
         FROM admin_notifications n ${where}
         ORDER BY n.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}
       `, params);
+      setPrivateCache(res, 2, 5);
       const total = rows.length ? Number(rows[0].total_count) : 0;
       const notifications = rows.map(({ total_count, ...notification }) => notification);
       return res.json({ success: true, notifications, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
@@ -1169,14 +1324,29 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
 
   app.get("/admin/settings", async (req, res) => {
     try {
-      const [restaurant, profile] = await Promise.all([
-        pool.query(`SELECT restaurant_name, currency, delivery_charge, opening_hours, updated_at FROM restaurant_settings WHERE id = 1`),
-        pool.query(`SELECT display_name, updated_at FROM admin_profile WHERE id = 1`),
-      ]);
+      const { rows } = await pool.query(`
+        SELECT r.restaurant_name, r.currency, r.delivery_charge, r.opening_hours,
+          r.updated_at AS restaurant_updated_at, p.display_name,
+          p.updated_at AS profile_updated_at
+        FROM restaurant_settings r
+        CROSS JOIN admin_profile p
+        WHERE r.id = 1 AND p.id = 1
+      `);
+      const row = rows[0] || {};
+      setPrivateCache(res, 300, 600);
       return res.json({
         success: true,
-        restaurant: restaurant.rows[0] || null,
-        admin: profile.rows[0] || null,
+        restaurant: row.restaurant_name == null ? null : {
+          restaurant_name: row.restaurant_name,
+          currency: row.currency,
+          delivery_charge: row.delivery_charge,
+          opening_hours: row.opening_hours,
+          updated_at: row.restaurant_updated_at,
+        },
+        admin: row.display_name == null ? null : {
+          display_name: row.display_name,
+          updated_at: row.profile_updated_at,
+        },
         integrations: {
           n8n_status_webhook_configured: Boolean(process.env.N8N_ADMIN_WEBHOOK_URL),
           polling_seconds: 15,

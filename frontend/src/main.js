@@ -1,5 +1,5 @@
 import "./styles.css";
-import { API_BASE, api, download, getAdminKey, setAdminKey } from "./api.js";
+import { API_BASE, api, download, getAdminKey, isAbortError, setAdminKey } from "./api.js";
 import {
   dateOnly, dateTime, escapeHtml, itemSummary, money, percentChange,
   queryString, relativeTime, statusLabel,
@@ -40,6 +40,26 @@ const state = {
 
 let searchTimer;
 let pollTimer;
+let pollInFlight = false;
+let pollController;
+let pollingGeneration = 0;
+let pageController;
+let pageLoadId = 0;
+let pageLoadInFlight = false;
+let activitySnapshot = null;
+let appEntryId = 0;
+
+const PAGE_CACHE_TTL = {
+  dashboard: 10000,
+  orders: 10000,
+  requests: 10000,
+  history: 15000,
+  customers: 30000,
+  feedback: 30000,
+  menu: 10 * 60 * 1000,
+  notifications: 5000,
+  settings: 10 * 60 * 1000,
+};
 
 function initials(name) {
   const parts = String(name || "Customer").trim().split(/\s+/).filter(Boolean);
@@ -129,7 +149,8 @@ function pagination(meta, route) {
 }
 
 function renderLogin(message = "") {
-  clearInterval(pollTimer);
+  stopPolling();
+  pageController?.abort();
   app.innerHTML = `<main class="login-page"><section class="login-card">
     <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name">Pizza Bar</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
     <h1>Welcome back</h1><p>Sign in with the private admin key configured on the Pizza Bar backend.</p>
@@ -146,15 +167,7 @@ function renderLogin(message = "") {
     button.disabled = true;
     button.textContent = "Connecting…";
     setAdminKey(key);
-    try {
-      state.session = await api("/admin/session");
-      renderShell();
-      navigateFromHash();
-      startPolling();
-    } catch (error) {
-      setAdminKey("");
-      renderLogin(error.message);
-    }
+    await enterAuthenticatedApp();
   });
 }
 
@@ -163,9 +176,9 @@ function renderShell() {
   const admin = state.session?.admin?.display_name || "Administrator";
   app.innerHTML = `<div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name">${escapeHtml(restaurant)}</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
+      <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name" data-restaurant-name>${escapeHtml(restaurant)}</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
       <nav class="nav" aria-label="Main navigation">${Object.entries(routes).map(([key, route]) => `<button class="nav-link" data-route="${key}"><span class="nav-icon">${icon(route.icon)}</span><span>${escapeHtml(route.label)}</span>${key === "notifications" ? '<span class="nav-count" id="nav-unread" hidden>0</span>' : ""}</button>`).join("")}</nav>
-      <div class="sidebar-footer"><div class="admin-profile"><div class="avatar">${escapeHtml(initials(admin))}</div><div class="admin-details"><div class="admin-name">${escapeHtml(admin)}</div><div class="online"><span></span> Active</div></div><button class="btn btn-quiet icon-btn" data-action="logout" aria-label="Log out">${icon("logout")}</button></div></div>
+      <div class="sidebar-footer"><div class="admin-profile"><div class="avatar" data-admin-avatar>${escapeHtml(initials(admin))}</div><div class="admin-details"><div class="admin-name" data-admin-name>${escapeHtml(admin)}</div><div class="online"><span></span> Active</div></div><button class="btn btn-quiet icon-btn" data-action="logout" aria-label="Log out">${icon("logout")}</button></div></div>
     </aside>
     <div class="sidebar-scrim" id="sidebar-scrim"></div>
     <div class="main-shell">
@@ -173,13 +186,23 @@ function renderShell() {
         <button class="btn icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="Open navigation">${icon("menuToggle")}</button>
         <div class="topbar-title"><h1 id="topbar-title"></h1><p id="topbar-subtitle"></p></div>
         <div class="search-wrap" id="global-search-wrap"><span class="search-icon">${icon("search")}</span><label class="sr-only" for="global-search">Search</label><input class="input" id="global-search" type="search" placeholder="Search this page…"></div>
-        <div class="top-actions"><span class="restaurant-online"><span></span> Restaurant online</span><button class="btn icon-btn notification-button" data-route="notifications" aria-label="Notifications">${icon("notifications")}<span class="notification-dot" id="notification-dot" hidden></span></button><button class="btn admin-mini" data-route="settings"><span class="avatar" style="width:28px;height:28px;border-radius:8px;font-size:9px">${escapeHtml(initials(admin))}</span><span class="admin-mini-copy"><strong>${escapeHtml(admin)}</strong><small>Administrator</small></span></button></div>
+        <div class="top-actions"><span class="restaurant-online"><span></span> Restaurant online</span><button class="btn icon-btn notification-button" data-route="notifications" aria-label="Notifications">${icon("notifications")}<span class="notification-dot" id="notification-dot" hidden></span></button><button class="btn admin-mini" data-route="settings"><span class="avatar" data-admin-avatar style="width:28px;height:28px;border-radius:8px;font-size:9px">${escapeHtml(initials(admin))}</span><span class="admin-mini-copy"><strong data-admin-name>${escapeHtml(admin)}</strong><small>Administrator</small></span></button></div>
       </header>
       <main class="page" id="page-content"></main>
     </div>
   </div>`;
   updateUnread(state.session?.unread_notifications || 0);
   bindShellEvents();
+  performance.mark?.("pizza-shell-visible");
+}
+
+function applySessionToShell() {
+  const restaurant = state.session?.restaurant?.restaurant_name || "Pizza Bar";
+  const admin = state.session?.admin?.display_name || "Administrator";
+  app.querySelectorAll("[data-restaurant-name]").forEach((element) => { element.textContent = restaurant; });
+  app.querySelectorAll("[data-admin-name]").forEach((element) => { element.textContent = admin; });
+  app.querySelectorAll("[data-admin-avatar]").forEach((element) => { element.textContent = initials(admin); });
+  updateUnread(state.session?.unread_notifications || 0);
 }
 
 function bindShellEvents() {
@@ -187,6 +210,7 @@ function bindShellEvents() {
   app.querySelector("[data-action='toggle-sidebar']").addEventListener("click", () => setSidebar(!state.sidebarOpen));
   app.querySelector("#sidebar-scrim").addEventListener("click", () => setSidebar(false));
   app.querySelector("[data-action='logout']").addEventListener("click", () => {
+    appEntryId += 1;
     setAdminKey("");
     state.session = null;
     renderLogin();
@@ -243,26 +267,55 @@ function navigateFromHash() {
   loadCurrentPage();
 }
 
-async function loadCurrentPage() {
+async function loadCurrentPage({ background = false, forceRefresh = false } = {}) {
   const content = app.querySelector("#page-content");
   if (!content) return;
-  content.innerHTML = pageLoading();
+  const routeAtStart = state.route;
+  const loadId = ++pageLoadId;
+  pageController?.abort();
+  pageController = new AbortController();
+  pageLoadInFlight = true;
+  if (!background && content.dataset.loadedRoute !== routeAtStart) content.innerHTML = pageLoading();
+
+  const requestOptions = {
+    signal: pageController.signal,
+    loadId,
+    cacheTtlMs: PAGE_CACHE_TTL[routeAtStart] || 10000,
+    staleWhileRevalidate: !forceRefresh,
+    forceRefresh,
+    onRevalidate: () => {
+      if (state.route === routeAtStart && loadId === pageLoadId) loadCurrentPage({ background: true });
+    },
+    onRevalidateError: (error) => {
+      if (state.route === routeAtStart && loadId === pageLoadId) toast(error.message, "error");
+    },
+  };
   try {
     const loaders = {
-      dashboard: loadDashboard, orders: () => loadOrders("orders"), requests: loadRequests,
-      history: () => loadOrders("history"), customers: loadCustomers, feedback: loadFeedback,
+      dashboard: loadDashboard, orders: (options) => loadOrders("orders", options), requests: loadRequests,
+      history: (options) => loadOrders("history", options), customers: loadCustomers, feedback: loadFeedback,
       menu: loadMenu, notifications: loadNotifications, settings: loadSettings,
     };
-    await loaders[state.route]();
+    await loaders[routeAtStart](requestOptions);
+    if (loadId !== pageLoadId || state.route !== routeAtStart) return;
+    content.dataset.loadedRoute = routeAtStart;
+    performance.mark?.(`pizza-page-${routeAtStart}-visible`);
   } catch (error) {
+    if (isAbortError(error) || loadId !== pageLoadId || state.route !== routeAtStart) return;
+    if (background && content.dataset.loadedRoute === routeAtStart) {
+      toast(error.message, "error");
+      return;
+    }
     content.innerHTML = errorState(error.message);
     content.querySelector("[data-action='retry-page']")?.addEventListener("click", loadCurrentPage);
+  } finally {
+    if (loadId === pageLoadId) pageLoadInFlight = false;
   }
 }
 
-async function loadDashboard() {
-  const data = await api(`/admin/dashboard?days=${state.dashboardDays}`);
-  if (state.route !== "dashboard") return;
+async function loadDashboard(requestOptions = {}) {
+  const data = await api(`/admin/dashboard?days=${state.dashboardDays}`, requestOptions);
+  if (state.route !== "dashboard" || requestOptions.loadId !== pageLoadId) return;
   const currency = state.session?.restaurant?.currency || "PKR";
   const orderTrend = percentChange(data.stats.today_orders, data.stats.previous_orders);
   const revenueTrend = percentChange(data.stats.today_revenue, data.stats.previous_revenue);
@@ -306,11 +359,11 @@ function renderDashboardRequests(requests) {
   return `<div>${requests.map((request) => `<div class="feedback-card"><div class="split"><div class="primary-cell">${escapeHtml(request.customer_name || request.customer_phone)}</div>${badge(request.status)}</div><div class="feedback-message">${escapeHtml(request.question)}</div><div class="split"><span class="subtle">${escapeHtml(relativeTime(request.created_at))}</span><button class="btn btn-sm" data-route-jump="requests">Review</button></div></div>`).join("")}</div>`;
 }
 
-async function loadOrders(route) {
+async function loadOrders(route, requestOptions = {}) {
   const filters = state.filters[route];
   const params = { ...filters, page: state.pages[route], limit: 20, scope: route === "history" ? "history" : "active" };
-  const data = await api(`/admin/orders${queryString(params)}`);
-  if (state.route !== route) return;
+  const data = await api(`/admin/orders${queryString(params)}`, requestOptions);
+  if (state.route !== route || requestOptions.loadId !== pageLoadId) return;
   const history = route === "history";
   const currency = state.session?.restaurant?.currency || "PKR";
   const actions = history ? `<button class="btn history-export" data-action="export-history">${icon("download")}<span>Export CSV</span></button>` : "";
@@ -422,7 +475,7 @@ async function openOrder(orderId) {
         const result = await api(`/admin/orders/${button.dataset.orderId}/notifications/${button.dataset.retryOrderEvent}/retry`, { method: "POST" });
         toast(result.notification?.delivery_status === "sent" ? "Customer notification delivered." : "Customer notification is processing.");
         openOrder(button.dataset.orderId);
-        refreshSession();
+        refreshActivity().catch(() => {});
       } catch (error) {
         toast(error.message, "error");
         button.disabled = false;
@@ -434,10 +487,10 @@ async function openOrder(orderId) {
   }
 }
 
-async function loadRequests() {
+async function loadRequests(requestOptions = {}) {
   const filters = state.filters.requests;
-  const data = await api(`/admin/requests${queryString({ ...filters, page: state.pages.requests, limit: 20 })}`);
-  if (state.route !== "requests") return;
+  const data = await api(`/admin/requests${queryString({ ...filters, page: state.pages.requests, limit: 20 })}`, requestOptions);
+  if (state.route !== "requests" || requestOptions.loadId !== pageLoadId) return;
   const currency = state.session?.restaurant?.currency || "PKR";
   app.querySelector("#page-content").innerHTML = `<div class="pending-requests-page">${pageHeading("Pending requests", "Review and respond to requests from WhatsApp customers.")}
     <div class="toolbar requests-toolbar"><input class="input mobile-page-search" data-local-search="requests" type="search" value="${escapeHtml(filters.search)}" placeholder="Search customer or request…">
@@ -488,7 +541,7 @@ function confirmRequest(requestId, decision) {
         deliveryStatus === "failed" ? "error" : "success"
       );
       loadCurrentPage();
-      refreshSession();
+      refreshActivity().catch(() => {});
     } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = `${action} request`; }
   });
 }
@@ -505,9 +558,9 @@ async function retryNotification(button) {
   } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = original; }
 }
 
-async function loadCustomers() {
-  const data = await api(`/admin/customers${queryString({ search: state.filters.customers.search, page: state.pages.customers, limit: 20 })}`);
-  if (state.route !== "customers") return;
+async function loadCustomers(requestOptions = {}) {
+  const data = await api(`/admin/customers${queryString({ search: state.filters.customers.search, page: state.pages.customers, limit: 20 })}`, requestOptions);
+  if (state.route !== "customers" || requestOptions.loadId !== pageLoadId) return;
   const currency = state.session?.restaurant?.currency || "PKR";
   app.querySelector("#page-content").innerHTML = `<div class="customers-page">${pageHeading("Customers", "Real customer profiles aggregated from WhatsApp orders.")}
     <div class="toolbar customers-toolbar"><input class="input mobile-page-search" data-local-search="customers" type="search" value="${escapeHtml(state.filters.customers.search)}" placeholder="Search name or phone…"></div>
@@ -527,10 +580,10 @@ async function openCustomer(customerId) {
   } catch (error) { toast(error.message, "error"); closeModal(); }
 }
 
-async function loadFeedback() {
+async function loadFeedback(requestOptions = {}) {
   const filters = state.filters.feedback;
-  const data = await api(`/admin/feedback${queryString({ rating: filters.rating, page: state.pages.feedback, limit: 20 })}`);
-  if (state.route !== "feedback") return;
+  const data = await api(`/admin/feedback${queryString({ rating: filters.rating, page: state.pages.feedback, limit: 20 })}`, requestOptions);
+  if (state.route !== "feedback" || requestOptions.loadId !== pageLoadId) return;
   app.querySelector("#page-content").innerHTML = `${pageHeading("Feedback", "Customer ratings collected through the Pizza Bar backend.")}
     <section class="feedback-summary">${statCard("Average rating", `${Number(data.summary.average_rating).toFixed(1)} / 5`, "★", null, "all reviews", "#e6a83c")}${statCard("Total reviews", data.summary.total, "☆", null, "submitted feedback", "#5d8ee2")}${statCard("Five-star reviews", `${data.summary.five_star_percentage}%`, "✦", null, "of all reviews", "#47b978")}</section>
     <div class="toolbar"><select class="select" data-filter="rating"><option value="">All ratings</option>${[5,4,3,2,1].map((rating) => `<option value="${rating}" ${String(filters.rating) === String(rating) ? "selected" : ""}>${rating} stars</option>`).join("")}</select></div>
@@ -544,9 +597,9 @@ function renderFeedbackList(feedback) {
   return `<div>${feedback.map((item) => `<article class="feedback-card"><div class="split"><div><div class="primary-cell">${escapeHtml(item.customer_name || item.customer_phone)}</div><div class="stars" aria-label="${item.rating} out of 5 stars">${"★".repeat(item.rating)}${"☆".repeat(5 - item.rating)}</div></div><span class="subtle">${escapeHtml(dateOnly(item.created_at))}</span></div><div class="feedback-message">${escapeHtml(item.message || "No written comment")}</div>${item.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(item.order_id)}">Order #${escapeHtml(item.order_id)}</button>` : ""}</article>`).join("")}</div>`;
 }
 
-async function loadMenu() {
-  const data = await api("/admin/menu");
-  if (state.route !== "menu") return;
+async function loadMenu(requestOptions = {}) {
+  const data = await api("/admin/menu", requestOptions);
+  if (state.route !== "menu" || requestOptions.loadId !== pageLoadId) return;
   const search = state.filters.menu.search.toLowerCase();
   const allRecords = [...data.items.map((item) => ({ ...item, kind: "items" })), ...data.deals.map((deal) => ({ ...deal, kind: "deals", variants: [] }))];
   const categories = ["All", ...new Set(allRecords.map((record) => record.category))];
@@ -606,10 +659,10 @@ function openAddMenuItem() {
   });
 }
 
-async function loadNotifications() {
+async function loadNotifications(requestOptions = {}) {
   const filters = state.filters.notifications;
-  const data = await api(`/admin/notifications${queryString({ ...filters, page: state.pages.notifications, limit: 30 })}`);
-  if (state.route !== "notifications") return;
+  const data = await api(`/admin/notifications${queryString({ ...filters, page: state.pages.notifications, limit: 30 })}`, requestOptions);
+  if (state.route !== "notifications" || requestOptions.loadId !== pageLoadId) return;
   app.querySelector("#page-content").innerHTML = `${pageHeading("Notifications", "Database-backed order, request and delivery events.", '<button class="btn" data-action="read-all">Mark all read</button>')}
     <div class="toolbar"><select class="select" data-filter="unread"><option value="">All notifications</option><option value="true" ${filters.unread === "true" ? "selected" : ""}>Unread only</option></select><select class="select" data-filter="type"><option value="">All types</option><option value="new_order" ${filters.type === "new_order" ? "selected" : ""}>New orders</option><option value="customer_request" ${filters.type === "customer_request" ? "selected" : ""}>Customer requests</option><option value="notification_failure" ${filters.type === "notification_failure" ? "selected" : ""}>Failures</option><option value="system" ${filters.type === "system" ? "selected" : ""}>System</option></select></div>
     <section class="panel">${data.notifications.length ? `<div class="notification-list">${data.notifications.map(renderNotification).join("")}</div>${pagination(data.pagination, "notifications")}` : emptyState("No notifications", "Operational events will appear here automatically.", "♢")}</section>`;
@@ -622,7 +675,7 @@ async function loadNotifications() {
     if (!item.dataset.readAt) await api(`/admin/notifications/${item.dataset.notificationId}/read`, { method: "PATCH" }).catch(() => {});
     if (item.dataset.orderId) openOrder(item.dataset.orderId);
     else if (item.dataset.requestId) navigate("requests");
-    else { item.classList.remove("unread"); item.querySelector(".unread-mark")?.remove(); refreshSession(); }
+    else { item.classList.remove("unread"); item.querySelector(".unread-mark")?.remove(); refreshActivity().catch(() => {}); }
   }));
 }
 
@@ -631,9 +684,9 @@ function renderNotification(notification) {
   return `<article class="notification-item ${notification.read_at ? "" : "unread"}" data-notification-id="${escapeHtml(notification.id)}" data-read-at="${escapeHtml(notification.read_at || "")}" data-order-id="${escapeHtml(notification.order_id || "")}" data-request-id="${escapeHtml(notification.request_id || "")}"><div class="notification-icon">${icons[notification.notification_type] || "♢"}</div><div><div class="notification-title">${escapeHtml(notification.title)}</div><div class="notification-message">${escapeHtml(notification.message)}</div><div class="secondary-cell">${escapeHtml(relativeTime(notification.created_at))}</div></div>${notification.read_at ? "" : '<span class="unread-mark"></span>'}</article>`;
 }
 
-async function loadSettings() {
-  const data = await api("/admin/settings");
-  if (state.route !== "settings") return;
+async function loadSettings(requestOptions = {}) {
+  const data = await api("/admin/settings", requestOptions);
+  if (state.route !== "settings" || requestOptions.loadId !== pageLoadId) return;
   const restaurant = data.restaurant || {};
   const admin = data.admin || {};
   app.querySelector("#page-content").innerHTML = `<div class="settings-page">${pageHeading("Settings", "Public restaurant configuration and integration health. Secrets stay on the backend.")}
@@ -670,47 +723,97 @@ function bindCommonActions() {
   }));
 }
 
-async function refreshSession() {
+function activityKeyForRoute(route) {
+  return ({
+    dashboard: "dashboard_version",
+    orders: "orders_version",
+    requests: "requests_version",
+    notifications: "notifications_version",
+  })[route] || null;
+}
+
+async function refreshActivity({ refreshPageOnChange = false, signal } = {}) {
   if (!getAdminKey() || document.hidden) return;
-  try {
-    const session = await api("/admin/session");
-    state.session = session;
-    updateUnread(session.unread_notifications);
-  } catch {
-    // Page-level requests surface connection errors; background polling stays quiet.
-  }
+  const activity = await api("/admin/activity", { forceRefresh: true, timeoutMs: 10000, signal });
+  updateUnread(activity.unread_notifications);
+  const versionKey = activityKeyForRoute(state.route);
+  const changed = Boolean(
+    refreshPageOnChange &&
+    activitySnapshot &&
+    versionKey &&
+    activitySnapshot[versionKey] !== activity[versionKey]
+  );
+  if (changed) await loadCurrentPage({ background: true, forceRefresh: true });
+  activitySnapshot = activity;
+}
+
+function stopPolling() {
+  pollingGeneration += 1;
+  clearTimeout(pollTimer);
+  pollTimer = null;
+  pollController?.abort();
+  pollController = null;
+  pollInFlight = false;
 }
 
 function startPolling() {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    await refreshSession();
-    if (!["dashboard", "orders", "requests", "notifications"].includes(state.route)) return;
-    if (document.hidden || modalRoot.childElementCount || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
-    loadCurrentPage();
-  }, 15000);
+  stopPolling();
+  const generation = pollingGeneration;
+  const poll = async () => {
+    if (!getAdminKey() || generation !== pollingGeneration) return;
+    if (pollInFlight || pageLoadInFlight || document.hidden || modalRoot.childElementCount || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
+      pollTimer = setTimeout(poll, 15000);
+      return;
+    }
+    pollInFlight = true;
+    pollController = new AbortController();
+    try {
+      await refreshActivity({ refreshPageOnChange: true, signal: pollController.signal });
+    } catch (error) {
+      if (!isAbortError(error)) console.warn("Background activity refresh failed:", error.message);
+    } finally {
+      pollInFlight = false;
+      pollController = null;
+      if (generation === pollingGeneration && getAdminKey()) pollTimer = setTimeout(poll, 15000);
+    }
+  };
+
+  refreshActivity().catch(() => {});
+  pollTimer = setTimeout(poll, 15000);
 }
 
 window.addEventListener("hashchange", () => state.session && navigateFromHash());
 window.addEventListener("admin-auth-expired", () => {
   if (!state.session) return;
+  appEntryId += 1;
   setAdminKey("");
   state.session = null;
   renderLogin("Your admin session expired. Enter the admin key again.");
 });
 window.addEventListener("keydown", (event) => { if (event.key === "Escape") closeModal(); });
 
+async function enterAuthenticatedApp() {
+  const entryId = ++appEntryId;
+  state.session = state.session || {};
+  renderShell();
+  navigateFromHash();
+  try {
+    const session = await api("/admin/session", { cacheTtlMs: 10 * 60 * 1000, staleWhileRevalidate: true });
+    if (entryId !== appEntryId || !getAdminKey()) return;
+    state.session = session;
+    applySessionToShell();
+    startPolling();
+  } catch (error) {
+    if (entryId !== appEntryId || isAbortError(error)) return;
+    setAdminKey("");
+    state.session = null;
+    renderLogin(error.message || "Enter the admin key to continue.");
+  }
+}
+
 async function boot() {
   if (!getAdminKey()) { renderLogin(); return; }
-  try {
-    state.session = await api("/admin/session");
-    renderShell();
-    navigateFromHash();
-    startPolling();
-  } catch {
-    setAdminKey("");
-    renderLogin("Enter the admin key to continue.");
-  }
+  await enterAuthenticatedApp();
 }
 
 boot();

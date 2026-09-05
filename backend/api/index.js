@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
+const { attachDatabasePool } = require("@vercel/functions");
 const { registerAdminRoutes, requireAdminKey } = require("../src/admin-routes");
 
 const app = express();
@@ -73,10 +74,16 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false,
   },
-  max: 5,
-  idleTimeoutMillis: 30000,
+  // Admin queries are short; one client avoids opening several expensive Neon
+  // connections when the shell and active page load concurrently on a cold function.
+  max: 1,
+  idleTimeoutMillis: 5000,
   connectionTimeoutMillis: 10000,
 });
+
+// Let Vercel Fluid Compute release idle clients safely when an instance is
+// suspended while keeping this module-level pool reusable between requests.
+attachDatabasePool(pool);
 
 // --------------------------------------------------
 // MULTER

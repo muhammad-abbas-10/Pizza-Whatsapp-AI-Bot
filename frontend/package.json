@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --check src/main.js && node --check src/api.js && node --check src/utils.js"
+    "test": "node --check src/main.js && node --check src/api.js && node --check src/utils.js && node scripts/test-api-performance.js"
   },
   "devDependencies": {
     "vite": "^7.1.4"
