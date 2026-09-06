@@ -2015,3 +2015,66 @@ body {
   .settings-page .settings-section .detail-grid { grid-template-columns: 1fr; }
   .settings-page .settings-save { width: 100%; }
 }
+
+/* Dashboard overview card drill-downs. */
+.stat-card-interactive {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+}
+.stat-card-interactive:active { transform: translateY(0) scale(.99); }
+.stat-card-interactive:focus-visible {
+  outline: 2px solid var(--stat-color, var(--orange));
+  outline-offset: 3px;
+}
+.stat-card-cta {
+  margin-left: auto;
+  color: var(--stat-color);
+  font-weight: 700;
+  opacity: .82;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.stat-card-interactive:hover .stat-card-cta { opacity: 1; transform: translateX(2px); }
+
+.dashboard-detail-modal { width: min(1080px, 100%); }
+.dashboard-detail-subtitle { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.dashboard-detail .modal-body { padding: 18px; }
+.dashboard-detail-table {
+  max-height: min(62vh, 620px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.dashboard-detail-table .data-table { min-width: 940px; }
+.dashboard-detail-table th { position: sticky; top: 0; z-index: 1; }
+.dashboard-detail-table td { line-height: 1.45; }
+.dashboard-detail-table .secondary-cell { max-width: 220px; margin-top: 4px; white-space: normal; }
+.revenue-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.revenue-metric {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.revenue-metric span { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.revenue-metric strong { color: #fff; font-size: 22px; }
+.dashboard-request-grid { max-height: 65vh; overflow-y: auto; padding: 2px; }
+
+@media (max-width: 700px) {
+  .dashboard-detail-modal { max-height: calc(100vh - 16px); }
+  .dashboard-detail .modal-head { align-items: flex-start; }
+  .dashboard-detail .modal-body { padding: 12px; }
+  .revenue-breakdown { grid-template-columns: 1fr; gap: 8px; }
+  .revenue-metric { padding: 12px; }
+  .revenue-metric strong { font-size: 18px; }
+  .dashboard-request-grid { grid-template-columns: 1fr; }
+}

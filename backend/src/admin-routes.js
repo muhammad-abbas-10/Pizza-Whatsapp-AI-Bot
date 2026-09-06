@@ -784,6 +784,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
 
   app.get("/admin/dashboard", async (req, res) => {
     const range = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const includeDetails = req.query.details === "true";
     try {
       const { rows } = await pool.query(`
           WITH bounds AS (
@@ -857,9 +858,73 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
                 FROM feedback f JOIN customers c ON c.id = f.customer_id
                 ORDER BY f.created_at DESC LIMIT 4
               ) recent_feedback
-            ), '[]'::jsonb) AS recent_feedback
+            ), '[]'::jsonb) AS recent_feedback,
+            CASE WHEN $2::boolean THEN COALESCE((
+              SELECT jsonb_agg(to_jsonb(today_order) ORDER BY today_order.created_at DESC)
+              FROM (
+                SELECT o.id, o.items, o.order_type, o.delivery_address, o.total::text AS total,
+                  o.status, o.created_at, c.id AS customer_id,
+                  c.name AS customer_name, c.whatsapp_phone AS customer_phone
+                FROM orders o
+                JOIN customers c ON c.id = o.customer_id
+                CROSS JOIN bounds b
+                WHERE o.created_at >= b.today_start AND o.created_at < b.tomorrow_start
+              ) today_order
+            ), '[]'::jsonb) ELSE '[]'::jsonb END AS today_orders_detail,
+            CASE WHEN $2::boolean THEN COALESCE((
+              SELECT jsonb_agg(to_jsonb(pending_request) ORDER BY pending_request.created_at DESC)
+              FROM (
+                SELECT r.id, r.request_type, r.question, r.status, r.admin_note,
+                  r.created_at, r.resolved_at, r.notification_sent, r.notification_error,
+                  r.notification_attempts, r.last_notification_attempt_at,
+                  c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
+                  o.id AS order_id, o.status AS order_status, o.total AS order_total,
+                  o.items AS order_items, o.delivery_address, o.order_type,
+                  order_is_cancellable(o.status) AS order_cancellable,
+                  latest_event.id AS notification_event_id,
+                  latest_event.delivery_status AS notification_delivery_status,
+                  latest_event.last_error AS event_notification_error
+                FROM admin_requests r
+                JOIN customers c ON c.id = r.customer_id
+                LEFT JOIN orders o ON o.id = r.order_id
+                LEFT JOIN LATERAL (
+                  SELECT e.id, e.delivery_status, e.last_error
+                  FROM customer_notification_events e
+                  WHERE e.admin_request_id = r.id
+                  ORDER BY e.created_at DESC, e.id DESC
+                  LIMIT 1
+                ) latest_event ON TRUE
+                WHERE r.status = 'pending'
+              ) pending_request
+            ), '[]'::jsonb) ELSE '[]'::jsonb END AS pending_requests_detail,
+            CASE WHEN $2::boolean THEN COALESCE((
+              SELECT jsonb_agg(to_jsonb(active_customer) ORDER BY active_customer.last_activity DESC)
+              FROM (
+                SELECT c.id, c.name, c.whatsapp_phone, cs.updated_at AS last_activity,
+                  cs.order_status AS conversation_status, cs.human_handoff, cs.awaiting_human,
+                  COALESCE(order_stats.total_orders, 0)::int AS total_orders,
+                  latest_order.id AS recent_order_id,
+                  latest_order.status AS recent_order_status,
+                  latest_order.created_at AS recent_order_at
+                FROM conversation_sessions cs
+                JOIN customers c ON c.id = cs.customer_id
+                LEFT JOIN LATERAL (
+                  SELECT COUNT(*)::int AS total_orders
+                  FROM orders customer_order
+                  WHERE customer_order.customer_id = c.id
+                ) order_stats ON TRUE
+                LEFT JOIN LATERAL (
+                  SELECT customer_order.id, customer_order.status, customer_order.created_at
+                  FROM orders customer_order
+                  WHERE customer_order.customer_id = c.id
+                  ORDER BY customer_order.created_at DESC
+                  LIMIT 1
+                ) latest_order ON TRUE
+                WHERE cs.updated_at >= NOW() - INTERVAL '24 hours'
+              ) active_customer
+            ), '[]'::jsonb) ELSE '[]'::jsonb END AS active_customers_detail
           FROM stats s
-        `, [range]);
+        `, [range, includeDetails]);
       const aggregate = rows[0] || {};
       setPrivateCache(res, 5, 10);
       return res.json({
@@ -895,6 +960,29 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
           order_id: feedbackItem.order_id == null ? null : String(feedbackItem.order_id),
           created_at: new Date(feedbackItem.created_at).toISOString(),
         })),
+        details: includeDetails ? {
+          today_orders: (aggregate.today_orders_detail || []).map((order) => ({
+            ...order,
+            id: String(order.id),
+            customer_id: String(order.customer_id),
+            created_at: new Date(order.created_at).toISOString(),
+          })),
+          pending_requests: (aggregate.pending_requests_detail || []).map((request) => ({
+            ...request,
+            id: String(request.id),
+            customer_id: String(request.customer_id),
+            order_id: request.order_id == null ? null : String(request.order_id),
+            notification_event_id: request.notification_event_id == null ? null : String(request.notification_event_id),
+            created_at: new Date(request.created_at).toISOString(),
+          })),
+          active_customers: (aggregate.active_customers_detail || []).map((customer) => ({
+            ...customer,
+            id: String(customer.id),
+            recent_order_id: customer.recent_order_id == null ? null : String(customer.recent_order_id),
+            last_activity: new Date(customer.last_activity).toISOString(),
+            recent_order_at: customer.recent_order_at ? new Date(customer.recent_order_at).toISOString() : null,
+          })),
+        } : undefined,
       });
     } catch (error) {
       console.error("Dashboard error:", error);

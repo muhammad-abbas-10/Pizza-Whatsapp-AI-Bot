@@ -48,6 +48,7 @@ let pageLoadId = 0;
 let pageLoadInFlight = false;
 let activitySnapshot = null;
 let appEntryId = 0;
+let dashboardDetailLoadId = 0;
 
 const PAGE_CACHE_TTL = {
   dashboard: 10000,
@@ -109,7 +110,8 @@ function toast(message, type = "success") {
 }
 
 function showModal(content, options = {}) {
-  modalRoot.innerHTML = `<div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(options.label || "Dialog")}">${content}</section></div>`;
+  const modalClass = String(options.className || "").replace(/[^a-z0-9_-]/gi, " ");
+  modalRoot.innerHTML = `<div class="modal-backdrop" role="presentation"><section class="modal ${modalClass}" role="dialog" aria-modal="true" aria-label="${escapeHtml(options.label || "Dialog")}">${content}</section></div>`;
   const backdrop = modalRoot.querySelector(".modal-backdrop");
   backdrop.addEventListener("mousedown", (event) => {
     if (event.target === backdrop && options.dismissible !== false) closeModal();
@@ -118,6 +120,7 @@ function showModal(content, options = {}) {
 }
 
 function closeModal() {
+  dashboardDetailLoadId += 1;
   modalRoot.innerHTML = "";
 }
 
@@ -326,10 +329,10 @@ async function loadDashboard(requestOptions = {}) {
 
   app.querySelector("#page-content").innerHTML = `${pageHeading("Restaurant overview", "Live view of Pizza Bar performance and status.")}
     <section class="stats-grid">
-      ${statCard("Today's orders", data.stats.today_orders, "orders", orderTrend, "vs yesterday", "#FF6B00")}
-      ${statCard("Pending requests", data.stats.pending_requests, "requests", null, "requires attention", "#F59E0B")}
-      ${statCard("Today's revenue", money(data.stats.today_revenue, currency), "revenue", revenueTrend, "vs yesterday", "#10B981")}
-      ${statCard("Active customers", data.stats.active_customers, "customers", null, "in the last 24 hours", "#3B82F6")}
+      ${statCard("Today's orders", data.stats.today_orders, "orders", orderTrend, "vs yesterday", "#FF6B00", "orders")}
+      ${statCard("Pending requests", data.stats.pending_requests, "requests", null, "requires attention", "#F59E0B", "requests")}
+      ${statCard("Today's revenue", money(data.stats.today_revenue, currency), "revenue", revenueTrend, "vs yesterday", "#10B981", "revenue")}
+      ${statCard("Active customers", data.stats.active_customers, "customers", null, "in the last 24 hours", "#3B82F6", "customers")}
     </section>
     <section class="dashboard-grid">
       <article class="panel"><div class="panel-head"><div><div class="panel-title">Order activity</div><div class="panel-subtitle">Daily orders in Pakistan time</div></div><div class="segmented">${[1,7,30].map((days) => `<button class="segment ${state.dashboardDays === days ? "active" : ""}" data-dashboard-days="${days}">${days === 1 ? "Today" : `${days} days`}</button>`).join("")}</div></div><div class="panel-body"><div class="chart">${data.activity.map((point) => `<div class="chart-column"><div class="chart-track"><span class="chart-value">${point.orders}</span><div class="chart-bar" style="height:${Math.max(2, Math.round(Number(point.orders) / maxOrders * 100))}%"></div></div><div class="chart-label">${escapeHtml(new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${String(point.day).slice(0, 10)}T00:00:00Z`)))}</div></div>`).join("")}</div></div></article>
@@ -341,12 +344,88 @@ async function loadDashboard(requestOptions = {}) {
     </section>
     <section class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Recent feedback</div><div class="panel-subtitle">Latest customer ratings</div></div><button class="btn btn-sm" data-route-jump="feedback">View all</button></div>${renderFeedbackList(data.recent_feedback)}</section>`;
   app.querySelectorAll("[data-dashboard-days]").forEach((button) => button.addEventListener("click", () => { state.dashboardDays = Number(button.dataset.dashboardDays); loadCurrentPage(); }));
+  app.querySelectorAll("[data-dashboard-detail]").forEach((button) => button.addEventListener("click", () => openDashboardDetail(button.dataset.dashboardDetail)));
   bindCommonActions();
 }
 
-function statCard(label, value, iconName, trend, trendCopy, color) {
+function statCard(label, value, iconName, trend, trendCopy, color, detailKey = "") {
   const trendClass = trend > 0 ? "up" : trend < 0 ? "down" : "";
-  return `<article class="stat-card" style="--stat-color:${color};--tone:${color}15"><div class="stat-head"><span>${escapeHtml(label)}</span><span class="stat-icon">${icon(iconName)}</span></div><div class="stat-value mono">${escapeHtml(value)}</div><div class="trend ${trendClass}">${trend === null ? "•" : `${trend >= 0 ? "↑" : "↓"} ${Math.abs(trend)}%`} <span class="muted">${escapeHtml(trendCopy)}</span></div></article>`;
+  const tag = detailKey ? "button" : "article";
+  const interaction = detailKey ? ` type="button" data-dashboard-detail="${escapeHtml(detailKey)}" aria-label="View ${escapeHtml(label)} details"` : "";
+  return `<${tag} class="stat-card ${detailKey ? "stat-card-interactive" : ""}"${interaction} style="--stat-color:${color};--tone:${color}15"><div class="stat-head"><span>${escapeHtml(label)}</span><span class="stat-icon">${icon(iconName)}</span></div><div class="stat-value mono"${detailKey ? ` data-dashboard-card-value="${escapeHtml(detailKey)}"` : ""}>${escapeHtml(value)}</div><div class="trend ${trendClass}">${trend === null ? "•" : `${trend >= 0 ? "↑" : "↓"} ${Math.abs(trend)}%`} <span class="muted">${escapeHtml(trendCopy)}</span>${detailKey ? '<span class="stat-card-cta">View details →</span>' : ""}</div></${tag}>`;
+}
+
+function syncDashboardCardValues(stats) {
+  const currency = state.session?.restaurant?.currency || "PKR";
+  const values = {
+    orders: stats.today_orders,
+    requests: stats.pending_requests,
+    revenue: money(stats.today_revenue, currency),
+    customers: stats.active_customers,
+  };
+  Object.entries(values).forEach(([key, value]) => {
+    const element = app.querySelector(`[data-dashboard-card-value="${key}"]`);
+    if (element) element.textContent = value;
+  });
+}
+
+function dashboardDetailShell(title, subtitle, body) {
+  return `<div class="dashboard-detail"><div class="modal-head"><div><div class="request-number">DASHBOARD DETAILS</div><h2>${escapeHtml(title)}</h2><div class="dashboard-detail-subtitle">${escapeHtml(subtitle)}</div></div><button class="btn icon-btn" data-close-modal aria-label="Close">×</button></div><div class="modal-body">${body}</div></div>`;
+}
+
+function dashboardOrdersTable(orders, currency, { includeCancelled = true } = {}) {
+  const records = includeCancelled ? orders : orders.filter((order) => order.status !== "cancelled");
+  if (!records.length) return emptyState(includeCancelled ? "No orders today" : "No revenue orders today", includeCancelled ? "New orders will appear here as customers confirm them." : "No non-cancelled orders are contributing to today's revenue.", "▤");
+  return `<div class="table-wrap dashboard-detail-table"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>WhatsApp</th><th>Items</th><th>Total</th><th>Status</th><th>Type / address</th><th>Created</th><th></th></tr></thead><tbody>${records.map((order) => `<tr><td class="primary-cell">#${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer_name || "Unnamed customer")}</td><td class="mono">${escapeHtml(order.customer_phone)}</td><td class="muted">${escapeHtml(itemSummary(order.items, 3))}</td><td class="mono">${escapeHtml(money(order.total, currency))}</td><td>${badge(order.status)}</td><td>${escapeHtml(statusLabel(order.order_type))}<div class="secondary-cell">${escapeHtml(order.delivery_address || (order.order_type === "pickup" ? "Pickup" : "Address not recorded"))}</div></td><td>${escapeHtml(dateTime(order.created_at))}</td><td><button class="btn btn-sm" data-view-order="${escapeHtml(order.id)}">View</button></td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function renderDashboardDetail(type, data) {
+  const currency = state.session?.restaurant?.currency || "PKR";
+  const details = data.details || {};
+  const orders = details.today_orders || [];
+  if (type === "orders") {
+    return dashboardDetailShell("Today's orders", `${orders.length} ${orders.length === 1 ? "order" : "orders"} created today in Pakistan time`, dashboardOrdersTable(orders, currency));
+  }
+  if (type === "revenue") {
+    const revenueOrders = orders.filter((order) => order.status !== "cancelled");
+    const average = revenueOrders.length ? Number(data.stats.today_revenue) / revenueOrders.length : 0;
+    const summary = `<div class="revenue-breakdown"><div class="revenue-metric"><span>Total revenue</span><strong class="mono">${escapeHtml(money(data.stats.today_revenue, currency))}</strong></div><div class="revenue-metric"><span>Orders</span><strong class="mono">${revenueOrders.length}</strong></div><div class="revenue-metric"><span>Average order value</span><strong class="mono">${escapeHtml(money(average, currency))}</strong></div></div>`;
+    return dashboardDetailShell("Today's revenue", "Non-cancelled orders created today, matching the dashboard revenue total", `${summary}${dashboardOrdersTable(orders, currency, { includeCancelled: false })}`);
+  }
+  if (type === "requests") {
+    const requests = details.pending_requests || [];
+    const body = requests.length ? `<div class="request-grid dashboard-request-grid">${requests.map((request) => renderRequestCard(request, currency)).join("")}</div>` : emptyState("No pending requests", "There are no customer requests requiring admin attention.", "✓");
+    return dashboardDetailShell("Pending requests", `${requests.length} ${requests.length === 1 ? "request requires" : "requests require"} attention`, body);
+  }
+  const customers = details.active_customers || [];
+  const body = customers.length ? `<div class="table-wrap dashboard-detail-table"><table class="data-table"><thead><tr><th>Customer</th><th>WhatsApp number</th><th>Last activity</th><th>Conversation / order</th><th>Orders</th><th>Most recent order</th><th>Status</th><th></th></tr></thead><tbody>${customers.map((customer) => `<tr><td class="primary-cell">${escapeHtml(customer.name || "Unnamed customer")}</td><td class="mono">${escapeHtml(customer.whatsapp_phone)}</td><td>${escapeHtml(relativeTime(customer.last_activity))}<div class="secondary-cell">${escapeHtml(dateTime(customer.last_activity))}</div></td><td>${escapeHtml(customer.human_handoff || customer.awaiting_human ? "Awaiting human" : statusLabel(customer.conversation_status))}</td><td class="mono">${customer.total_orders}</td><td>${customer.recent_order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(customer.recent_order_id)}">#${escapeHtml(customer.recent_order_id)} · ${escapeHtml(statusLabel(customer.recent_order_status))}</button><div class="secondary-cell">${escapeHtml(relativeTime(customer.recent_order_at))}</div>` : '<span class="muted">No orders</span>'}</td><td>${badge("active")}</td><td><button class="btn btn-sm" data-view-customer="${escapeHtml(customer.id)}">View</button></td></tr>`).join("")}</tbody></table></div>` : emptyState("No active customers right now", "Customers with conversation activity in the last 24 hours will appear here.", "♙");
+  return dashboardDetailShell("Active customers", `${customers.length} active in the last 24 hours`, body);
+}
+
+function bindDashboardDetailActions(type) {
+  modalRoot.querySelectorAll("[data-view-order]").forEach((button) => button.addEventListener("click", () => openOrder(button.dataset.viewOrder)));
+  modalRoot.querySelectorAll("[data-view-customer]").forEach((button) => button.addEventListener("click", () => openCustomer(button.dataset.viewCustomer)));
+  modalRoot.querySelectorAll("[data-resolve-request]").forEach((button) => button.addEventListener("click", () => confirmRequest(button.dataset.requestId, button.dataset.resolveRequest)));
+  modalRoot.querySelectorAll("[data-retry-request]").forEach((button) => button.addEventListener("click", () => retryNotification(button)));
+  modalRoot.querySelector("[data-retry-dashboard-detail]")?.addEventListener("click", () => openDashboardDetail(type));
+}
+
+async function openDashboardDetail(type) {
+  const labels = { orders: "today's orders", requests: "pending requests", revenue: "today's revenue", customers: "active customers" };
+  if (!labels[type]) return;
+  const loadId = ++dashboardDetailLoadId;
+  modalLoading(`Loading ${labels[type]}`);
+  try {
+    const data = await api(`/admin/dashboard?days=${state.dashboardDays}&details=true`, { forceRefresh: true, timeoutMs: 15000 });
+    if (loadId !== dashboardDetailLoadId) return;
+    syncDashboardCardValues(data.stats);
+    showModal(renderDashboardDetail(type, data), { label: labels[type], className: "dashboard-detail-modal" });
+    bindDashboardDetailActions(type);
+  } catch (error) {
+    if (loadId !== dashboardDetailLoadId || isAbortError(error)) return;
+    showModal(`<div class="error-state"><div><div class="state-icon">!</div><div class="state-title">Unable to load ${escapeHtml(labels[type])}</div><div class="state-copy">${escapeHtml(error.message)}</div><div class="cluster"><button class="btn" data-close-modal>Close</button><button class="btn btn-primary" data-retry-dashboard-detail>Try again</button></div></div></div>`, { label: `Unable to load ${labels[type]}` });
+    bindDashboardDetailActions(type);
+  }
 }
 
 function renderCompactOrders(orders, currency) {
