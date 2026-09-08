@@ -838,10 +838,17 @@ async function loadNotifications(requestOptions = {}) {
     try { await api("/admin/notifications/read-all", { method: "POST" }); toast("All notifications marked read."); updateUnread(0); loadCurrentPage(); } catch (error) { toast(error.message, "error"); }
   });
   app.querySelectorAll("[data-notification-id]").forEach((item) => item.addEventListener("click", async () => {
-    if (!item.dataset.readAt) await api(`/admin/notifications/${item.dataset.notificationId}/read`, { method: "PATCH" }).catch(() => {});
+    if (!item.dataset.readAt) {
+      try {
+        const result = await api(`/admin/notifications/${item.dataset.notificationId}/read`, { method: "PATCH" });
+        item.dataset.readAt = result.notification?.read_at || new Date().toISOString();
+        item.classList.remove("unread");
+        item.querySelector(".unread-mark")?.remove();
+        refreshActivity().catch(() => {});
+      } catch {}
+    }
     if (item.dataset.orderId) openOrder(item.dataset.orderId);
     else if (item.dataset.requestId) navigate("requests");
-    else { item.classList.remove("unread"); item.querySelector(".unread-mark")?.remove(); refreshActivity().catch(() => {}); }
   }));
 }
 
