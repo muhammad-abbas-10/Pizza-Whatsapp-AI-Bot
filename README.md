@@ -45,7 +45,7 @@ Prices, variants, deal selections, quantities, and active menu records are reval
 
 ### Restaurant operations
 
-Staff sign in to a responsive dark dashboard with a private admin key. The dashboard provides live metrics, active order handling, cancellation decisions, historical exports, customer insights, feedback summaries, menu controls, operational notifications, and restaurant settings—all backed by the same production database used by the ordering workflow.
+Staff sign in to a responsive dark dashboard with an admin username and password. The dashboard provides live metrics, active order handling, cancellation decisions, historical exports, customer insights, feedback summaries, menu controls, operational notifications, and restaurant settings—all backed by the same production database used by the ordering workflow.
 
 ## ✨ Core features
 
@@ -297,7 +297,8 @@ Real `.env` files are gitignored and no example env files are currently tracked.
 ```env
 PORT=3000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
-ADMIN_API_KEY=replace-with-a-long-random-secret
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace-with-a-strong-initial-password
 N8N_ADMIN_WEBHOOK_URL=https://YOUR_N8N_HOST/webhook/admin-order-status
 N8N_ADMIN_WEBHOOK_TIMEOUT_MS=15000
 CORS_ORIGINS=http://localhost:5173
@@ -307,12 +308,15 @@ FRONTEND_URL=http://localhost:5173
 | Variable | Purpose | Required |
 |---|---|:---:|
 | `DATABASE_URL` | Neon PostgreSQL connection string | ✅ |
-| `ADMIN_API_KEY` | Shared secret accepted through `x-admin-key` | ✅ |
+| `ADMIN_USERNAME` | Username used to bootstrap the first admin account | ✅ for first login |
+| `ADMIN_PASSWORD` | Initial password used to create the first bcrypt hash; change it in Settings afterward | ✅ for first login |
 | `N8N_ADMIN_WEBHOOK_URL` | Private n8n production webhook for persisted customer events | ✅ for status delivery |
 | `N8N_ADMIN_WEBHOOK_TIMEOUT_MS` | Webhook timeout; defaults to 15,000 ms | Optional |
 | `CORS_ORIGINS` | Comma-separated browser origins; production should include the deployed frontend | ✅ in production |
 | `FRONTEND_URL` | Dashboard redirect target and additional allowed origin | ✅ in production |
 | `PORT` | Local Express port; defaults to `3000` | Optional |
+
+Run migration `018` and set `ADMIN_USERNAME` and `ADMIN_PASSWORD`; the first login request bootstraps the account securely. After verifying a successful login, remove the bootstrap password from the environment; future logins and password changes use the database hash.
 
 ### Frontend — `frontend/.env`
 
@@ -321,7 +325,7 @@ FRONTEND_URL=http://localhost:5173
 VITE_API_URL=http://localhost:3000
 ```
 
-`VITE_API_URL` is optional in the same-origin Vercel deployment. The client also refuses to use a loopback API URL from a non-loopback page. Never place `DATABASE_URL`, `ADMIN_API_KEY`, webhook URLs, Meta tokens, or WhatsApp credentials in a `VITE_*` variable.
+`VITE_API_URL` is optional in the same-origin Vercel deployment. The client also refuses to use a loopback API URL from a non-loopback page. Never place `DATABASE_URL`, admin credentials, webhook URLs, Meta tokens, or WhatsApp credentials in a `VITE_*` variable.
 
 ### n8n credentials
 
@@ -360,7 +364,7 @@ Get-ChildItem ../database/migration/*.sql |
   ForEach-Object { node scripts/run-migration.js $_.Name }
 ```
 
-For an existing database, review [runtime-hardening-013-016.md](docs/runtime-hardening-013-016.md) before running menu migration `013` or legacy cleanup `014`; then apply only the migrations appropriate to that environment. Performance indexes are in migration `017`.
+For an existing database, review [runtime-hardening-013-016.md](docs/runtime-hardening-013-016.md) before running menu migration `013` or legacy cleanup `014`; then apply only the migrations appropriate to that environment. Performance indexes are in migration `017`; admin username/password tables are in migration `018`.
 
 ### 3. Start both applications
 
@@ -378,7 +382,7 @@ cd frontend
 npm run dev
 ```
 
-Open the Vite URL, enter the configured `ADMIN_API_KEY`, and keep the key only in the current browser tab's session storage.
+Open the Vite URL and sign in with the configured initial username and password. Account bootstrap stores only a bcrypt password hash in PostgreSQL; the browser keeps an opaque, expiring session token in the current tab's session storage.
 
 ### 4. Validate
 
@@ -422,9 +426,9 @@ The WhatsApp Trigger credential must be configured with the Meta application sec
 
 ## 🛡️ Security model
 
-- **Admin access:** all `/admin/*` routes require a server-configured shared key through `x-admin-key`; equality is checked with `crypto.timingSafeEqual`.
-- **Session scope:** the browser stores the admin key in `sessionStorage`, not persistent local storage.
-- **Attempt throttling:** each warm backend instance blocks an address after 10 failed key attempts within 15 minutes. This is an in-memory control, not a distributed rate limiter.
+- **Admin access:** login credentials are verified on the backend against a bcrypt hash in `admin_users`; protected routes require an opaque bearer session backed by `admin_sessions`.
+- **Session scope:** the browser stores only the expiring session token in `sessionStorage`, not the username, password, or password hash. PostgreSQL stores only a SHA-256 hash of each token.
+- **Attempt throttling:** each warm backend instance blocks an address after 10 failed login attempts within 15 minutes. This is an in-memory control, not a distributed rate limiter.
 - **CORS:** origins are normalized and matched against an explicit allowlist; production credentials are never exposed through CORS configuration.
 - **Request hardening:** JSON is limited to 1 MB; image count, size, MIME, and binary signature are validated; defensive response headers deny framing and MIME sniffing.
 - **Data integrity:** SQL inputs are parameterized, sensitive changes use transactions and row locks, and PostgreSQL constraints enforce ownership and valid status transitions.
@@ -481,12 +485,14 @@ Pizza-Whatsapp-Bot/
 
 ## 🔌 API overview
 
-All `/admin/*` endpoints require `x-admin-key`. Query parameters support the filters and pagination used by the dashboard.
+Except for `POST /admin/login`, all `/admin/*` endpoints require `Authorization: Bearer <session-token>`. Query parameters support the filters and pagination used by the dashboard.
 
 | Area | Method and endpoint | Purpose |
 |---|---|---|
 | System | `GET /health` | Check API-to-database connectivity |
 | System | `GET /dashboard` | Redirect to the configured frontend |
+| Authentication | `POST /admin/login` · `POST /admin/logout` | Create or revoke an admin session |
+| Authentication | `POST /admin/change-password` · `PATCH /admin/account/username` | Manage admin credentials |
 | Session | `GET /admin/session` | Restaurant profile, admin profile, integrations, and unread count |
 | Activity | `GET /admin/activity` | Lightweight version markers for background refresh |
 | Dashboard | `GET /admin/dashboard` | KPIs, activity, statuses, and recent records |
@@ -513,7 +519,7 @@ All `/admin/*` endpoints require `x-admin-key`. Query parameters support the fil
 
 ```http
 PATCH /admin/orders/:id/status
-x-admin-key: <admin-secret>
+Authorization: Bearer <session-token>
 Content-Type: application/json
 
 {

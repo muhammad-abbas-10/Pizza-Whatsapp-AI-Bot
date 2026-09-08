@@ -4,6 +4,7 @@ const assert = require("assert");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const bcrypt = require("bcryptjs");
 const express = require("express");
 const { Pool } = require("pg");
 const { registerAdminRoutes } = require("../src/admin-routes");
@@ -12,6 +13,9 @@ const workflow = require("../../workflow.json");
 
 const migrationPath = path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql");
 const migration = fs.readFileSync(migrationPath, "utf8")
+  .replace(/^\s*BEGIN;\s*/i, "")
+  .replace(/\s*COMMIT;\s*$/i, "");
+const authMigration = fs.readFileSync(path.resolve(__dirname, "../../database/migration/018_admin_username_password_auth.sql"), "utf8")
   .replace(/^\s*BEGIN;\s*/i, "")
   .replace(/\s*COMMIT;\s*$/i, "");
 
@@ -27,10 +31,14 @@ const pool = new Pool({
   max: 1,
 });
 
-async function jsonRequest(baseUrl, method, route, body, key = process.env.ADMIN_API_KEY) {
+let adminToken;
+
+async function jsonRequest(baseUrl, method, route, body, token = adminToken) {
+  const headers = { "content-type": "application/json" };
+  if (token) headers.authorization = `Bearer ${token}`;
   const response = await fetch(`${baseUrl}${route}`, {
     method,
-    headers: { "content-type": "application/json", "x-admin-key": key },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: response.status, body: await response.json() };
@@ -43,6 +51,7 @@ async function main() {
     await client.query("SET LOCAL lock_timeout = '5s'");
     await client.query("SET LOCAL statement_timeout = '30s'");
     await client.query(migration);
+    await client.query(authMigration);
 
     const statuses = (await client.query("SELECT canonical_order_statuses() AS statuses")).rows[0].statuses;
     assert.deepEqual(statuses, ["received", "preparing", "oven", "out_for_delivery", "completed", "cancelled"]);
@@ -53,6 +62,11 @@ async function main() {
     assert.equal((await client.query("SELECT order_is_cancellable('oven') AS ok")).rows[0].ok, false);
 
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const testUsername = `migration-admin-${suffix}`;
+    await client.query(
+      "INSERT INTO admin_users (username, password_hash) VALUES ($1, $2)",
+      [testUsername, await bcrypt.hash("migration-test-password", 12)]
+    );
     const customer = (await client.query(
       "INSERT INTO customers (whatsapp_phone, name) VALUES ($1, 'Status Migration Test') RETURNING id",
       [`status-migration-${suffix}`]
@@ -169,8 +183,6 @@ async function main() {
       return { accepted: true, lifecycle: "sent", event: publicEvent(delivered) };
     };
 
-    const previousAdminKey = process.env.ADMIN_API_KEY;
-    process.env.ADMIN_API_KEY = "migration-route-test-key";
     const app = express();
     app.use(express.json());
     registerAdminRoutes(app, routePool, { dispatchEvent });
@@ -179,8 +191,13 @@ async function main() {
     });
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     try {
-      const unauthorized = await jsonRequest(baseUrl, "GET", "/admin/orders", undefined, "wrong-key");
-      assert.equal(unauthorized.status, 401, "Invalid admin key was accepted");
+      const unauthorized = await jsonRequest(baseUrl, "GET", "/admin/orders", undefined, "wrong-token");
+      assert.equal(unauthorized.status, 401, "Invalid admin session was accepted");
+      const login = await jsonRequest(baseUrl, "POST", "/admin/login", {
+        username: testUsername, password: "migration-test-password",
+      }, null);
+      assert.equal(login.status, 200, "Admin login failed");
+      adminToken = login.body.token;
 
       const routeCustomer = (await client.query(
         "INSERT INTO customers (whatsapp_phone, name) VALUES ($1, 'Route Status Test') RETURNING id",
@@ -300,8 +317,6 @@ async function main() {
       assert.equal((await client.query("SELECT status FROM admin_requests WHERE id = $1", [denialRequest.id])).rows[0].status, "denied");
     } finally {
       await new Promise((resolve) => server.close(resolve));
-      if (previousAdminKey === undefined) delete process.env.ADMIN_API_KEY;
-      else process.env.ADMIN_API_KEY = previousAdminKey;
     }
   } finally {
     await client.query("ROLLBACK").catch(() => {});

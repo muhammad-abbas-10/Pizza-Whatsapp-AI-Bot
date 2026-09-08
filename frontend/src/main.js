@@ -1,5 +1,5 @@
 import "./styles.css";
-import { API_BASE, api, clearApiCache, download, getAdminKey, isAbortError, setAdminKey } from "./api.js";
+import { API_BASE, api, clearApiCache, download, getAuthToken, isAbortError, setAuthToken } from "./api.js";
 import {
   dateOnly, dateTime, escapeHtml, itemSummary, money, percentChange,
   queryString, relativeTime, statusLabel,
@@ -155,22 +155,28 @@ function renderLogin(message = "") {
   stopPolling();
   pageController?.abort();
   app.innerHTML = `<main class="login-page"><section class="login-card">
-    <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name">Pizza Bar</div><div class="brand-tag">AI ORDER MANAGEMENT</div></div></div>
-    <h1>Welcome back</h1><p>Sign in with the private admin key configured on the Pizza Bar backend.</p>
+    <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name">Pizza Bar</div><div class="brand-tag">ADMIN DASHBOARD</div></div></div>
+    <h1>Welcome back</h1><p>Sign in to manage the Pizza Bar admin dashboard.</p>
     <form id="login-form" class="stack">
-      <div class="field"><label for="admin-key">Admin key</label><input class="input" id="admin-key" name="adminKey" type="password" autocomplete="current-password" required placeholder="Enter your admin key"></div>
+      <div class="field"><label for="admin-username">Username</label><input class="input" id="admin-username" name="username" autocomplete="username" required placeholder="Enter your username"></div>
+      <div class="field"><label for="admin-password">Password</label><input class="input" id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your password"></div>
       ${message ? `<div class="danger-text" role="alert">${escapeHtml(message)}</div>` : ""}
-      <button class="btn btn-primary btn-block" type="submit">Open dashboard</button>
+      <button class="btn btn-primary btn-block" type="submit">Sign In</button>
     </form>
   </section></main>`;
   app.querySelector("#login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = event.currentTarget.querySelector("button");
-    const key = new FormData(event.currentTarget).get("adminKey").trim();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
     button.disabled = true;
-    button.textContent = "Connecting…";
-    setAdminKey(key);
-    await enterAuthenticatedApp();
+    button.textContent = "Signing in…";
+    try {
+      const result = await api("/admin/login", { method: "POST", body: JSON.stringify({ username: values.username.trim(), password: values.password }) });
+      setAuthToken(result.token);
+      await enterAuthenticatedApp();
+    } catch (error) {
+      renderLogin(error.message || "Invalid username or password.");
+    }
   });
 }
 
@@ -212,9 +218,10 @@ function bindShellEvents() {
   app.querySelectorAll("[data-route]").forEach((element) => element.addEventListener("click", () => navigate(element.dataset.route)));
   app.querySelector("[data-action='toggle-sidebar']").addEventListener("click", () => setSidebar(!state.sidebarOpen));
   app.querySelector("#sidebar-scrim").addEventListener("click", () => setSidebar(false));
-  app.querySelector("[data-action='logout']").addEventListener("click", () => {
+  app.querySelector("[data-action='logout']").addEventListener("click", async () => {
     appEntryId += 1;
-    setAdminKey("");
+    await api("/admin/logout", { method: "POST" }).catch(() => {});
+    setAuthToken("");
     state.session = null;
     renderLogin();
   });
@@ -863,13 +870,21 @@ async function loadSettings(requestOptions = {}) {
   const restaurant = data.restaurant || {};
   const admin = data.admin || {};
   app.querySelector("#page-content").innerHTML = `<div class="settings-page">${pageHeading("Settings", "Public restaurant configuration and integration health. Secrets stay on the backend.")}
-    <form id="settings-form" class="settings-grid">
-      <section class="panel settings-section"><div class="settings-card-head"><h3>Restaurant information</h3><p>Used by the bot and admin dashboard.</p></div><div class="stack"><div class="field"><label for="restaurant-name">Restaurant name</label><input class="input" id="restaurant-name" name="restaurant_name" value="${escapeHtml(restaurant.restaurant_name)}" required></div><div class="detail-grid"><div class="field"><label for="currency">Currency</label><input class="input" id="currency" name="currency" value="${escapeHtml(restaurant.currency)}" maxlength="3" required></div><div class="field"><label for="delivery-charge">Delivery charge</label><input class="input" id="delivery-charge" name="delivery_charge" type="number" min="0" step="0.01" value="${escapeHtml(restaurant.delivery_charge)}" required></div></div><div class="field"><label for="opening-hours">Opening hours (JSON)</label><textarea class="textarea settings-json" id="opening-hours" name="opening_hours" spellcheck="false">${escapeHtml(JSON.stringify(restaurant.opening_hours || {}, null, 2))}</textarea></div></div></section>
-      <section class="panel settings-section"><div class="settings-card-head"><h3>Admin account</h3><p>The API key remains server-only and is never returned to this page.</p></div><div class="field"><label for="display-name">Display name</label><input class="input" id="display-name" name="display_name" value="${escapeHtml(admin.display_name)}" required></div><div class="integration-row"><div><div class="primary-cell">Authentication</div><div class="secondary-cell">Protected with x-admin-key</div></div>${badge("active")}</div></section>
-      <section class="panel settings-section"><div class="settings-card-head"><h3>Customer status updates</h3><p>The backend securely dispatches durable events to n8n; no integration secret is exposed here.</p></div><div class="integration-row"><div><div class="primary-cell">n8n status webhook</div><div class="secondary-cell">Server-to-server authentication</div></div>${badge(data.integrations.n8n_status_webhook_configured ? "active" : "inactive")}</div></section>
-      <section class="panel settings-section"><div class="settings-card-head"><h3>Notifications & security</h3><p>Lightweight polling keeps staff informed without another external service.</p></div><div class="integration-row"><div><div class="primary-cell">Refresh interval</div><div class="secondary-cell">Orders, requests and notifications</div></div><span class="polling-value">${data.integrations.polling_seconds}s</span></div><div class="integration-row"><div><div class="primary-cell">Database access</div><div class="secondary-cell">Backend only</div></div>${badge("active")}</div></section>
-      <div class="settings-actions"><button class="btn btn-primary settings-save" type="submit">Save settings</button></div>
-    </form></div>`;
+    <div class="settings-grid">
+      <form id="settings-form" class="settings-form-contents">
+        <section class="panel settings-section"><div class="settings-card-head"><h3>Restaurant information</h3><p>Used by the bot and admin dashboard.</p></div><div class="stack"><div class="field"><label for="restaurant-name">Restaurant name</label><input class="input" id="restaurant-name" name="restaurant_name" value="${escapeHtml(restaurant.restaurant_name)}" required></div><div class="detail-grid"><div class="field"><label for="currency">Currency</label><input class="input" id="currency" name="currency" value="${escapeHtml(restaurant.currency)}" maxlength="3" required></div><div class="field"><label for="delivery-charge">Delivery charge</label><input class="input" id="delivery-charge" name="delivery_charge" type="number" min="0" step="0.01" value="${escapeHtml(restaurant.delivery_charge)}" required></div></div><div class="field"><label for="opening-hours">Opening hours (JSON)</label><textarea class="textarea settings-json" id="opening-hours" name="opening_hours" spellcheck="false">${escapeHtml(JSON.stringify(restaurant.opening_hours || {}, null, 2))}</textarea></div></div></section>
+        <section class="panel settings-section"><div class="settings-card-head"><h3>Admin account</h3><p>Profile information displayed throughout the dashboard.</p></div><div class="field"><label for="display-name">Display name</label><input class="input" id="display-name" name="display_name" value="${escapeHtml(admin.display_name)}" required></div><div class="integration-row"><div><div class="primary-cell">Authentication</div><div class="secondary-cell">Username, password, and secure session</div></div>${badge("active")}</div></section>
+        <section class="panel settings-section"><div class="settings-card-head"><h3>Customer status updates</h3><p>The backend securely dispatches durable events to n8n; no integration secret is exposed here.</p></div><div class="integration-row"><div><div class="primary-cell">n8n status webhook</div><div class="secondary-cell">Server-to-server authentication</div></div>${badge(data.integrations.n8n_status_webhook_configured ? "active" : "inactive")}</div></section>
+        <section class="panel settings-section"><div class="settings-card-head"><h3>Notifications & security</h3><p>Lightweight polling keeps staff informed without another external service.</p></div><div class="integration-row"><div><div class="primary-cell">Refresh interval</div><div class="secondary-cell">Orders, requests and notifications</div></div><span class="polling-value">${data.integrations.polling_seconds}s</span></div><div class="integration-row"><div><div class="primary-cell">Database access</div><div class="secondary-cell">Backend only</div></div>${badge("active")}</div></section>
+        <div class="settings-actions"><button class="btn btn-primary settings-save" type="submit">Save settings</button></div>
+      </form>
+      <section class="panel settings-section security-settings"><div class="settings-card-head"><h3>Security</h3><p>Manage the username and password used to sign in to this admin dashboard.</p></div>
+        <div class="security-grid">
+          <form id="username-form" class="stack"><div class="field"><label for="current-username">Current username</label><input class="input" id="current-username" value="${escapeHtml(admin.username)}" readonly></div><div class="field"><label for="new-username">New username</label><input class="input" id="new-username" name="username" autocomplete="username" required placeholder="Enter a new username"></div><button class="btn" type="submit">Update Username</button></form>
+          <form id="change-password-form" class="stack"><div class="field"><label for="current-password">Current password</label><input class="input" id="current-password" name="current_password" type="password" autocomplete="current-password" required></div><div class="field"><label for="new-password">New password</label><input class="input" id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="8" required></div><div class="field"><label for="confirm-password">Confirm new password</label><input class="input" id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required></div><button class="btn btn-primary" type="submit">Change Password</button></form>
+        </div>
+      </section>
+    </div></div>`;
   app.querySelector("#settings-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
@@ -879,9 +894,37 @@ async function loadSettings(requestOptions = {}) {
     button.disabled = true;
     try {
       const result = await api("/admin/settings", { method: "PATCH", body: JSON.stringify({ ...values, delivery_charge: Number(values.delivery_charge), currency: values.currency.toUpperCase(), opening_hours: openingHours }) });
-      state.session.restaurant = result.restaurant; state.session.admin = result.admin;
+      state.session.restaurant = result.restaurant; state.session.admin = { ...state.session.admin, ...result.admin };
       toast("Settings saved."); renderShell(); navigateFromHash();
     } catch (error) { toast(error.message, "error"); button.disabled = false; }
+  });
+  app.querySelector("#username-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("[type='submit']");
+    const username = new FormData(event.currentTarget).get("username").trim();
+    button.disabled = true;
+    try {
+      const result = await api("/admin/account/username", { method: "PATCH", body: JSON.stringify({ username }) });
+      state.session.admin = { ...state.session.admin, ...result.admin };
+      app.querySelector("#current-username").value = result.admin.username;
+      app.querySelector("#new-username").value = "";
+      toast("Username updated.");
+    } catch (error) { toast(error.message, "error"); } finally { button.disabled = false; }
+  });
+  app.querySelector("#change-password-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    if (!values.current_password) { toast("Current password is required.", "error"); return; }
+    if (!values.new_password || values.new_password.length < 8) { toast("Password must be at least 8 characters.", "error"); return; }
+    if (!values.confirm_password) { toast("Password confirmation is required.", "error"); return; }
+    if (values.new_password !== values.confirm_password) { toast("New passwords do not match.", "error"); return; }
+    const button = event.currentTarget.querySelector("[type='submit']");
+    button.disabled = true;
+    try {
+      const result = await api("/admin/change-password", { method: "POST", body: JSON.stringify(values) });
+      event.currentTarget.reset();
+      toast(result.message || "Password changed successfully.");
+    } catch (error) { toast(error.message, "error"); } finally { button.disabled = false; }
   });
 }
 
@@ -906,7 +949,7 @@ function activityKeyForRoute(route) {
 }
 
 async function refreshActivity({ refreshPageOnChange = false, signal } = {}) {
-  if (!getAdminKey() || document.hidden) return;
+  if (!getAuthToken() || document.hidden) return;
   const activity = await api("/admin/activity", { forceRefresh: true, timeoutMs: 10000, signal });
   updateUnread(activity.unread_notifications);
   const versionKey = activityKeyForRoute(state.route);
@@ -933,7 +976,7 @@ function startPolling() {
   stopPolling();
   const generation = pollingGeneration;
   const poll = async () => {
-    if (!getAdminKey() || generation !== pollingGeneration) return;
+    if (!getAuthToken() || generation !== pollingGeneration) return;
     if (pollInFlight || pageLoadInFlight || document.hidden || modalRoot.childElementCount || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
       pollTimer = setTimeout(poll, 15000);
       return;
@@ -947,7 +990,7 @@ function startPolling() {
     } finally {
       pollInFlight = false;
       pollController = null;
-      if (generation === pollingGeneration && getAdminKey()) pollTimer = setTimeout(poll, 15000);
+      if (generation === pollingGeneration && getAuthToken()) pollTimer = setTimeout(poll, 15000);
     }
   };
 
@@ -959,9 +1002,9 @@ window.addEventListener("hashchange", () => state.session && navigateFromHash())
 window.addEventListener("admin-auth-expired", () => {
   if (!state.session) return;
   appEntryId += 1;
-  setAdminKey("");
+  setAuthToken("");
   state.session = null;
-  renderLogin("Your admin session expired. Enter the admin key again.");
+  renderLogin("Your admin session expired. Sign in again.");
 });
 window.addEventListener("keydown", (event) => { if (event.key === "Escape") closeModal(); });
 
@@ -972,20 +1015,20 @@ async function enterAuthenticatedApp() {
   navigateFromHash();
   try {
     const session = await api("/admin/session", { cacheTtlMs: 10 * 60 * 1000, staleWhileRevalidate: true });
-    if (entryId !== appEntryId || !getAdminKey()) return;
+    if (entryId !== appEntryId || !getAuthToken()) return;
     state.session = session;
     applySessionToShell();
     startPolling();
   } catch (error) {
     if (entryId !== appEntryId || isAbortError(error)) return;
-    setAdminKey("");
+    setAuthToken("");
     state.session = null;
-    renderLogin(error.message || "Enter the admin key to continue.");
+    renderLogin(error.message || "Sign in to continue.");
   }
 }
 
 async function boot() {
-  if (!getAdminKey()) { renderLogin(); return; }
+  if (!getAuthToken()) { renderLogin(); return; }
   await enterAuthenticatedApp();
 }
 

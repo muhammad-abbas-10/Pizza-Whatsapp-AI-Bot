@@ -6,7 +6,7 @@ let source = fs.readFileSync(new URL("../src/api.js", import.meta.url), "utf8");
 source = source
   .replace("import.meta.env.VITE_API_URL", '""')
   .replaceAll("export ", "")
-  .concat("\nglobalThis.__api = { api, setAdminKey };\n");
+  .concat("\nglobalThis.__api = { api, setAuthToken };\n");
 
 const storage = new Map();
 const calls = [];
@@ -53,8 +53,8 @@ const context = vm.createContext({
   },
 });
 vm.runInContext(source, context);
-const { api, setAdminKey } = context.__api;
-setAdminKey("test-key");
+const { api, setAuthToken } = context.__api;
+setAuthToken("test-token");
 
 const countCalls = (path, method = "GET") => calls.filter((call) => call.path === path && call.method === method).length;
 

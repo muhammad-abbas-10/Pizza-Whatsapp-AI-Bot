@@ -8,8 +8,13 @@
   <h2>Upload 2–3 Images to Neon</h2>
 
   <label>
-    Admin key
-    <input type="password" id="admin-key" autocomplete="current-password">
+    Username
+    <input id="admin-username" autocomplete="username">
+  </label>
+
+  <label>
+    Password
+    <input type="password" id="admin-password" autocomplete="current-password">
   </label>
 
   <br><br>
@@ -34,7 +39,8 @@
   <script>
     async function uploadImages() {
       const input = document.getElementById("images");
-      const adminKey = document.getElementById("admin-key").value;
+      const username = document.getElementById("admin-username").value;
+      const password = document.getElementById("admin-password").value;
       const result = document.getElementById("result");
 
       const files = input.files;
@@ -44,8 +50,8 @@
         return;
       }
 
-      if (!adminKey) {
-        result.textContent = "Please enter the admin key.";
+      if (!username || !password) {
+        result.textContent = "Please enter your username and password.";
         return;
       }
 
@@ -58,11 +64,22 @@
       result.textContent = "Uploading...";
 
       try {
+        const loginResponse = await fetch(
+          "https://pizza-whatsapp-ai-bot.vercel.app/admin/login",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ username, password })
+          }
+        );
+        const login = await loginResponse.json();
+        if (!loginResponse.ok) throw new Error(login.message || "Sign in failed");
+
         const response = await fetch(
           "https://pizza-whatsapp-ai-bot.vercel.app/images/upload",
           {
             method: "POST",
-            headers: { "x-admin-key": adminKey },
+            headers: { "Authorization": `Bearer ${login.token}` },
             body: formData
           }
         );

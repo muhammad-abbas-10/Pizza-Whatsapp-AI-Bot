@@ -28,14 +28,16 @@ export function clearApiCache() {
   cacheGeneration += 1;
 }
 
-export function getAdminKey() {
-  return sessionStorage.getItem("pizzaBarAdminKey") || "";
+export function getAuthToken() {
+  sessionStorage.removeItem("pizzaBarAdminKey");
+  return sessionStorage.getItem("pizzaBarAdminToken") || "";
 }
 
-export function setAdminKey(value) {
-  const previous = getAdminKey();
-  if (value) sessionStorage.setItem("pizzaBarAdminKey", value);
-  else sessionStorage.removeItem("pizzaBarAdminKey");
+export function setAuthToken(value) {
+  const previous = getAuthToken();
+  sessionStorage.removeItem("pizzaBarAdminKey");
+  if (value) sessionStorage.setItem("pizzaBarAdminToken", value);
+  else sessionStorage.removeItem("pizzaBarAdminToken");
   if (previous !== (value || "")) {
     authGeneration += 1;
     clearApiCache();
@@ -76,7 +78,8 @@ async function fetchJson(path, options, method) {
     onRevalidate, onRevalidateError, signal, ...fetchOptions
   } = options;
   const headers = new Headers(options.headers || {});
-  headers.set("x-admin-key", getAdminKey());
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const controlled = requestController(signal, timeoutMs);
   try {
@@ -90,7 +93,7 @@ async function fetchJson(path, options, method) {
     const isJson = response.headers.get("content-type")?.includes("application/json");
     const body = isJson ? await response.json().catch(() => ({})) : await response.text();
     if (!response.ok) {
-      if (response.status === 401) window.dispatchEvent(new CustomEvent("admin-auth-expired"));
+      if (response.status === 401 && getAuthToken()) window.dispatchEvent(new CustomEvent("admin-auth-expired"));
       const detail = typeof body === "object" ? (body.message || body.error) : body;
       throw new Error(detail || `Request failed (${response.status})`);
     }
@@ -164,7 +167,7 @@ export async function download(path, filename, options = {}) {
   const controlled = requestController(options.signal, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
-      headers: { "x-admin-key": getAdminKey() },
+      headers: { "Authorization": `Bearer ${getAuthToken()}` },
       signal: controlled.signal,
       cache: "no-store",
     });

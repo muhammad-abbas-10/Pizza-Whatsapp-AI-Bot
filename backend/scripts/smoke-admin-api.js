@@ -1,12 +1,12 @@
 require("dotenv").config();
 
 const baseUrl = process.env.SMOKE_API_URL || "http://localhost:3000";
-const key = process.env.ADMIN_API_KEY;
 const results = [];
+let adminToken;
 
 async function check(name, path, options = {}, expected = 200) {
   const headers = { ...(options.headers || {}) };
-  if (options.auth !== false) headers["x-admin-key"] = key;
+  if (options.auth !== false && adminToken) headers.authorization = `Bearer ${adminToken}`;
   if (options.body) headers["content-type"] = "application/json";
   const response = await fetch(`${baseUrl}${path}`, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
@@ -22,6 +22,12 @@ async function main() {
   await check("Health", "/health", { auth: false });
   await check("Authentication rejection", "/admin/session", { auth: false }, 401);
   await check("CORS rejection", "/admin/session", { auth: false, headers: { Origin: "https://untrusted.example" } }, 403);
+  const login = await check("Login", "/admin/login", {
+    auth: false,
+    method: "POST",
+    body: JSON.stringify({ username: process.env.ADMIN_USERNAME, password: process.env.ADMIN_PASSWORD }),
+  });
+  adminToken = login.token;
   await check("Session", "/admin/session");
   await check("Dashboard", "/admin/dashboard?days=7");
   await check("Invalid order date", "/admin/orders?date_from=2026-02-30", {}, 400);
@@ -51,6 +57,7 @@ async function main() {
   await check("Settings opening-hours validation", "/admin/settings", { method: "PATCH", body: JSON.stringify({ opening_hours: [] }) }, 400);
   await check("Menu boolean validation", "/admin/menu/items/1", { method: "PATCH", body: JSON.stringify({ active: "true" }) }, 400);
   await check("Menu images", "/images", { auth: false });
+  await check("Logout", "/admin/logout", { method: "POST" });
   console.log(results.join("\n"));
 }
 

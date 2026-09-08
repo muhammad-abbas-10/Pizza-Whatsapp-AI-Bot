@@ -3,46 +3,18 @@
 // These routes are shared between local dev (server.js) and the Vercel
 // deployment (api/index.js) so the logic only lives in one place.
 //
-// Required env vars:
-//   ADMIN_API_KEY             - shared secret the dashboard sends as x-admin-key
+// Required env vars for the initial admin account:
+//   ADMIN_USERNAME
+//   ADMIN_PASSWORD
 //   N8N_ADMIN_WEBHOOK_URL     - private dashboard-event webhook
 
 const crypto = require("crypto");
+const { createRequireAdminSession, registerAdminAuthRoutes } = require("./admin-auth");
 const {
   dispatchCustomerNotificationEvent,
   loadCustomerNotificationEvent,
   publicEvent,
 } = require("./customer-notification-events");
-
-const failedAdminAttempts = new Map();
-
-function requireAdminKey(req, res, next) {
-  const configuredKey = process.env.ADMIN_API_KEY;
-
-  if (!configuredKey) {
-    console.error("ADMIN_API_KEY is not configured on the server");
-    return res.status(500).json({ success: false, message: "Admin API not configured" });
-  }
-
-  const providedKey = req.header("x-admin-key");
-  const attemptKey = req.ip || req.socket.remoteAddress || "unknown";
-  const now = Date.now();
-  const attempts = (failedAdminAttempts.get(attemptKey) || []).filter((timestamp) => now - timestamp < 15 * 60 * 1000);
-  if (attempts.length >= 10) {
-    return res.status(429).json({ success: false, message: "Too many authentication attempts; try again later" });
-  }
-
-  const configured = Buffer.from(configuredKey);
-  const provided = Buffer.from(providedKey || "");
-  if (configured.length !== provided.length || !crypto.timingSafeEqual(configured, provided)) {
-    attempts.push(now);
-    failedAdminAttempts.set(attemptKey, attempts);
-    return res.status(401).json({ success: false, message: "Invalid or missing admin key" });
-  }
-
-  failedAdminAttempts.delete(attemptKey);
-  return next();
-}
 
 function parsePagination(query, defaultLimit = 20, maxLimit = 100) {
   const limit = Math.max(1, Math.min(Number.parseInt(query.limit, 10) || defaultLimit, maxLimit));
@@ -72,7 +44,7 @@ function setPrivateCache(res, maxAgeSeconds, staleWhileRevalidateSeconds = 0) {
     ? `, stale-while-revalidate=${staleWhileRevalidateSeconds}`
     : "";
   res.setHeader("Cache-Control", `private, max-age=${maxAgeSeconds}${stale}`);
-  res.vary("x-admin-key");
+  res.vary("Authorization");
 }
 
 function latestTimestamp(...values) {
@@ -82,7 +54,8 @@ function latestTimestamp(...values) {
 
 function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
   const deliverEvent = dispatchEvent || ((eventId) => dispatchCustomerNotificationEvent(pool, eventId));
-  app.use("/admin", requireAdminKey);
+  const requireAdminSession = registerAdminAuthRoutes(app, pool);
+  app.use("/admin", requireAdminSession);
 
   // --------------------------------------------------
   // ORDERS
@@ -733,6 +706,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
         },
         admin: row.display_name == null ? null : {
           display_name: row.display_name,
+          username: req.admin.username,
           updated_at: row.profile_updated_at,
         },
         unread_notifications: row.unread_notifications || 0,
@@ -760,7 +734,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
       `);
       const activity = rows[0] || {};
       res.setHeader("Cache-Control", "private, no-store");
-      res.vary("x-admin-key");
+      res.vary("Authorization");
       return res.json({
         success: true,
         unread_notifications: activity.unread_notifications || 0,
@@ -1433,6 +1407,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
         },
         admin: row.display_name == null ? null : {
           display_name: row.display_name,
+          username: req.admin.username,
           updated_at: row.profile_updated_at,
         },
         integrations: {
@@ -1492,7 +1467,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
 }
 
 module.exports = {
+  createRequireAdminSession,
   registerAdminRoutes,
-  requireAdminKey,
   ORDER_STATUSES,
 };

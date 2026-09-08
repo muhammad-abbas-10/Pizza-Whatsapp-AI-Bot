@@ -3,7 +3,7 @@ const cors = require("cors");
 const multer = require("multer");
 const { Pool } = require("pg");
 const { attachDatabasePool } = require("@vercel/functions");
-const { registerAdminRoutes, requireAdminKey } = require("../src/admin-routes");
+const { createRequireAdminSession, registerAdminRoutes } = require("../src/admin-routes");
 
 const app = express();
 
@@ -59,7 +59,7 @@ app.use(
       );
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: false,
   })
 );
@@ -171,6 +171,7 @@ app.get("/health", async (req, res) => {
 // --------------------------------------------------
 
 registerAdminRoutes(app, pool);
+const requireAdminSession = createRequireAdminSession(pool);
 
 // --------------------------------------------------
 // UPLOAD 2–3 IMAGES
@@ -178,7 +179,7 @@ registerAdminRoutes(app, pool);
 
 app.post(
   "/images/upload",
-  requireAdminKey,
+  requireAdminSession,
   upload.array("images", 3),
   async (req, res) => {
     try {

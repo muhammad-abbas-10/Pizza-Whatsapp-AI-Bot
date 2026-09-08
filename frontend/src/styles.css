@@ -1883,6 +1883,7 @@ body {
   align-items: stretch;
   gap: 20px;
 }
+.settings-page .settings-form-contents { display: contents; }
 .settings-page .settings-section {
   display: flex;
   flex-direction: column;
@@ -2003,9 +2004,17 @@ body {
   box-shadow: 0 10px 22px -10px rgba(255,107,53,.65);
 }
 .settings-page .settings-save:hover:not(:disabled) { background: #e85924; border-color: #e85924; }
+.settings-page .security-settings { grid-column: 1 / -1; }
+.settings-page .security-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.settings-page .security-grid form { align-content: start; }
+.settings-page .security-grid form + form { padding-left: 24px; border-left: 1px solid #1b2230; }
+.settings-page .security-grid .input[readonly] { color: #94a3b8; cursor: default; }
+.settings-page .security-grid .btn { justify-self: start; }
 
 @media (max-width: 900px) {
   .settings-page .settings-grid { grid-template-columns: 1fr; }
+  .settings-page .security-grid { grid-template-columns: 1fr; }
+  .settings-page .security-grid form + form { padding-top: 24px; padding-left: 0; border-top: 1px solid #1b2230; border-left: 0; }
 }
 
 @media (max-width: 620px) {
