@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "../..");
-const workflow = JSON.parse(fs.readFileSync(path.join(root, "final workflow.json"), "utf8"));
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "pizza-bar-whatsapp-ai-bot.json"), "utf8"));
 const backend = fs.readFileSync(path.join(root, "backend/src/admin-routes.js"), "utf8");
 const frontend = fs.readFileSync(path.join(root, "frontend/src/main.js"), "utf8");
 const migration = fs.readFileSync(path.join(root, "database/migration/019_admin_address_clarification.sql"), "utf8");
