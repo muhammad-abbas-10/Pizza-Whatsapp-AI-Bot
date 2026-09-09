@@ -62,6 +62,8 @@ const PAGE_CACHE_TTL = {
   settings: 10 * 60 * 1000,
 };
 
+const DEFAULT_ADDRESS_CLARIFICATION_MESSAGE = "Please provide a clearer delivery address, including a nearby landmark, street, house number, or any other helpful location details.";
+
 function initials(name) {
   const parts = String(name || "Customer").trim().split(/\s+/).filter(Boolean);
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "C";
@@ -85,6 +87,7 @@ const iconPaths = {
   menuToggle: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   logout: '<path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>',
   revenue: '<path d="M3 3v18h18M7 15l4-4 3 3 6-7"/><path d="M16 7h4v4"/>',
+  alert: '<path d="M10.3 3.5 2.4 17.2A2 2 0 0 0 4.1 20h15.8a2 2 0 0 0 1.7-2.8L13.7 3.5a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
 };
 
 function icon(name, className = "ui-icon") {
@@ -544,6 +547,61 @@ function bindLocalSearch(route) {
   });
 }
 
+function openAddressClarification(order) {
+  const requestId = crypto.randomUUID();
+  showModal(`<form id="address-clarification-form">
+    <div class="modal-head"><div><div class="request-number">ORDER #${escapeHtml(order.id)}</div><h2>Address Not Clear</h2></div><button class="btn icon-btn" type="button" data-address-clarification-cancel aria-label="Close">×</button></div>
+    <div class="modal-body address-clarification-body">
+      <div class="address-clarification-callout">${icon("alert")}<div><strong>Ask the customer to provide a clearer delivery address.</strong><span>The message will be sent securely through the existing WhatsApp workflow.</span></div></div>
+      <div class="field"><label for="address-clarification-message">Message to customer</label><textarea class="textarea" id="address-clarification-message" name="admin_message" maxlength="500" required>${escapeHtml(DEFAULT_ADDRESS_CLARIFICATION_MESSAGE)}</textarea><div class="field-help"><span>Review or edit before sending.</span><span data-message-count>${DEFAULT_ADDRESS_CLARIFICATION_MESSAGE.length}/500</span></div></div>
+      <div class="danger-text" data-address-clarification-error role="alert" hidden></div>
+    </div>
+    <div class="modal-foot"><button class="btn" type="button" data-address-clarification-cancel>Cancel</button><button class="btn btn-primary" type="submit">Send to Customer</button></div>
+  </form>`, { label: `Address clarification for order ${order.id}`, className: "address-clarification-modal", dismissible: false });
+
+  const form = modalRoot.querySelector("#address-clarification-form");
+  const message = form.querySelector("textarea");
+  const counter = form.querySelector("[data-message-count]");
+  const errorBox = form.querySelector("[data-address-clarification-error]");
+  form.querySelectorAll("[data-address-clarification-cancel]").forEach((button) => button.addEventListener("click", () => openOrder(order.id)));
+  message.addEventListener("input", () => { counter.textContent = `${message.value.length}/500`; });
+  message.focus();
+  message.setSelectionRange(message.value.length, message.value.length);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const adminMessage = message.value.trim();
+    if (!adminMessage) {
+      errorBox.textContent = "Enter a message before sending.";
+      errorBox.hidden = false;
+      message.focus();
+      return;
+    }
+    const submit = form.querySelector("button[type='submit']");
+    const controls = [...form.querySelectorAll("button, textarea")];
+    controls.forEach((control) => { control.disabled = true; });
+    submit.textContent = "Sending…";
+    errorBox.hidden = true;
+    try {
+      const result = await api(`/admin/orders/${order.id}/address-clarification`, {
+        method: "POST",
+        timeoutMs: 30000,
+        body: JSON.stringify({ request_id: requestId, admin_message: adminMessage }),
+      });
+      const delivered = ["sent", "duplicate"].includes(result.notification_lifecycle);
+      toast(delivered ? "Address clarification requested." : "Address clarification request is processing.");
+      await openOrder(order.id);
+      refreshActivity().catch(() => {});
+    } catch (error) {
+      errorBox.textContent = error.message || "Address clarification could not be sent. Please retry.";
+      errorBox.hidden = false;
+      form.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+      message.disabled = true;
+      submit.textContent = "Retry Send";
+    }
+  });
+}
+
 async function openOrder(orderId) {
   modalLoading("Loading order");
   try {
@@ -558,7 +616,19 @@ async function openOrder(orderId) {
       cancelled: "Cancel order",
     };
     const transitions = (order.allowed_transitions || []).map((status) => [status, labels[status] || statusLabel(status)]);
-    const latestNotification = data.notifications?.[0] || null;
+    const latestNotification = data.notifications?.find((entry) => entry.event_type !== "admin_address_clarification") || null;
+    const latestAddressClarification = data.notifications?.find((entry) => entry.event_type === "admin_address_clarification") || null;
+    const addressRequestInFlight = ["pending", "processing"].includes(latestAddressClarification?.delivery_status);
+    const addressClarificationAvailable = order.order_type === "delivery" && ["received", "preparing"].includes(order.status);
+    const addressClarificationStatus = !latestAddressClarification
+      ? ""
+      : latestAddressClarification.delivery_status === "sent"
+        ? `Address clarification requested · ${dateTime(latestAddressClarification.sent_at || latestAddressClarification.updated_at)}`
+        : addressRequestInFlight
+          ? "Address clarification request is being sent…"
+          : latestAddressClarification.delivery_status === "failed"
+            ? "Address clarification request failed."
+            : "Address clarification request was not sent.";
     const notificationCopy = !latestNotification
       ? "No dashboard-generated customer update yet."
       : latestNotification.delivery_status === "sent"
@@ -573,7 +643,7 @@ async function openOrder(orderId) {
     showModal(`<div class="modal-head"><div><div class="request-number">ORDER #${escapeHtml(order.id)}</div><h2>${escapeHtml(order.customer_name || "Customer")}</h2></div><button class="btn icon-btn" data-close-modal aria-label="Close">×</button></div>
       <div class="modal-body stack"><div class="detail-grid">
         <div class="detail-block"><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(order.customer_name || "Unnamed")}<br>${escapeHtml(order.customer_phone)}</div></div>
-        <div class="detail-block"><div class="fact-label">Fulfilment</div><div class="fact-value">${escapeHtml(statusLabel(order.order_type))}<br>${escapeHtml(order.delivery_address || "Pickup")}</div></div>
+        <div class="detail-block"><div class="fact-label">Fulfilment</div><div class="fact-value">${escapeHtml(statusLabel(order.order_type))}<div class="delivery-address-row"><span>${escapeHtml(order.delivery_address || "Pickup")}</span>${addressClarificationAvailable ? `<button class="btn btn-sm address-clarification-button" type="button" data-address-not-clear ${addressRequestInFlight ? "disabled" : ""}>${icon("alert")}<span>${addressRequestInFlight ? "Request in progress" : "Address Not Clear"}</span></button>` : ""}</div>${addressClarificationStatus ? `<div class="address-clarification-status ${latestAddressClarification.delivery_status === "failed" ? "failed" : ""}"><span>${escapeHtml(addressClarificationStatus)}</span>${latestAddressClarification.delivery_status === "failed" ? `<button class="btn btn-sm" data-retry-order-event="${escapeHtml(latestAddressClarification.id)}" data-order-id="${escapeHtml(order.id)}">Retry</button>` : ""}</div>` : ""}</div></div>
         <div class="detail-block wide"><div class="fact-label">Items</div><div class="line-items" style="margin-top:10px">${(order.items || []).map((item) => `<div class="line-item"><div><strong>${escapeHtml(item.quantity || 1)}× ${escapeHtml(item.item_name || item.name || "Item")}</strong><div class="secondary-cell">${escapeHtml(item.size || item.variant || "Standard")}${Array.isArray(item.extras) && item.extras.length ? ` · ${escapeHtml(item.extras.join(", "))}` : ""}</div></div><span>${escapeHtml(money(item.line_total || Number(item.price || 0) * Number(item.quantity || 1), currency))}</span></div>`).join("")}</div></div>
         <div class="detail-block"><div class="fact-label">Totals</div><div class="fact-value">Subtotal ${escapeHtml(money(order.subtotal, currency))}<br>Delivery ${escapeHtml(money(order.delivery_charge, currency))}<br><strong>Total ${escapeHtml(money(order.total, currency))}</strong></div></div>
         <div class="detail-block"><div class="fact-label">Status</div><div class="fact-value"><span data-order-modal-status>${badge(order.status)}</span><br><span class="subtle">${escapeHtml(dateTime(order.created_at))}</span></div></div>
@@ -639,7 +709,8 @@ async function openOrder(orderId) {
         }
       }
     }));
-    modalRoot.querySelector("[data-retry-order-event]")?.addEventListener("click", async (event) => {
+    modalRoot.querySelector("[data-address-not-clear]")?.addEventListener("click", () => openAddressClarification(order));
+    modalRoot.querySelectorAll("[data-retry-order-event]").forEach((retryButton) => retryButton.addEventListener("click", async (event) => {
       const button = event.currentTarget;
       const original = button.textContent;
       button.disabled = true;
@@ -654,7 +725,7 @@ async function openOrder(orderId) {
         button.disabled = false;
         button.textContent = original;
       }
-    });
+    }));
   } catch (error) {
     showModal(`<div class="error-state"><div><div class="state-icon">!</div><div class="state-title">Order unavailable</div><div class="state-copy">${escapeHtml(error.message)}</div><button class="btn" data-close-modal>Close</button></div></div>`);
   }

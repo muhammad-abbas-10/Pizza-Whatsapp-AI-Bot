@@ -38,6 +38,9 @@ function csvCell(value) {
 
 const ORDER_STATUSES = ["received", "preparing", "oven", "out_for_delivery", "completed", "cancelled"];
 const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ADDRESS_CLARIFICATION_EVENT = "admin_address_clarification";
+const ADDRESS_CLARIFICATION_STATUSES = ["received", "preparing"];
+const MAX_ADMIN_MESSAGE_LENGTH = 500;
 
 function setPrivateCache(res, maxAgeSeconds, staleWhileRevalidateSeconds = 0) {
   const stale = staleWhileRevalidateSeconds > 0
@@ -310,6 +313,136 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
       if (!committed) await client.query("ROLLBACK").catch(() => {});
       console.error("Update order status error:", error);
       return res.status(500).json({ success: false, message: "Failed to update order" });
+    } finally {
+      if (!clientReleased) client.release();
+    }
+  });
+
+  // POST /admin/orders/:id/address-clarification
+  // The authenticated dashboard supplies only an order id, an idempotency id,
+  // and the admin-approved wording. The server resolves and persists the
+  // authoritative customer relationship; n8n resolves the phone from this row.
+  app.post("/admin/orders/:id/address-clarification", async (req, res) => {
+    const orderId = Number(req.params.id);
+    const messageValue = req.body?.admin_message;
+    const adminMessage = typeof messageValue === "string" ? messageValue.replace(/\r\n/g, "\n").trim() : "";
+    const requestId = String(req.body?.request_id || "");
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid order id" });
+    }
+    if (!REQUEST_ID_PATTERN.test(requestId)) {
+      return res.status(400).json({ success: false, message: "request_id must be a UUID" });
+    }
+    if (!adminMessage || adminMessage.length > MAX_ADMIN_MESSAGE_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        message: `Message must be between 1 and ${MAX_ADMIN_MESSAGE_LENGTH} characters`,
+      });
+    }
+
+    const client = await pool.connect();
+    let clientReleased = false;
+    let committed = false;
+    let event;
+    let alreadyApplied = false;
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query(
+        `SELECT * FROM customer_notification_events WHERE request_id = $1 FOR UPDATE`,
+        [requestId]
+      );
+      if (existing.rows.length) {
+        event = existing.rows[0];
+        if (
+          String(event.order_id) !== String(orderId)
+          || event.event_type !== ADDRESS_CLARIFICATION_EVENT
+          || event.admin_note !== adminMessage
+        ) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "request_id was already used for a different action" });
+        }
+        alreadyApplied = true;
+      } else {
+        const order = await client.query(
+          `SELECT id, customer_id, order_type, status FROM orders WHERE id = $1 FOR UPDATE`,
+          [orderId]
+        );
+        if (!order.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ success: false, message: "Order not found" });
+        }
+        if (order.rows[0].order_type !== "delivery") {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "Address clarification is only available for delivery orders" });
+        }
+        if (!ADDRESS_CLARIFICATION_STATUSES.includes(order.rows[0].status)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "This order has progressed too far to change its delivery address" });
+        }
+
+        const active = await client.query(
+          `SELECT id FROM customer_notification_events
+           WHERE order_id = $1
+             AND event_type = $2
+             AND delivery_status IN ('pending', 'processing')
+           ORDER BY created_at DESC, id DESC LIMIT 1
+           FOR UPDATE`,
+          [orderId, ADDRESS_CLARIFICATION_EVENT]
+        );
+        if (active.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "An address clarification request is already being sent for this order" });
+        }
+
+        event = (await client.query(
+          `INSERT INTO customer_notification_events (
+             request_id, idempotency_key, event_type, order_id, customer_id, admin_note
+           ) VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING *`,
+          [
+            requestId,
+            `admin_address_clarification:${orderId}:${requestId}`,
+            ADDRESS_CLARIFICATION_EVENT,
+            orderId,
+            order.rows[0].customer_id,
+            adminMessage,
+          ]
+        )).rows[0];
+      }
+
+      await client.query("COMMIT");
+      committed = true;
+      client.release();
+      clientReleased = true;
+
+      let notification = publicEvent(event);
+      let lifecycle = event.delivery_status;
+      if (["pending", "failed"].includes(event.delivery_status)) {
+        const delivery = await deliverEvent(event.id);
+        notification = delivery.event || notification;
+        lifecycle = delivery.lifecycle;
+      }
+
+      const failed = lifecycle === "failed";
+      return res.status(failed ? 502 : 200).json({
+        success: !failed,
+        already_applied: alreadyApplied,
+        notification,
+        notification_lifecycle: lifecycle,
+        message: failed
+          ? "Address clarification could not be sent. Please retry."
+          : lifecycle === "sent" || lifecycle === "duplicate"
+            ? "Address clarification requested"
+            : "Address clarification request is processing",
+      });
+    } catch (error) {
+      if (!committed) await client.query("ROLLBACK").catch(() => {});
+      if (error?.code === "23505") {
+        return res.status(409).json({ success: false, message: "An address clarification request is already being sent for this order" });
+      }
+      console.error("Address clarification error:", error);
+      return res.status(500).json({ success: false, message: "Failed to request address clarification" });
     } finally {
       if (!clientReleased) client.release();
     }
