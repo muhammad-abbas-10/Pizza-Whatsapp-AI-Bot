@@ -40,7 +40,14 @@ async function markDispatchFailure(pool, eventId, error) {
   await pool.query(
     `UPDATE customer_notification_events
      SET delivery_status = 'failed',
-         last_error = $2,
+         last_error = CASE
+           -- n8n may have already recorded the provider/node failure before
+           -- its webhook response was replaced by a gateway error. Preserve
+           -- that more useful error instead of overwriting it with HTML.
+           WHEN delivery_status = 'failed' AND NULLIF(BTRIM(last_error), '') IS NOT NULL
+             THEN last_error
+           ELSE $2
+         END,
          claim_token = NULL,
          claimed_at = NULL,
          updated_at = NOW()
@@ -103,7 +110,11 @@ async function dispatchCustomerNotificationEvent(
       try {
         responseBody = JSON.parse(raw);
       } catch {
-        responseBody = { message: raw.slice(0, 1000) };
+        responseBody = {
+          message: /^\s*<!doctype html|^\s*<html/i.test(raw)
+            ? `n8n webhook returned HTTP ${response.status}`
+            : raw.slice(0, 1000),
+        };
       }
     }
   } catch (error) {

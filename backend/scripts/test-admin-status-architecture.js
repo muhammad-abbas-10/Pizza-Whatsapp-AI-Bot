@@ -241,6 +241,14 @@ async function dispatcherTests() {
   assert.equal(failed.event.delivery_status, "failed");
   assert(failed.event.last_error.includes("n8n unavailable"));
 
+  const htmlFailurePool = fakePool({ ...baseEvent });
+  const htmlFailure = await dispatchCustomerNotificationEvent(htmlFailurePool, 41, {
+    fetchImpl: async () => new Response("<!DOCTYPE html><title>502 Bad gateway</title>", { status: 502 }),
+    webhookUrl: "https://n8n.example/webhook/admin-order-status",
+  });
+  assert.equal(htmlFailure.lifecycle, "failed");
+  assert.equal(htmlFailure.event.last_error, "n8n webhook returned HTTP 502");
+
   const missingConfigPool = fakePool({ ...baseEvent });
   const missingConfig = await dispatchCustomerNotificationEvent(missingConfigPool, 41, {
     fetchImpl,
