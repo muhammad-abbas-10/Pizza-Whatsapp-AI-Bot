@@ -1633,6 +1633,12 @@ body {
 }
 .menu-page .menu-add-button .ui-icon { width: 16px; height: 16px; stroke-width: 2.2; }
 .menu-page .menu-add-button:hover:not(:disabled) { background: #e85924; border-color: #e85924; }
+.menu-page .menu-delete-all-button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-size: 11px;
+}
 .menu-page .menu-toolbar {
   min-height: 0;
   margin: 0;
@@ -1800,6 +1806,14 @@ body {
   font-weight: 700;
   text-transform: capitalize;
 }
+.menu-page .menu-image-head-actions { display: flex; align-items: center; gap: 8px; }
+.menu-page .menu-image-head-actions .btn {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 9px;
+}
+.menu-page .menu-image-head-actions .ui-icon { width: 13px; height: 13px; }
 .menu-page .menu-gallery .panel-body { display: grid; gap: 12px; padding: 16px; }
 .menu-page .menu-image-card {
   min-width: 0;
@@ -1833,9 +1847,32 @@ body {
   border-top: 1px solid #20252f;
   font-size: 9px;
 }
-.menu-page .menu-image-card figcaption span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-page .menu-image-card figcaption > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-page .menu-image-card figcaption small { flex: 0 0 auto; color: #34d399; font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.menu-page .menu-image-delete {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  font-size: 9px;
+}
+.menu-page .menu-image-delete .ui-icon { width: 12px; height: 12px; }
 .menu-page .menu-images-empty { padding: 50px 15px; color: #8b949e; text-align: center; font-size: 11px; }
+
+.menu-upload-input { height: auto; padding: 8px; }
+.destructive-confirmation {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  color: #fca5a5;
+  background: rgba(239,68,68,.08);
+  border: 1px solid rgba(239,68,68,.24);
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.destructive-confirmation strong { color: #fecaca; }
+.destructive-confirmation span { display: block; }
 
 @media (max-width: 1180px) {
   .menu-page .menu-layout { grid-template-columns: 1fr; }
@@ -1861,7 +1898,9 @@ body {
 @media (max-width: 620px) {
   .menu-page .page-heading { align-items: flex-start; margin-bottom: 18px; }
   .menu-page .page-heading h2 { font-size: 21px; }
-  .menu-page .menu-add-button { width: 100%; }
+  .menu-page .page-heading .cluster { width: 100%; }
+  .menu-page .menu-add-button,
+  .menu-page .menu-delete-all-button { flex: 1; }
   .menu-page .category-tabs { margin-bottom: 18px; }
   .menu-page .menu-layout { gap: 18px; }
   .menu-page .menu-gallery .panel-body { grid-template-columns: 1fr; }

@@ -4,6 +4,7 @@ const multer = require("multer");
 const { Pool } = require("pg");
 const { attachDatabasePool } = require("@vercel/functions");
 const { createRequireAdminSession, registerAdminRoutes } = require("../src/admin-routes");
+const { hasValidImageSignature } = require("../src/menu-image-validation");
 
 const app = express();
 
@@ -124,15 +125,6 @@ const upload = multer({
   },
 });
 
-function hasValidImageSignature(file) {
-  const bytes = file.buffer;
-  if (file.mimetype === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (file.mimetype === "image/png") return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-  if (file.mimetype === "image/gif") return bytes.length >= 6 && ["GIF87a", "GIF89a"].includes(bytes.subarray(0, 6).toString("ascii"));
-  if (file.mimetype === "image/webp") return bytes.length >= 12 && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP";
-  return false;
-}
-
 // --------------------------------------------------
 // HEALTH CHECK
 // --------------------------------------------------
@@ -174,7 +166,7 @@ registerAdminRoutes(app, pool);
 const requireAdminSession = createRequireAdminSession(pool);
 
 // --------------------------------------------------
-// UPLOAD 2–3 IMAGES
+// UPLOAD 1–3 IMAGES
 // --------------------------------------------------
 
 app.post(
@@ -187,18 +179,10 @@ app.post(
       // CHECK FILES
       // ----------------------------------------------
 
-      if (!req.files || !Array.isArray(req.files)) {
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         return res.status(400).json({
           success: false,
           message: "No images uploaded",
-        });
-      }
-
-      if (req.files.length < 2) {
-        return res.status(400).json({
-          success: false,
-          message: "Please upload at least 2 images",
-          received: req.files.length,
         });
       }
 

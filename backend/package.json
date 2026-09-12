@@ -22,6 +22,7 @@
     "test:feedback": "node scripts/test-feedback-flow.js",
     "test:feedback-db": "node scripts/test-feedback-db.js",
     "test:language-switching": "node scripts/test-language-switching.js",
+    "test:menu-management": "node scripts/test-menu-management.js",
     "workflow:upgrade": "node scripts/upgrade-dashboard-status-workflow.js",
     "workflow:address-clarification": "node scripts/upgrade-address-clarification-workflow.js",
     "migrate:workflow-runtime": "node scripts/run-migration.js 012_n8n_workflow_runtime_hardening.sql",

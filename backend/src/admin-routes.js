@@ -15,6 +15,7 @@ const {
   loadCustomerNotificationEvent,
   publicEvent,
 } = require("./customer-notification-events");
+const { deleteCanonicalMenuData, deleteMenuImage } = require("./menu-management");
 
 function parsePagination(query, defaultLimit = 20, maxLimit = 100) {
   const limit = Math.max(1, Math.min(Number.parseInt(query.limit, 10) || defaultLimit, maxLimit));
@@ -1453,6 +1454,44 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
     } catch (error) {
       console.error("Update menu price error:", error);
       return res.status(500).json({ success: false, message: "Failed to update menu price" });
+    }
+  });
+
+  app.delete("/admin/menu/images/:id", async (req, res) => {
+    const imageId = Number(req.params.id);
+    if (!Number.isInteger(imageId) || imageId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid image id" });
+    }
+    if (req.body?.confirm !== true) {
+      return res.status(400).json({ success: false, message: "Image deletion must be confirmed" });
+    }
+    try {
+      const deletedImage = await deleteMenuImage(pool, imageId);
+      if (!deletedImage) return res.status(404).json({ success: false, message: "Menu image not found" });
+      return res.json({ success: true, deleted_image_id: String(deletedImage.id) });
+    } catch (error) {
+      console.error("Delete menu image error:", error);
+      return res.status(500).json({ success: false, message: "Failed to delete menu image" });
+    }
+  });
+
+  app.delete("/admin/menu", async (req, res) => {
+    if (req.body?.confirmation !== "DELETE ENTIRE MENU") {
+      return res.status(400).json({ success: false, message: "Enter DELETE ENTIRE MENU to confirm" });
+    }
+    let client;
+    try {
+      client = await pool.connect();
+      await client.query("BEGIN");
+      const deleted = await deleteCanonicalMenuData(client);
+      await client.query("COMMIT");
+      return res.json({ success: true, deleted });
+    } catch (error) {
+      if (client) await client.query("ROLLBACK").catch(() => {});
+      console.error("Delete entire menu error:", error);
+      return res.status(500).json({ success: false, message: "Failed to delete the menu" });
+    } finally {
+      client?.release();
     }
   });
 

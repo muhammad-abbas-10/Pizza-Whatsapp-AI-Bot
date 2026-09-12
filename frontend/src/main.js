@@ -83,6 +83,8 @@ const iconPaths = {
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   chevronDown: '<path d="m6 9 6 6 6-6"/>',
   download: '<path d="M12 3v14M6 11l6 6 6-6"/><path d="M5 21h14"/>',
+  upload: '<path d="M12 21V7M6 13l6-6 6 6"/><path d="M5 3h14"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v5M14 11v5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   menuToggle: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   logout: '<path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>',
@@ -856,15 +858,92 @@ async function loadMenu(requestOptions = {}) {
   if (!categories.includes(state.filters.menu.category)) state.filters.menu.category = "All";
   const records = allRecords.filter((record) => (state.filters.menu.category === "All" || record.category === state.filters.menu.category) && (!search || `${record.name} ${record.description || ""}`.toLowerCase().includes(search)));
   const currency = state.session?.restaurant?.currency || "PKR";
-  app.querySelector("#page-content").innerHTML = `<div class="menu-page">${pageHeading("Menu management", "Live products, variants, deals and images from Neon.", `<button class="btn btn-primary menu-add-button" data-action="add-menu-item">${icon("plus")}<span>Add item</span></button>`)}
+  const pageActions = `<button class="btn btn-danger menu-delete-all-button" data-action="delete-entire-menu">${icon("trash")}<span>Delete Entire Menu</span></button><button class="btn btn-primary menu-add-button" data-action="add-menu-item">${icon("plus")}<span>Add item</span></button>`;
+  app.querySelector("#page-content").innerHTML = `<div class="menu-page">${pageHeading("Menu management", "Live products, variants, deals and images from Neon.", pageActions)}
     <div class="toolbar menu-toolbar"><input class="input mobile-page-search" data-local-search="menu" type="search" value="${escapeHtml(state.filters.menu.search)}" placeholder="Search menu…"></div>
     <div class="category-tabs">${categories.map((category) => `<button class="category-tab ${state.filters.menu.category === category ? "active" : ""}" data-menu-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div>
-    <div class="menu-layout"><section class="menu-products">${records.length ? `<div class="menu-grid">${records.map((record) => renderMenuCard(record, currency)).join("")}</div>` : `<div class="panel menu-empty-panel">${emptyState("No menu items found", "Try a different category or search term.", "♨")}</div>`}</section><aside class="panel menu-gallery"><div class="panel-head"><div><div class="panel-title">Menu images</div><div class="panel-subtitle">Stored in Neon BYTEA</div></div><span class="menu-image-count">${data.images.length} ${data.images.length === 1 ? "file" : "files"}</span></div><div class="panel-body">${data.images.length ? data.images.map((image) => `<figure class="menu-image-card"><div class="menu-image-frame"><img class="menu-image" src="${escapeHtml(`${API_BASE}${image.url}`)}" alt="${escapeHtml(image.name)}" loading="lazy"></div><figcaption><span>${escapeHtml(image.name)}</span><small>Stored</small></figcaption></figure>`).join("") : `<div class="menu-images-empty">No active images.</div>`}</div></aside></div></div>`;
+    <div class="menu-layout"><section class="menu-products">${records.length ? `<div class="menu-grid">${records.map((record) => renderMenuCard(record, currency)).join("")}</div>` : `<div class="panel menu-empty-panel">${emptyState("No menu items found", "Try a different category or search term.", "♨")}</div>`}</section><aside class="panel menu-gallery"><div class="panel-head"><div><div class="panel-title">Menu images</div><div class="panel-subtitle">Stored in Neon BYTEA</div></div><div class="menu-image-head-actions"><span class="menu-image-count">${data.images.length} ${data.images.length === 1 ? "file" : "files"}</span><button class="btn btn-sm" data-action="add-menu-image">${icon("upload")}<span>Add image</span></button></div></div><div class="panel-body">${data.images.length ? data.images.map(renderMenuImageCard).join("") : `<div class="menu-images-empty">No active images.</div>`}</div></aside></div></div>`;
   app.querySelectorAll("[data-menu-category]").forEach((button) => button.addEventListener("click", () => { state.filters.menu.category = button.dataset.menuCategory; loadCurrentPage(); }));
   bindLocalSearch("menu");
   app.querySelector("[data-action='add-menu-item']").addEventListener("click", openAddMenuItem);
+  app.querySelector("[data-action='add-menu-image']").addEventListener("click", openAddMenuImage);
+  app.querySelector("[data-action='delete-entire-menu']").addEventListener("click", openDeleteEntireMenu);
+  app.querySelectorAll("[data-delete-menu-image]").forEach((button) => button.addEventListener("click", () => openDeleteMenuImage(button.dataset.deleteMenuImage, button.dataset.imageName)));
   app.querySelectorAll("[data-toggle-menu]").forEach((button) => button.addEventListener("click", () => toggleMenuRecord(button)));
   app.querySelectorAll("[data-edit-price]").forEach((button) => button.addEventListener("click", () => editMenuPrice(button)));
+}
+
+function renderMenuImageCard(image) {
+  return `<figure class="menu-image-card"><div class="menu-image-frame"><img class="menu-image" src="${escapeHtml(`${API_BASE}${image.url}`)}" alt="${escapeHtml(image.name)}" loading="lazy"></div><figcaption><span title="${escapeHtml(image.name)}">${escapeHtml(image.name)}</span><button class="btn btn-sm btn-danger menu-image-delete" type="button" data-delete-menu-image="${escapeHtml(image.id)}" data-image-name="${escapeHtml(image.name)}" aria-label="Delete ${escapeHtml(image.name)}">${icon("trash")}<span>Delete</span></button></figcaption></figure>`;
+}
+
+function openAddMenuImage() {
+  showModal(`<form id="menu-image-upload-form"><div class="modal-head"><div><div class="request-number">MENU IMAGES</div><h2>Add menu image</h2></div><button class="btn icon-btn" type="button" data-close-modal>×</button></div><div class="modal-body stack"><div class="field"><label for="menu-image-files">Choose 1–3 images</label><input class="input menu-upload-input" id="menu-image-files" name="images" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple required><div class="field-help">JPEG, PNG, GIF or WebP. Maximum 10 MB per image.</div></div><div class="danger-text" data-menu-image-error role="alert" hidden></div></div><div class="modal-foot"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn btn-primary" type="submit">Upload image</button></div></form>`, { label: "Add menu image", dismissible: false });
+  const form = modalRoot.querySelector("#menu-image-upload-form");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const files = [...form.querySelector("#menu-image-files").files];
+    const errorBox = form.querySelector("[data-menu-image-error]");
+    if (!files.length || files.length > 3) {
+      errorBox.textContent = "Choose between 1 and 3 images.";
+      errorBox.hidden = false;
+      return;
+    }
+    const body = new FormData();
+    files.forEach((file) => body.append("images", file));
+    const submit = form.querySelector("[type='submit']");
+    submit.disabled = true;
+    errorBox.hidden = true;
+    try {
+      const result = await api("/images/upload", { method: "POST", body, timeoutMs: 45000 });
+      closeModal();
+      toast(result.count === 1 ? "Menu image uploaded." : `${result.count} menu images uploaded.`);
+      await loadCurrentPage({ forceRefresh: true });
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.hidden = false;
+      submit.disabled = false;
+    }
+  });
+}
+
+function openDeleteMenuImage(imageId, imageName) {
+  showModal(`<div class="modal-head"><div><div class="request-number">MENU IMAGE</div><h2>Delete menu image?</h2></div><button class="btn icon-btn" type="button" data-close-modal>×</button></div><div class="modal-body stack"><div class="destructive-confirmation">Are you sure you want to delete this menu image? This action cannot be undone.</div><div class="detail-block"><div class="fact-label">Selected image</div><div class="fact-value">${escapeHtml(imageName || `Image #${imageId}`)}</div></div><div class="danger-text" data-delete-image-error role="alert" hidden></div></div><div class="modal-foot"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn btn-danger" type="button" data-confirm-delete-image>Delete Image</button></div>`, { label: "Delete menu image", dismissible: false });
+  const confirm = modalRoot.querySelector("[data-confirm-delete-image]");
+  confirm.addEventListener("click", async () => {
+    const errorBox = modalRoot.querySelector("[data-delete-image-error]");
+    confirm.disabled = true;
+    try {
+      await api(`/admin/menu/images/${encodeURIComponent(imageId)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) });
+      closeModal();
+      toast("Menu image deleted.");
+      await loadCurrentPage({ forceRefresh: true });
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.hidden = false;
+      confirm.disabled = false;
+    }
+  });
+}
+
+function openDeleteEntireMenu() {
+  showModal(`<div class="modal-head"><div><div class="request-number">PERMANENT ACTION</div><h2>⚠️ Delete Entire Menu?</h2></div><button class="btn icon-btn" type="button" data-close-modal>×</button></div><div class="modal-body stack"><div class="destructive-confirmation"><strong>This will permanently delete ALL menu items, categories, deals, sauces, add-ons, and other active menu data.</strong><span>Menu images, orders, customers, feedback, settings, sessions, notifications, and admin accounts will not be deleted.</span><span>This action cannot be undone.</span></div><div class="danger-text" data-delete-menu-error role="alert" hidden></div></div><div class="modal-foot"><button class="btn" type="button" data-close-modal>Cancel</button><button class="btn btn-danger" type="button" data-confirm-delete-menu>Delete Entire Menu</button></div>`, { label: "Delete entire menu", className: "delete-entire-menu-modal", dismissible: false });
+  const confirm = modalRoot.querySelector("[data-confirm-delete-menu]");
+  confirm.addEventListener("click", async () => {
+    const errorBox = modalRoot.querySelector("[data-delete-menu-error]");
+    confirm.disabled = true;
+    try {
+      await api("/admin/menu", { method: "DELETE", body: JSON.stringify({ confirmation: "DELETE ENTIRE MENU" }) });
+      state.filters.menu = { category: "All", search: "" };
+      closeModal();
+      toast("Entire menu deleted.");
+      await loadCurrentPage({ forceRefresh: true });
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.hidden = false;
+      confirm.disabled = false;
+    }
+  });
 }
 
 function renderMenuCard(record, currency) {
