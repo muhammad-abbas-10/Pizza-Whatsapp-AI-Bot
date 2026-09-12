@@ -19,6 +19,8 @@
     "test:customer-journey": "node scripts/test-customer-journey.js",
     "test:notification-claim": "node scripts/test-admin-status-architecture.js",
     "test:admin-auth-db": "node scripts/test-admin-auth-db.js",
+    "test:feedback": "node scripts/test-feedback-flow.js",
+    "test:feedback-db": "node scripts/test-feedback-db.js",
     "workflow:upgrade": "node scripts/upgrade-dashboard-status-workflow.js",
     "workflow:address-clarification": "node scripts/upgrade-address-clarification-workflow.js",
     "migrate:workflow-runtime": "node scripts/run-migration.js 012_n8n_workflow_runtime_hardening.sql",
@@ -29,6 +31,8 @@
     "migrate:admin-performance": "node scripts/run-migration.js 017_admin_read_performance.sql",
     "migrate:admin-auth": "node scripts/run-migration.js 018_admin_username_password_auth.sql",
     "migrate:address-clarification": "node scripts/run-migration.js 019_admin_address_clarification.sql",
+    "migrate:feedback": "node scripts/run-migration.js 020_post_delivery_feedback.sql",
+    "workflow:feedback": "node scripts/upgrade-feedback-workflow.js",
     "workflow:dashboard-status": "node scripts/upgrade-dashboard-status-workflow.js"
   },
   "keywords": [],

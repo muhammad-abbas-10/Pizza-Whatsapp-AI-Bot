@@ -1218,13 +1218,13 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
 
   app.get("/admin/feedback", async (req, res) => {
     const { limit, page, offset } = parsePagination(req.query);
-    const rating = req.query.rating ? Number(req.query.rating) : null;
-    if (rating !== null && ![1, 2, 3, 4, 5].includes(rating)) {
-      return res.status(400).json({ success: false, message: "Rating must be between 1 and 5" });
+    const rating = req.query.rating === undefined || req.query.rating === "" ? null : Number(req.query.rating);
+    if (rating !== null && ![0, 1, 2, 3, 4, 5].includes(rating)) {
+      return res.status(400).json({ success: false, message: "Rating must be between 0 and 5" });
     }
     try {
       const params = [];
-      const where = rating ? (params.push(rating), `WHERE f.rating = $1`) : "";
+      const where = rating !== null ? (params.push(rating), `WHERE f.rating = $1`) : "";
       params.push(limit, offset);
       const [list, summary] = await Promise.all([
         pool.query(`
@@ -1236,7 +1236,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
           LIMIT $${params.length - 1} OFFSET $${params.length}
         `, params),
         pool.query(`SELECT COUNT(*)::int AS total, COALESCE(AVG(rating), 0) AS average_rating,
-          COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE rating = 5) / NULLIF(COUNT(*), 0), 1), 0) AS five_star_percentage
+          COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE rating = 5) / NULLIF(COUNT(rating), 0), 1), 0) AS five_star_percentage
           FROM feedback`),
       ]);
       const total = list.rows.length ? Number(list.rows[0].total_count) : 0;
@@ -1252,9 +1252,20 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
     const { customer_id: customerIdValue, customer_phone: customerPhone, order_id: orderIdValue, rating: ratingValue, message } = req.body || {};
     const customerId = customerIdValue === undefined ? null : Number(customerIdValue);
     const orderId = orderIdValue === undefined || orderIdValue === null ? null : Number(orderIdValue);
-    const rating = Number(ratingValue);
-    if ((!customerId && !customerPhone) || ![1, 2, 3, 4, 5].includes(rating)) {
-      return res.status(400).json({ success: false, message: "Customer and a rating from 1 to 5 are required" });
+    const hasRating = ratingValue !== undefined && ratingValue !== null && String(ratingValue).trim() !== "";
+    const numericRating = hasRating ? Number(ratingValue) : null;
+    const rating = hasRating && Number.isFinite(numericRating)
+      ? Math.max(0, Math.min(5, Math.trunc(numericRating)))
+      : null;
+    const feedbackMessage = typeof message === "string" ? message.trim() : "";
+    if (!customerId && !customerPhone) {
+      return res.status(400).json({ success: false, message: "Customer is required" });
+    }
+    if (hasRating && !Number.isFinite(numericRating)) {
+      return res.status(400).json({ success: false, message: "Rating must be numeric" });
+    }
+    if (rating === null && !feedbackMessage) {
+      return res.status(400).json({ success: false, message: "A rating, feedback message, or both are required" });
     }
     if (orderId !== null && (!Number.isInteger(orderId) || orderId <= 0)) {
       return res.status(400).json({ success: false, message: "Invalid order id" });
@@ -1277,8 +1288,13 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
       }
       const result = await pool.query(`
         INSERT INTO feedback (customer_id, order_id, rating, message)
-        VALUES ($1, $2, $3, $4) RETURNING *
-      `, [resolvedCustomerId, orderId, rating, message?.trim() || null]);
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (order_id) WHERE order_id IS NOT NULL
+        DO UPDATE SET
+          rating = COALESCE(EXCLUDED.rating, feedback.rating),
+          message = COALESCE(EXCLUDED.message, feedback.message)
+        RETURNING *
+      `, [resolvedCustomerId, orderId, rating, feedbackMessage || null]);
       return res.status(201).json({ success: true, feedback: result.rows[0] });
     } catch (error) {
       console.error("Create feedback error:", error);

@@ -1,94 +1,25 @@
 {
-  "name": "pizza-bar-whatsapp-ai-bot",
+  "name": "final-pizza",
   "nodes": [
     {
       "parameters": {
-        "updates": [
-          "messages"
-        ],
-        "options": {}
+        "jsCode": "const root = ($json && typeof $json === 'object') ? $json : {};\nconst payload = (root.body && typeof root.body === 'object') ? root.body : root;\nconst data = (payload.data && typeof payload.data === 'object') ? payload.data : {};\nconst key = (data.key && typeof data.key === 'object') ? data.key : {};\n\nconst unwrapMessage = (value, depth = 0) => {\n  if (!value || typeof value !== 'object' || depth > 5) return {};\n  if (value.ephemeralMessage?.message) return unwrapMessage(value.ephemeralMessage.message, depth + 1);\n  if (value.viewOnceMessage?.message) return unwrapMessage(value.viewOnceMessage.message, depth + 1);\n  if (value.viewOnceMessageV2?.message) return unwrapMessage(value.viewOnceMessageV2.message, depth + 1);\n  if (value.documentWithCaptionMessage?.message) return unwrapMessage(value.documentWithCaptionMessage.message, depth + 1);\n  return value;\n};\n\nconst messageObject = unwrapMessage(data.message);\nconst textCandidates = [\n  messageObject.conversation,\n  messageObject.extendedTextMessage?.text,\n];\nconst message = String(textCandidates.find((value) => typeof value === 'string' && value.trim()) || '').trim();\n\nconst remoteJid = String(key.remoteJid || '');\nconst remoteJidAlt = String(key.remoteJidAlt || '');\nconst directJid = [remoteJidAlt, remoteJid].find((value) => /@s\\.whatsapp\\.net$/i.test(value))\n  || remoteJidAlt\n  || remoteJid;\nconst phone = String(directJid.split('@')[0] || '').replace(/\\D/g, '');\nconst event = String(payload.event || '').trim().toLowerCase();\nconst fromMe = key.fromMe === true || key.fromMe === 'true';\nconst isGroup = /@g\\.us$/i.test(remoteJid);\nconst isBroadcast = /@broadcast$/i.test(remoteJid) || remoteJid === 'status@broadcast';\nconst messageId = String(key.id || '').trim();\nconst sourceMessageType = String(data.messageType || '').trim();\nconst instance = String(payload.instance || data.instance || 'Assistance').trim();\nconst pushName = String(data.pushName || '').trim();\nconst timestamp = String(data.messageTimestamp || payload.date_time || '').trim();\n\nconst isSupportedText = Boolean(\n  event === 'messages.upsert'\n  && !fromMe\n  && !isGroup\n  && !isBroadcast\n  && phone\n  && messageId\n  && message\n);\n\nlet rejectionReason = '';\nif (event !== 'messages.upsert') rejectionReason = 'unsupported_event';\nelse if (fromMe) rejectionReason = 'outgoing_message';\nelse if (isGroup || isBroadcast) rejectionReason = 'non_customer_chat';\nelse if (!phone) rejectionReason = 'missing_sender';\nelse if (!messageId) rejectionReason = 'missing_message_id';\nelse if (!message) rejectionReason = 'unsupported_or_empty_message';\n\nreturn [{\n  json: {\n    phone,\n    message,\n    messageId,\n    instance,\n    pushName,\n    messageType: isSupportedText ? 'text' : sourceMessageType,\n    customer_phone: phone,\n    customer_name: pushName,\n    message_id: messageId,\n    message_text: message,\n    message_type: isSupportedText ? 'text' : sourceMessageType,\n    message_timestamp: timestamp,\n    source_message_type: sourceMessageType,\n    event,\n    remote_jid: remoteJid,\n    from_me: fromMe,\n    is_supported_text: isSupportedText,\n    rejection_reason: rejectionReason,\n  },\n}];"
       },
-      "type": "n8n-nodes-base.whatsAppTrigger",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        -1264,
+        -1056,
         1040
       ],
-      "id": "d01e98b8-c930-424d-b392-8241bf1a35bb",
-      "name": "WhatsApp Trigger",
-      "webhookId": "ec5004de-7569-4c9b-8c00-65f777a69200",
+      "id": "327f0708-af35-4b25-9bd1-ceca77f46bed",
+      "name": "Normalize Incoming Message",
       "notesInFlow": true,
-      "credentials": {
-        "whatsAppTriggerApi": {
-          "id": "BQv5iHmHhNRrlUT6",
-          "name": "WhatsApp OAuth account"
-        }
-      },
-      "notes": "Security: n8n 2.34.5 WhatsApp Trigger performs native HMAC-SHA256 verification over req.rawBody. Configure the Meta App Client Secret in the WhatsApp Trigger credential; unsigned/invalid webhooks are rejected before this workflow runs."
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "a42d67d0-c80c-4983-8ec9-4c127176c17c",
-              "name": "customer_name",
-              "value": "={{ $json.contacts?.[0]?.profile?.name || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "d0fe8702-7b22-4249-9656-2fa6464e8609",
-              "name": "customer_phone",
-              "value": "={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}",
-              "type": "string"
-            },
-            {
-              "id": "67d8220a-d140-4e7b-ae27-55d6c0a56dc5",
-              "name": "message_id",
-              "value": "={{ $json.messages?.[0]?.id || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "5866fd63-b24d-4261-b6be-caabbd3bc938",
-              "name": "message_text",
-              "value": "={{ $json.messages?.[0]?.text?.body || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "49a5cc19-2ad0-4066-943a-cc086cf0d5cc",
-              "name": "message_type",
-              "value": "={{ $json.messages?.[0]?.type || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "357d1852-01a2-4b6c-9411-69b7337ed3dc",
-              "name": "message_timestamp",
-              "value": "={{ $json.messages?.[0]?.timestamp || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "a0903647-b370-46dc-8c68-d626c577019b",
-              "name": "is_supported_text",
-              "value": "={{ Boolean($json.messages?.[0]?.id && $json.messages?.[0]?.from && $json.messages?.[0]?.type === 'text' && $json.messages?.[0]?.text?.body) }}",
-              "type": "boolean"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
-      "position": [
-        -896,
-        1040
-      ],
-      "id": "2c07cca0-c254-4c85-b655-3448e47d08cc",
-      "name": "Normalize Incoming Message"
+      "notes": "Normalizes Evolution API v2.3.7 messages.upsert payloads. Rejects outgoing, group, broadcast, non-message, malformed, and non-text events before they reach the assistant."
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH customer AS (\n    INSERT INTO customers (\n        whatsapp_phone,\n        name,\n        updated_at\n    )\n    VALUES ($1, NULLIF(BTRIM($2::text), ''), NOW())\n    ON CONFLICT (whatsapp_phone)\n    DO UPDATE SET\n        name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name),\n        updated_at = NOW()\n    RETURNING id, whatsapp_phone, name\n),\nsession AS (\n    INSERT INTO conversation_sessions (customer_id)\n    SELECT id FROM customer\n    ON CONFLICT (customer_id)\n    DO UPDATE SET updated_at = NOW()\n    RETURNING *\n)\nSELECT\n    customer.id AS customer_id,\n    customer.whatsapp_phone,\n    customer.name,\n    session.id AS session_id,\n    session.cart,\n    session.order_type,\n    session.delivery_address,\n    session.awaiting_confirmation,\n    session.awaiting_human,\n    session.delivery_name,\n    session.recent_messages,\n    session.order_status,\n    session.active_order_id,\n    active_order.status AS active_order_status,\n    session.pending_items\nFROM customer\nJOIN session ON session.customer_id = customer.id\nLEFT JOIN orders active_order ON active_order.id = session.active_order_id;",
+        "query": "WITH customer AS (\n    INSERT INTO customers (\n        whatsapp_phone,\n        name,\n        updated_at\n    )\n    VALUES ($1, NULLIF(BTRIM($2::text), ''), NOW())\n    ON CONFLICT (whatsapp_phone)\n    DO UPDATE SET\n        name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name),\n        updated_at = NOW()\n    RETURNING id, whatsapp_phone, name, preferred_language\n),\nsession AS (\n    INSERT INTO conversation_sessions (customer_id)\n    SELECT id FROM customer\n    ON CONFLICT (customer_id)\n    DO UPDATE SET updated_at = NOW()\n    RETURNING *\n)\nSELECT\n    customer.id AS customer_id,\n    customer.whatsapp_phone,\n    customer.name,\n    customer.preferred_language,\n    session.id AS session_id,\n    session.cart,\n    session.order_type,\n    session.delivery_address,\n    session.awaiting_confirmation,\n    session.awaiting_human,\n    session.delivery_name,\n    session.recent_messages,\n    session.order_status,\n    session.active_order_id,\n    session.awaiting_feedback_order_id,\n    active_order.status AS active_order_status,\n    session.pending_items\nFROM customer\nJOIN session ON session.customer_id = customer.id\nLEFT JOIN orders active_order ON active_order.id = session.active_order_id;",
         "options": {
           "queryReplacement": "={{ [   $('Normalize Incoming Message').item.json.customer_phone,   $('Normalize Incoming Message').item.json.customer_name ] }}"
         }
@@ -99,7 +30,7 @@
         848,
         896
       ],
-      "id": "fc794864-b1d3-4fb8-9553-85a16218703e",
+      "id": "68a6f2bb-4545-4381-9c7c-16c44a743c6c",
       "name": "Upsert Customer and Session",
       "credentials": {
         "postgres": {
@@ -122,7 +53,7 @@
         1888,
         1584
       ],
-      "id": "f6902699-21c3-45cf-b0be-c3fb711178b8",
+      "id": "b04ab2e4-dae1-4351-83ae-67149c57a94a",
       "name": "Load Active Menu",
       "credentials": {
         "postgres": {
@@ -143,7 +74,7 @@
         912,
         768
       ],
-      "id": "1377efd2-3acf-47d8-abe1-fae041818936",
+      "id": "64697908-0d80-43d6-a4fd-4adbc69e54f2",
       "name": "Get Restaurant Settings",
       "credentials": {
         "postgres": {
@@ -168,7 +99,7 @@
         1712,
         624
       ],
-      "id": "e5991ec6-3705-4058-a92e-ffafe238b6e3",
+      "id": "30fd0af3-4e7d-48a2-bf3f-e8b10fa90a71",
       "name": "Update Cart",
       "credentials": {
         "postgres": {
@@ -191,7 +122,7 @@
         3296,
         640
       ],
-      "id": "acd4ad2c-698a-43ff-9da4-ef7dad8dbe96",
+      "id": "48c29d3a-b665-4b0d-bf8d-79fd1832b3bf",
       "name": "Set Order Type",
       "credentials": {
         "postgres": {
@@ -214,7 +145,7 @@
         2080,
         624
       ],
-      "id": "0324eb62-3d95-4d8d-a47a-b34a9a5af0fd",
+      "id": "95f00139-bfd3-4bf4-a87a-ef4eda6d7c0b",
       "name": "Set Delivery Info",
       "credentials": {
         "postgres": {
@@ -237,7 +168,7 @@
         2256,
         640
       ],
-      "id": "4dea7f76-a2b3-4156-80dc-4c6e75fb3feb",
+      "id": "86bdc32e-6807-46db-89f9-da521445a8fd",
       "name": "Place Order",
       "credentials": {
         "postgres": {
@@ -260,7 +191,7 @@
         2416,
         640
       ],
-      "id": "04a2173f-7fd3-4fc4-a2c7-0ac238684018",
+      "id": "e24db8df-5417-4333-857b-f73dda74fd84",
       "name": "Cancel Order",
       "credentials": {
         "postgres": {
@@ -283,7 +214,7 @@
         3120,
         640
       ],
-      "id": "aeead4e8-d3cb-44d0-8c8c-62509678eed5",
+      "id": "547a6b1f-001c-4186-80e7-8a267caa2e71",
       "name": "Escalate To Human",
       "credentials": {
         "postgres": {
@@ -294,57 +225,71 @@
     },
     {
       "parameters": {
-        "operation": "send",
-        "phoneNumberId": "=1328729090313034",
-        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
-        "messageType": "image",
-        "mediaLink": "https://pizza-whatsapp-ai-bot.vercel.app/images/1",
-        "additionalFields": {}
+        "toolDescription": "Send menu image page 1 to the current WhatsApp customer. Use this only when the customer asks to see the menu image.",
+        "method": "POST",
+        "url": "={{ 'https://cst-evolution-api-109416ce-2a4cac9f.cloud-station.app/message/sendMedia/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $('Normalize Incoming Message').item.json.customer_phone, mediatype: 'image', mimetype: 'image/jpeg', media: 'https://pizza-whatsapp-ai-bot.vercel.app/images/1', fileName: 'menu-1.jpg' } }}",
+        "options": {}
       },
-      "type": "n8n-nodes-base.whatsAppTool",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
       "position": [
         3488,
         640
       ],
-      "id": "3a2cd61e-c4d2-499d-b4de-525e856ddedf",
+      "id": "5eba04d0-fb8b-4d55-9856-f76cedf42101",
       "name": "Send Menu Image 1",
-      "webhookId": "698dbc04-cf65-4ffb-a183-59e65c77c6d5",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notesInFlow": true,
       "credentials": {
-        "whatsAppApi": {
-          "id": "OSqLF91lj6xvuHQt",
-          "name": "WhatsApp account"
+        "httpHeaderAuth": {
+          "id": "OBdeJEp1HcymvfQw",
+          "name": "Header Auth account"
         }
-      }
+      },
+      "notes": "Evolution API v2.3.7 POST /message/sendMedia/{instance}."
     },
     {
       "parameters": {
-        "operation": "send",
-        "phoneNumberId": "=1328729090313034",
-        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
-        "messageType": "image",
-        "mediaLink": "https://pizza-whatsapp-ai-bot.vercel.app/images/2",
-        "additionalFields": {}
+        "toolDescription": "Send menu image page 2 to the current WhatsApp customer. Use this only when the customer asks to see the menu image.",
+        "method": "POST",
+        "url": "={{ 'https://cst-evolution-api-109416ce-2a4cac9f.cloud-station.app/message/sendMedia/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $('Normalize Incoming Message').item.json.customer_phone, mediatype: 'image', mimetype: 'image/jpeg', media: 'https://pizza-whatsapp-ai-bot.vercel.app/images/2', fileName: 'menu-2.jpg' } }}",
+        "options": {}
       },
-      "type": "n8n-nodes-base.whatsAppTool",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
       "position": [
         3712,
         640
       ],
-      "id": "3e04ffbc-0c9d-4e8f-bcf8-d6f77e21f592",
+      "id": "4c32d535-fe2e-46f9-8704-fd5ba53a2ec6",
       "name": "Send Menu Image 2",
-      "webhookId": "786532ff-f2fb-4f33-8ac6-3d442d524104",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notesInFlow": true,
       "credentials": {
-        "whatsAppApi": {
-          "id": "OSqLF91lj6xvuHQt",
-          "name": "WhatsApp account"
+        "httpHeaderAuth": {
+          "id": "OBdeJEp1HcymvfQw",
+          "name": "Header Auth account"
         }
-      }
+      },
+      "notes": "Evolution API v2.3.7 POST /message/sendMedia/{instance}."
     },
     {
       "parameters": {
-        "modelName": "models/gemini-3.1-flash-lite",
+        "modelName": "models/gemini-3.5-flash-lite",
         "options": {
           "maxOutputTokens": 1024,
           "temperature": 0.1
@@ -353,10 +298,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
       "position": [
-        704,
+        816,
         432
       ],
-      "id": "af5f2116-84d3-4881-bbdd-c55c24e8825b",
+      "id": "edd8c589-015c-4e6e-9a1d-bb1bc577fed1",
       "name": "Google Gemini Chat Model",
       "credentials": {
         "googlePalmApi": {
@@ -381,7 +326,7 @@
         1520,
         192
       ],
-      "id": "eff65b46-8423-48b4-9a6a-00754c91611e",
+      "id": "c777e66f-8955-46a9-a722-f89225f5d99d",
       "name": "Pizza Ordering Agent",
       "continueOnFail": true
     },
@@ -402,40 +347,47 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1408,
-        768
+        1472,
+        784
       ],
-      "id": "6e4e0b7d-b972-4a37-baa8-e0823f08219f",
+      "id": "a03f6dd5-b689-46b1-8ce4-d71c35297a3a",
       "name": "Reply Text"
     },
     {
       "parameters": {
-        "operation": "send",
-        "phoneNumberId": "=1328729090313034",
-        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
-        "textBody": "={{ $json.reply_text }}",
-        "additionalFields": {}
+        "method": "POST",
+        "url": "={{ 'https://cst-evolution-api-109416ce-2a4cac9f.cloud-station.app/message/sendText/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $('Normalize Incoming Message').item.json.customer_phone, text: $json.reply_text } }}",
+        "options": {}
       },
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
       "position": [
-        1696,
+        1872,
         816
       ],
-      "id": "c07d3bad-a88b-4189-968a-2af10002b545",
-      "name": "Send message",
-      "webhookId": "29fe3281-5477-4f75-96e5-6d2c9a3b945d",
+      "id": "876ad281-2021-4f60-ba10-694970f384b8",
+      "name": "Evolution API Send Message",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notesInFlow": true,
       "credentials": {
-        "whatsAppApi": {
-          "id": "OSqLF91lj6xvuHQt",
-          "name": "WhatsApp account"
+        "httpHeaderAuth": {
+          "id": "OBdeJEp1HcymvfQw",
+          "name": "Header Auth account"
         }
-      }
+      },
+      "notes": "Evolution API v2.3.7 POST /message/sendText/{instance}. A failed send stops finalization so the message is not falsely recorded as delivered."
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH appended AS (\n  SELECT COALESCE(recent_messages, '[]'::jsonb)\n         || jsonb_build_array(\n              jsonb_build_object('role', 'customer', 'text', $2::text),\n              jsonb_build_object('role', 'bot', 'text', $3::text)\n            ) AS msgs\n  FROM conversation_sessions\n  WHERE customer_id = $1::bigint\n  FOR UPDATE\n),\ntrimmed AS (\n  SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb) AS msgs\n  FROM appended,\n       LATERAL jsonb_array_elements(appended.msgs) WITH ORDINALITY AS t(elem, idx)\n  WHERE idx > (SELECT jsonb_array_length(msgs) FROM appended) - 12\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET recent_messages = (SELECT msgs FROM trimmed),\n      updated_at = NOW()\n  WHERE cs.customer_id = $1::bigint\n  RETURNING cs.id\n),\nbuffer_finalized AS (\n  UPDATE message_buffer mb\n  SET processed = TRUE,\n      processed_at = NOW()\n  WHERE mb.customer_phone = $5::text\n    AND mb.batch_key = $4::text\n    AND mb.processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING mb.message_id\n),\nmessages_recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT bf.message_id, $5::text, NOW()\n  FROM buffer_finalized bf\n  WHERE bf.message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING\n  RETURNING message_id\n)\nSELECT\n  EXISTS (SELECT 1 FROM session_updated) AS session_updated,\n  (SELECT COUNT(*)::int FROM buffer_finalized) AS buffered_messages_finalized,\n  (SELECT COUNT(*)::int FROM messages_recorded) AS message_ids_recorded;",
+        "query": "WITH appended AS (\n  SELECT COALESCE(recent_messages, '[]'::jsonb)\n         || jsonb_build_array(\n              jsonb_build_object('role', 'customer', 'text', $2::text),\n              jsonb_build_object('role', 'bot', 'text', $3::text)\n            ) AS msgs\n  FROM conversation_sessions\n  WHERE customer_id = $1::bigint\n  FOR UPDATE\n),\ntrimmed AS (\n  SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb) AS msgs\n  FROM appended,\n       LATERAL jsonb_array_elements(appended.msgs) WITH ORDINALITY AS t(elem, idx)\n  WHERE idx > (SELECT jsonb_array_length(msgs) FROM appended) - 12\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET recent_messages = (SELECT msgs FROM trimmed),\n      awaiting_feedback_order_id = CASE\n        WHEN EXISTS (\n          SELECT 1 FROM feedback f\n          WHERE f.order_id = cs.awaiting_feedback_order_id\n            AND f.customer_id = cs.customer_id\n        ) THEN NULL\n        ELSE cs.awaiting_feedback_order_id\n      END,\n      updated_at = NOW()\n  WHERE cs.customer_id = $1::bigint\n  RETURNING cs.id\n),\nbuffer_finalized AS (\n  UPDATE message_buffer mb\n  SET processed = TRUE,\n      processed_at = NOW()\n  WHERE mb.customer_phone = $5::text\n    AND mb.batch_key = $4::text\n    AND mb.processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING mb.message_id\n),\nmessages_recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT bf.message_id, $5::text, NOW()\n  FROM buffer_finalized bf\n  WHERE bf.message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING\n  RETURNING message_id\n)\nSELECT\n  EXISTS (SELECT 1 FROM session_updated) AS session_updated,\n  (SELECT COUNT(*)::int FROM buffer_finalized) AS buffered_messages_finalized,\n  (SELECT COUNT(*)::int FROM messages_recorded) AS message_ids_recorded;",
         "options": {
           "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Claim Latest Customer Turn').item.json.combined_text || '', $json.reply_text || $('Claim Latest Customer Turn').item.json.stored_reply_text || '', $('Claim Latest Customer Turn').item.json.batch_key, $('Normalize Incoming Message').item.json.customer_phone ] }}"
         }
@@ -443,10 +395,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2240,
-        944
+        2832,
+        1056
       ],
-      "id": "e27dffb9-3156-4175-a0b2-c0b295c8f6f0",
+      "id": "0ac58c3a-fb8a-401e-af80-30022e3b120a",
       "name": "Finalize Customer Turn",
       "credentials": {
         "postgres": {
@@ -469,7 +421,7 @@
         -96,
         1120
       ],
-      "id": "f2e1d746-449d-4dc9-b298-ee5ddd88a632",
+      "id": "69eb89b2-6352-4bc2-badf-689b3388c6f7",
       "name": "Insert Message to Buffer",
       "credentials": {
         "postgres": {
@@ -488,7 +440,7 @@
         240,
         1072
       ],
-      "id": "d69bf214-8487-4df2-9e50-eb28aaf8c93a",
+      "id": "8524b50f-f793-4574-8ccb-4d246b497598",
       "name": "Debounce Customer Messages",
       "webhookId": "45527a8b-bd1a-43a0-972b-7b1b9476c476"
     },
@@ -508,7 +460,7 @@
         1904,
         608
       ],
-      "id": "1de7c62a-77f5-4e0a-b8de-bcf40b0e0293",
+      "id": "a0dee8b6-6bc4-4b51-9d8b-e9cd8a12979a",
       "name": "Request Cancellation Approval",
       "credentials": {
         "postgres": {
@@ -531,7 +483,7 @@
         432,
         1072
       ],
-      "id": "1c936d7b-629a-4aed-9e87-f67e30915e32",
+      "id": "57421ccc-7888-4792-8ced-b0d012b5a173",
       "name": "Claim Latest Customer Turn",
       "credentials": {
         "postgres": {
@@ -571,7 +523,7 @@
         640,
         1184
       ],
-      "id": "a2a0e88b-c24b-4281-8cf5-a946e630aa1a",
+      "id": "85388dc4-349a-4515-b19a-4e11fc9a0618",
       "name": "Customer Turn Ready"
     },
     {
@@ -605,7 +557,7 @@
         112,
         1072
       ],
-      "id": "07216330-85bd-4840-ac2a-6532f676d241",
+      "id": "71cc9efa-c865-4592-9cc7-28787d79392b",
       "name": "Customer Message Accepted"
     },
     {
@@ -639,7 +591,7 @@
         848,
         1328
       ],
-      "id": "6ce19163-761c-4819-8239-dc3fed6ef1e9",
+      "id": "7c9a080f-caf2-425c-9532-c6fa0754f63e",
       "name": "Customer Turn Busy"
     },
     {
@@ -652,7 +604,7 @@
         1040,
         1520
       ],
-      "id": "afde8dac-0dd7-49fb-9ffb-9d80c32e45e2",
+      "id": "68a74d38-ffd6-4f3b-b08b-8c6dd53ad3bd",
       "name": "Wait For Active Customer Turn",
       "webhookId": "68ed6f0c-bc8c-433f-9405-66dc994a56f8"
     },
@@ -676,7 +628,7 @@
         1280,
         912
       ],
-      "id": "06c83f07-9c2c-4ba3-8dbf-995600a8b231",
+      "id": "9ae0ce8c-9caa-442b-893e-08dd7628e656",
       "name": "Restore Stored Reply"
     },
     {
@@ -690,10 +642,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2000,
+        2304,
         832
       ],
-      "id": "59cbdc01-414f-408c-b03a-6a7da26e6b5f",
+      "id": "a59ab51d-5d2c-4256-aecd-7b158185f471",
       "name": "Record Reply Sent",
       "credentials": {
         "postgres": {
@@ -718,7 +670,7 @@
         2592,
         640
       ],
-      "id": "c66531da-8a05-47d3-a99f-4f8c30706f75",
+      "id": "fd30966b-b347-41bf-81b9-dfffa0d8fb27",
       "name": "Update Placed Order Delivery Info",
       "credentials": {
         "postgres": {
@@ -726,63 +678,6 @@
           "name": "Postgres account"
         }
       }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "78e83b64-0d25-4f56-a45d-926ad02b9575",
-              "leftValue": "={{ Boolean(!$json.error && $json.output && $json.cancellation_reply_safe === true && (!$json.cancellation_success_claimed || ($json.request_created === true && $json.dashboard_request_visible === true && Boolean($json.request_id)))) }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        1376,
-        768
-      ],
-      "id": "44d34a8c-37e0-4a20-99ce-316bf69771e1",
-      "name": "Agent Output Valid"
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "57ef067d-bbe8-49e9-8080-eed896a196e0",
-              "name": "reply_text",
-              "value": "Sorry, I’m having trouble processing that right now. Please try again in a moment.",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
-      "position": [
-        1648,
-        1120
-      ],
-      "id": "cf7cf67f-627b-4bd1-bfff-ed57b53027b5",
-      "name": "Agent Fallback Reply"
     },
     {
       "parameters": {
@@ -815,12 +710,12 @@
         1056,
         928
       ],
-      "id": "0959ea3a-b6bb-4cdf-8dee-e1a23dd5c9db",
+      "id": "0bb730ed-984b-473b-a27d-3e45146c6243",
       "name": "Reply Already Sent For This Batch"
     },
     {
       "parameters": {
-        "jsCode": "const claim = $('Claim Latest Customer Turn').item.json;\nconst text = String(claim.combined_text || '').trim().toLowerCase();\nconst latest = String(claim.latest_text || text).trim().toLowerCase();\nconst clean = (value) => value.replace(/[!?.,]+/g, '').replace(/\\s+/g, ' ').trim();\nconst compact = clean(text);\nconst latestCompact = clean(latest);\nconst isGreeting = (value) => /^(hi|hii+|hy|hyy+|hello|hey|salam|salaam|assalam(?:u alaikum)?|aoa)$/.test(value);\nconst isHelp = (value) => /^(help|how to order|what can you do|options)$/.test(value);\n// If old failed messages were reclaimed, answer the newest simple message\n// instead of forcing the stale backlog through Gemini. A normal rapid burst\n// (within 15 seconds) is still interpreted together.\nconst staleBacklog = Number(claim.batch_span_seconds || 0) > 15;\nconst greeting = isGreeting(compact) || (staleBacklog && isGreeting(latestCompact));\nconst help = isHelp(compact) || (staleBacklog && isHelp(latestCompact));\nlet reply_text = '';\nif (greeting) reply_text = 'Hi! Welcome to Pizza Bar 🍕 You can ask for the menu or deals, add items, choose delivery or pickup, place an order, or cancel an order.';\nif (help) reply_text = 'You can say: “show pizza deals”, “add a large Chicken Fajita”, “delivery”, “confirm my order”, or “cancel order”. 🍕';\nreturn $input.all().map((item) => ({ json: { ...item.json, fast_reply: greeting || help, reply_text } }));"
+        "jsCode": "const claim = $('Claim Latest Customer Turn').item.json;\nconst text = String(claim.combined_text || '').trim().toLowerCase();\nconst latest = String(claim.latest_text || text).trim().toLowerCase();\nconst clean = (value) => value.replace(/[!?.,]+/g, '').replace(/\\s+/g, ' ').trim();\nconst compact = clean(text);\nconst latestCompact = clean(latest);\nconst isGreeting = (value) => /^(hi|hii+|hy|hyy+|hello|hey|salam|salaam|assalam(?:u alaikum)?|aoa)$/.test(value);\nconst isHelp = (value) => /^(help|how to order|what can you do|options)$/.test(value);\n// If old failed messages were reclaimed, answer the newest simple message\n// instead of forcing the stale backlog through Gemini. A normal rapid burst\n// (within 15 seconds) is still interpreted together.\nconst staleBacklog = Number(claim.batch_span_seconds || 0) > 15;\nconst greeting = isGreeting(compact) || (staleBacklog && isGreeting(latestCompact));\nconst help = isHelp(compact) || (staleBacklog && isHelp(latestCompact));\nlet reply_text = '';\nif (greeting) reply_text = 'Hi! Welcome to Pizza Bar 🍕 What would you like to order today?';\nif (help) reply_text = 'You can say: “show pizza deals”, “add a large Chicken Fajita”, “delivery”, “confirm my order”, or “cancel order”. 🍕';\nreturn $input.all().map((item) => ({ json: { ...item.json, fast_reply: greeting || help, reply_text } }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -828,7 +723,7 @@
         1120,
         1200
       ],
-      "id": "6a543e33-99f2-42a6-9a60-6ec4b07f5056",
+      "id": "4ca61b4f-66f1-49da-8513-5efce3ccf0aa",
       "name": "Route Simple Messages"
     },
     {
@@ -862,7 +757,7 @@
         1968,
         1184
       ],
-      "id": "ee1abee6-ba57-48ff-91c3-8a900309b15d",
+      "id": "add42b38-21ce-44c4-8b9a-552a7b9618e5",
       "name": "Use Simple Reply"
     },
     {
@@ -881,7 +776,7 @@
         2960,
         640
       ],
-      "id": "375c06a8-1730-41f5-ac2c-79d447822fd9",
+      "id": "82191966-25f0-4fe4-897b-71d933e912f6",
       "name": "Menu Lookup",
       "credentials": {
         "postgres": {
@@ -897,7 +792,7 @@
         "operation": "executeQuery",
         "query": "WITH locked AS (\n  SELECT id, cart\n  FROM conversation_sessions\n  WHERE customer_id = $1::bigint\n  FOR UPDATE\n), input AS (\n  SELECT $2::bigint AS menu_item_id, $3::bigint AS variant_id,\n         LOWER($4::text) AS action,\n         GREATEST(0, LEAST(100, $5::int)) AS requested_quantity,\n         $6::bigint AS replace_variant_id\n), product AS (\n  SELECT mi.id AS menu_item_id, mi.name AS item_name, mi.category,\n         mv.id AS variant_id, mv.variant_label AS size, mv.price\n  FROM input i\n  JOIN restaurant_menu_items mi ON mi.id = i.menu_item_id AND mi.active = TRUE\n  JOIN restaurant_menu_variants mv ON mv.id = i.variant_id\n    AND mv.menu_item_id = mi.id AND mv.active = TRUE\n  WHERE i.action IN ('add', 'set', 'remove')\n), old_items AS (\n  SELECT value AS item, ordinality AS ordinal\n  FROM locked l\n  CROSS JOIN LATERAL jsonb_array_elements(\n    CASE WHEN jsonb_typeof(l.cart->'items') = 'array' THEN l.cart->'items' ELSE '[]'::jsonb END\n  ) WITH ORDINALITY\n), current AS (\n  SELECT COALESCE(SUM((oi.item->>'quantity')::int), 0)::int AS quantity\n  FROM old_items oi, input i\n  WHERE oi.item->>'record_type' = 'menu_item'\n    AND oi.item->>'menu_item_id' = i.menu_item_id::text\n    AND oi.item->>'variant_id' = i.variant_id::text\n    AND COALESCE(oi.item->>'quantity', '') ~ '^[0-9]{1,3}$'\n), desired AS (\n  SELECT CASE i.action\n    WHEN 'remove' THEN 0\n    WHEN 'set' THEN i.requested_quantity\n    ELSE LEAST(100, c.quantity + GREATEST(1, i.requested_quantity))\n  END AS quantity\n  FROM input i CROSS JOIN current c\n), kept AS (\n  SELECT oi.item, oi.ordinal::numeric AS sort_key\n  FROM old_items oi, input i\n  WHERE NOT (\n    oi.item->>'record_type' = 'menu_item'\n    AND oi.item->>'menu_item_id' = i.menu_item_id::text\n    AND (\n      oi.item->>'variant_id' = i.variant_id::text\n      OR (i.replace_variant_id IS NOT NULL AND oi.item->>'variant_id' = i.replace_variant_id::text)\n    )\n  )\n), replacement AS (\n  SELECT jsonb_build_object(\n    'record_type', 'menu_item', 'menu_item_id', p.menu_item_id,\n    'variant_id', p.variant_id, 'deal_id', NULL,\n    'item_name', p.item_name, 'category', p.category, 'size', p.size,\n    'quantity', d.quantity, 'price', p.price,\n    'selected_components', '[]'::jsonb,\n    'line_total', p.price * d.quantity\n  ) AS item, 1000000::numeric AS sort_key\n  FROM product p CROSS JOIN desired d\n  WHERE d.quantity > 0\n), final_cart AS (\n  SELECT jsonb_build_object(\n    'items', COALESCE(jsonb_agg(item ORDER BY sort_key), '[]'::jsonb)\n  ) AS cart\n  FROM (SELECT * FROM kept UNION ALL SELECT * FROM replacement) lines\n), updated AS (\n  UPDATE conversation_sessions cs\n  SET cart = fc.cart, order_status = 'draft', updated_at = NOW()\n  FROM locked l CROSS JOIN final_cart fc\n  WHERE cs.id = l.id AND EXISTS (SELECT 1 FROM product)\n  RETURNING cs.cart\n)\nSELECT EXISTS (SELECT 1 FROM product) AS updated,\n       CASE WHEN EXISTS (SELECT 1 FROM product) THEN NULL ELSE 'invalid_or_inactive_item_variant' END AS error,\n       (SELECT cart FROM updated) AS cart;",
         "options": {
-          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $fromAI('menu_item_id', 'Exact menu item id returned by RELEVANT_MENU or Menu Lookup', 'number'), $fromAI('variant_id', 'Exact variant id returned by RELEVANT_MENU or Menu Lookup', 'number'), $fromAI('action', 'add, set, or remove', 'string'), $fromAI('quantity', 'For add: amount to add. For set: desired final quantity. Use 0 for remove.', 'number', 1), $fromAI('replace_variant_id', 'Previous variant id only when changing size; otherwise null', 'number', null) ] }}"
+          "queryReplacement": "=={{ [ $('Upsert Customer and Session').item.json.customer_id, $fromAI('menu_item_id', 'Exact menu item id returned by RELEVANT_MENU or Menu Lookup', 'number'), $fromAI('variant_id', 'Exact variant id returned by RELEVANT_MENU or Menu Lookup', 'number'), $fromAI('action', 'add, set, or remove', 'string'), $fromAI('quantity', 'For add: amount to add. For set: desired final quantity. Use 0 for remove.', 'number', 1), $fromAI('replace_variant_id', 'Previous variant id only when changing size; otherwise always use 0, never null', 'number', 0) ] }}"
         }
       },
       "type": "n8n-nodes-base.postgresTool",
@@ -906,7 +801,7 @@
         2800,
         640
       ],
-      "id": "40284727-9879-4b99-9f34-66b24f616f51",
+      "id": "d98301b5-747a-4bf1-8b44-dd5da0da5a36",
       "name": "Update Menu Item Cart",
       "credentials": {
         "postgres": {
@@ -946,30 +841,36 @@
         560,
         816
       ],
-      "id": "9d67d13c-07a6-40d1-b9d6-b4bb503c6072",
+      "id": "65a315be-8471-49bf-8b06-87e3bdc421c1",
       "name": "Recover Reply Before Routing"
     },
     {
       "parameters": {
-        "operation": "send",
-        "phoneNumberId": "=1328729090313034",
-        "recipientPhoneNumber": "={{ $('Normalize Incoming Message').item.json.customer_phone }}",
-        "textBody": "={{ $('Route Simple Messages').item.json.reply_text }}",
-        "additionalFields": {}
+        "method": "POST",
+        "url": "={{ 'https://cst-evolution-api-109416ce-2a4cac9f.cloud-station.app/message/sendText/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $('Normalize Incoming Message').item.json.customer_phone, text: $('Route Simple Messages').item.json.reply_text } }}",
+        "options": {}
       },
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
       "position": [
         2448,
         1248
       ],
-      "id": "18500d13-24a5-4474-a4f3-13cd5bd35891",
-      "name": "Send Simple Reply",
-      "webhookId": "f05962c8-ab4a-4ddd-81c5-9c245e38da05",
+      "id": "0f3d9ba0-b116-4564-b70a-8dadad1356cb",
+      "name": "Evolution API Send Simple Reply",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notesInFlow": true,
       "credentials": {
-        "whatsAppApi": {
-          "id": "OSqLF91lj6xvuHQt",
-          "name": "WhatsApp account"
+        "httpHeaderAuth": {
+          "id": "OBdeJEp1HcymvfQw",
+          "name": "Header Auth account"
         }
       }
     },
@@ -987,7 +888,7 @@
         2864,
         1232
       ],
-      "id": "0f447b4a-c20b-458e-bf89-6782c61e4c84",
+      "id": "c5fce185-5c86-4ec9-8bd3-eabfed88294b",
       "name": "Finalize Simple Reply",
       "credentials": {
         "postgres": {
@@ -1009,7 +910,7 @@
         -1120,
         192
       ],
-      "id": "dd63e26d-91d1-45cd-bc5f-04c6abaefdea",
+      "id": "fba52c86-9888-42e2-8e25-97da0e5eea68",
       "name": "Admin Order Status Webhook",
       "webhookId": "6184a7ac-f35d-4b5d-857c-41798246b79b",
       "notesInFlow": true,
@@ -1025,7 +926,7 @@
         -896,
         192
       ],
-      "id": "cb1c694f-fc59-4e17-aa1e-81f72be83069",
+      "id": "6b39e4f9-c543-4ded-aa44-3659d19646db",
       "name": "Validate Admin Status Payload"
     },
     {
@@ -1059,7 +960,7 @@
         -672,
         192
       ],
-      "id": "d51594b7-b06a-4dad-b6b0-42d04eaf0c70",
+      "id": "e8f7e4e5-574b-4abe-9c67-757634d8b96a",
       "name": "Admin Status Payload Valid"
     },
     {
@@ -1076,13 +977,13 @@
         -448,
         336
       ],
-      "id": "cf6892bc-d16f-48cb-a376-681069f8bd5d",
+      "id": "3ad77748-0f49-4b61-91c5-d4dec3245623",
       "name": "Reject Invalid Admin Status Payload"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH candidate AS MATERIALIZED (\n  SELECT e.*, o.items, o.order_type, o.total, o.status AS current_order_status,\n         c.name AS customer_name, c.whatsapp_phone AS customer_phone,\n         c.preferred_language,\n         COALESCE(cs.recent_messages, '[]'::jsonb) AS recent_messages\n  FROM customer_notification_events e\n  JOIN orders o ON o.id = e.order_id AND o.customer_id = e.customer_id\n  JOIN customers c ON c.id = e.customer_id\n  LEFT JOIN conversation_sessions cs ON cs.customer_id = e.customer_id\n  WHERE e.id = $1::bigint AND e.request_id = $2::text\n  FOR UPDATE OF e\n),\nsuperseded AS (\n  UPDATE customer_notification_events e\n  SET delivery_status = 'superseded',\n      last_error = NULL,\n      claim_token = NULL,\n      claimed_at = NULL,\n      updated_at = NOW()\n  FROM candidate c\n  WHERE e.id = c.id\n    AND c.event_type = 'order_status_update'\n    AND c.order_status IS DISTINCT FROM c.current_order_status\n    AND (\n      c.delivery_status IN ('pending', 'failed')\n      OR (c.delivery_status = 'processing' AND c.claimed_at < NOW() - INTERVAL '2 minutes')\n    )\n  RETURNING e.id\n),\nclaimed AS (\n  UPDATE customer_notification_events e\n  SET delivery_status = 'processing',\n      attempts = e.attempts + 1,\n      claim_token = $3::text,\n      claimed_at = NOW(),\n      last_error = NULL,\n      updated_at = NOW()\n  FROM candidate c\n  WHERE e.id = c.id\n    AND NOT EXISTS (SELECT 1 FROM superseded)\n    AND (\n      c.delivery_status IN ('pending', 'failed')\n      OR (c.delivery_status = 'processing' AND c.claimed_at < NOW() - INTERVAL '2 minutes')\n    )\n  RETURNING e.id, e.claim_token, e.attempts\n)\nSELECT\n  c.id AS event_id,\n  c.request_id,\n  c.event_type,\n  c.order_id,\n  c.customer_id,\n  c.order_status,\n  c.decision,\n  c.admin_note,\n  c.items,\n  c.order_type,\n  c.total,\n  c.customer_name,\n  c.customer_phone,\n  c.preferred_language,\n  c.recent_messages,\n  COALESCE(claimed.claim_token, c.claim_token) AS claim_token,\n  claimed.id IS NOT NULL AS should_send,\n  CASE\n    WHEN c.id IS NULL THEN 'not_found'\n    WHEN superseded.id IS NOT NULL THEN 'superseded'\n    WHEN claimed.id IS NOT NULL THEN 'processing'\n    WHEN c.delivery_status = 'sent' THEN 'duplicate'\n    WHEN c.delivery_status = 'superseded' THEN 'superseded'\n    ELSE 'processing'\n  END AS lifecycle\nFROM (SELECT 1) seed\nLEFT JOIN candidate c ON TRUE\nLEFT JOIN superseded ON superseded.id = c.id\nLEFT JOIN claimed ON claimed.id = c.id;",
+        "query": "WITH candidate AS MATERIALIZED (\n  SELECT e.*, o.items, o.order_type, o.total, o.status AS current_order_status, o.feedback_requested_at,\n         c.name AS customer_name, c.whatsapp_phone AS customer_phone,\n         c.preferred_language,\n         COALESCE(cs.recent_messages, '[]'::jsonb) AS recent_messages\n  FROM customer_notification_events e\n  JOIN orders o ON o.id = e.order_id AND o.customer_id = e.customer_id\n  JOIN customers c ON c.id = e.customer_id\n  LEFT JOIN conversation_sessions cs ON cs.customer_id = e.customer_id\n  WHERE e.id = $1::bigint AND e.request_id = $2::text\n  FOR UPDATE OF e\n),\nsuperseded AS (\n  UPDATE customer_notification_events e\n  SET delivery_status = 'superseded',\n      last_error = NULL,\n      claim_token = NULL,\n      claimed_at = NULL,\n      updated_at = NOW()\n  FROM candidate c\n  WHERE e.id = c.id\n    AND (\n      (c.event_type = 'order_status_update' AND c.order_status IS DISTINCT FROM c.current_order_status)\n      OR (c.event_type = 'order_status_update' AND c.order_status = 'completed' AND c.feedback_requested_at IS NOT NULL)\n    )\n    AND (\n      c.delivery_status IN ('pending', 'failed')\n      OR (c.delivery_status = 'processing' AND c.claimed_at < NOW() - INTERVAL '2 minutes')\n    )\n  RETURNING e.id\n),\nclaimed AS (\n  UPDATE customer_notification_events e\n  SET delivery_status = 'processing',\n      attempts = e.attempts + 1,\n      claim_token = $3::text,\n      claimed_at = NOW(),\n      last_error = NULL,\n      updated_at = NOW()\n  FROM candidate c\n  WHERE e.id = c.id\n    AND NOT EXISTS (SELECT 1 FROM superseded)\n    AND (\n      c.delivery_status IN ('pending', 'failed')\n      OR (c.delivery_status = 'processing' AND c.claimed_at < NOW() - INTERVAL '2 minutes')\n    )\n  RETURNING e.id, e.claim_token, e.attempts\n)\nSELECT\n  c.id AS event_id,\n  c.request_id,\n  c.event_type,\n  c.order_id,\n  c.customer_id,\n  c.order_status,\n  c.decision,\n  c.admin_note,\n  c.items,\n  c.order_type,\n  c.total,\n  c.customer_name,\n  c.customer_phone,\n  c.preferred_language,\n  c.recent_messages,\n  COALESCE(claimed.claim_token, c.claim_token) AS claim_token,\n  claimed.id IS NOT NULL AS should_send,\n  CASE\n    WHEN c.id IS NULL THEN 'not_found'\n    WHEN superseded.id IS NOT NULL THEN 'superseded'\n    WHEN claimed.id IS NOT NULL THEN 'processing'\n    WHEN c.delivery_status = 'sent' THEN 'duplicate'\n    WHEN c.delivery_status = 'superseded' THEN 'superseded'\n    ELSE 'processing'\n  END AS lifecycle\nFROM (SELECT 1) seed\nLEFT JOIN candidate c ON TRUE\nLEFT JOIN superseded ON superseded.id = c.id\nLEFT JOIN claimed ON claimed.id = c.id;",
         "options": {
           "queryReplacement": "={{ [ $('Validate Admin Status Payload').item.json.event_id, $('Validate Admin Status Payload').item.json.request_id, $execution.id ] }}"
         }
@@ -1093,7 +994,7 @@
         -448,
         112
       ],
-      "id": "9e6eed83-5e9c-4f05-a315-71db86d83ea3",
+      "id": "2185c372-9bb0-49b9-8965-7cf6eef7b485",
       "name": "Claim Admin Customer Event",
       "credentials": {
         "postgres": {
@@ -1133,7 +1034,7 @@
         -224,
         112
       ],
-      "id": "5d6a5080-db20-4bb3-a4a8-83f7278ddbb2",
+      "id": "d394f037-d299-4515-9fb6-ef7524f0b75e",
       "name": "Admin Event Claimed"
     },
     {
@@ -1150,7 +1051,7 @@
         -96,
         368
       ],
-      "id": "113c15b7-39cf-4bfb-b669-13956cac4fde",
+      "id": "a8d65f06-b390-4979-95fb-b0e9caf22bd4",
       "name": "Respond Admin Event Not Claimed"
     },
     {
@@ -1168,13 +1069,13 @@
         0,
         0
       ],
-      "id": "e47b6154-61e4-4ba2-83b2-b40b0160326f",
+      "id": "c0b3bc6e-852f-45a7-b2b1-940e55b14446",
       "name": "Admin Customer Message Agent",
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const event = $('Claim Admin Customer Event').item.json;\nconst raw = String($input.first().json.output || '').trim();\nconst orderId = String(event.order_id);\nconst history = JSON.stringify(event.recent_messages || []);\nconst preferred = String(event.preferred_language || '').toLowerCase();\nconst pashtoScript = /[ځڅډړږښګڼۍې]/u.test(history);\nconst urduScript = /[\\u0600-\\u06ff]/.test(history);\nconst romanUrdu = /\\b(aap|apka|aapka|mera|meri|hai|hain|nahi|shukriya|order kahan)\\b/i.test(history);\nconst language = preferred.includes('pashto') || preferred === 'ps' || pashtoScript\n  ? 'pashto'\n  : preferred.includes('urdu') || preferred === 'ur' || urduScript\n    ? (urduScript ? 'urdu' : 'roman_urdu')\n    : (romanUrdu ? 'roman_urdu' : 'english');\n\nconst english = {\n  received: 'Your Order #' + orderId + ' has been received and placed successfully. 🍕',\n  preparing: 'Good news! Your Order #' + orderId + ' is now being prepared. 🍕',\n  oven: 'Your Order #' + orderId + ' is now in the oven. 🔥🍕',\n  out_for_delivery: 'Your Order #' + orderId + ' is out for delivery. 🛵🍕',\n  completed: 'Your Order #' + orderId + ' has been delivered. Enjoy! 🍕',\n  cancelled: 'Your Order #' + orderId + ' has been cancelled.',\n  cancellation_denied: 'Sorry, the cancellation for Order #' + orderId + ' was not approved. Your order remains active.',\n  admin_address_clarification: 'Could you please provide a clearer delivery address for Order #' + orderId + '? A nearby landmark, street, house number, or other location detail would help.',\n};\nconst roman = {\n  received: 'Aap ka Order #' + orderId + ' receive ho gaya hai. 🍕',\n  preparing: 'Aap ka Order #' + orderId + ' ab tayyar ho raha hai. 🍕',\n  oven: 'Aap ka Order #' + orderId + ' ab oven mein hai. 🔥🍕',\n  out_for_delivery: 'Aap ka Order #' + orderId + ' delivery ke liye nikal gaya hai. 🛵🍕',\n  completed: 'Aap ka Order #' + orderId + ' deliver ho gaya hai. Mazay se khaiye! 🍕',\n  cancelled: 'Aap ka Order #' + orderId + ' cancel kar diya gaya hai.',\n  cancellation_denied: 'Maazrat, Order #' + orderId + ' ki cancellation approve nahi hui. Aap ka order active hai.',\n  admin_address_clarification: 'Meharbani karke Order #' + orderId + ' ka delivery address thora clear share kar dein. Qareebi landmark, street ya house number bhi bata dein.',\n};\nconst urdu = {\n  received: 'آپ کا آرڈر #' + orderId + ' موصول ہو گیا ہے۔ 🍕',\n  preparing: 'آپ کا آرڈر #' + orderId + ' اب تیار ہو رہا ہے۔ 🍕',\n  oven: 'آپ کا آرڈر #' + orderId + ' اب اوون میں ہے۔ 🔥🍕',\n  out_for_delivery: 'آپ کا آرڈر #' + orderId + ' ڈیلیوری کے لیے روانہ ہو گیا ہے۔ 🛵🍕',\n  completed: 'آپ کا آرڈر #' + orderId + ' ڈیلیور ہو گیا ہے۔ 🍕',\n  cancelled: 'آپ کا آرڈر #' + orderId + ' منسوخ کر دیا گیا ہے۔',\n  cancellation_denied: 'معذرت، آرڈر #' + orderId + ' کی منسوخی منظور نہیں ہوئی۔ آپ کا آرڈر فعال ہے۔',\n  admin_address_clarification: 'براہ کرم آرڈر #' + orderId + ' کے لیے ڈیلیوری کا پتہ مزید واضح بتا دیں۔ قریبی نشانی، گلی یا گھر کا نمبر بھی شامل کر دیں۔',\n};\nconst pashto = {\n  received: 'ستاسو آرډر #' + orderId + ' ترلاسه او ثبت شو. 🍕',\n  preparing: 'ستاسو آرډر #' + orderId + ' اوس چمتو کېږي. 🍕',\n  oven: 'ستاسو آرډر #' + orderId + ' اوس په اوون کې دی. 🔥🍕',\n  out_for_delivery: 'ستاسو آرډر #' + orderId + ' د ډیليورۍ لپاره روان شو. 🛵🍕',\n  completed: 'ستاسو آرډر #' + orderId + ' ډیليور شو. 🍕',\n  cancelled: 'ستاسو آرډر #' + orderId + ' لغوه شو.',\n  cancellation_denied: 'بخښنه، د آرډر #' + orderId + ' د لغوه کولو غوښتنه ونه منل شوه. آرډر فعال دی.',\n  admin_address_clarification: 'مهرباني وکړئ د آرډر #' + orderId + ' لپاره د ډیليورۍ پته لږه روښانه کړئ. نږدې نښه، کوڅه یا د کور شمېره هم ولیکئ.',\n};\nconst meaning = event.event_type === 'cancellation_denied' || event.event_type === 'admin_address_clarification'\n  ? event.event_type\n  : event.order_status;\nconst messages = language === 'pashto' ? pashto : language === 'urdu' ? urdu : language === 'roman_urdu' ? roman : english;\nconst fallback = messages[meaning] || english[meaning];\nconst forbidden = {\n  received: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  preparing: /oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  oven: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  out_for_delivery: /prepar|tayyar|تیار|oven|اوون|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  completed: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|cancel|منسوخ/i,\n  cancelled: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور/i,\n  cancellation_denied: /has been cancelled|kar diya gaya|منسوخ کر دیا/i,\n  admin_address_clarification: /has been (?:received|cancelled|delivered)|is now (?:being prepared|in the oven|out for delivery)/i,\n};\nconst requiredMeaning = {\n  received: /received|receive ho|موصول|ترلاسه/i,\n  preparing: /prepar|tayyar|تیار|چمتو/i,\n  oven: /oven|اوون/i,\n  out_for_delivery: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|ډیليورۍ لپاره روان/i,\n  completed: /delivered|deliver ho|ڈیلیور|ډیليور شو/i,\n  cancelled: /cancelled|cancel kar|منسوخ|لغوه/i,\n  cancellation_denied: /not approved|approve nahi|منظور نہیں|ونه منل/i,\n  admin_address_clarification: /address|location|pin|landmark|street|house number|pata|thora clear|پتہ|نشانی|گلی|لوکیشن|مقام|پته|نښه|کوڅه/i,\n};\nconst mentionsOrder = raw.includes('#' + orderId) || new RegExp('\\\\b' + orderId + '\\\\b').test(raw);\nconst leaksInternals = /database|webhook|event[_ ]?id|prompt|admin|dashboard|internal tool|workflow|system|\\bAI\\b/i.test(raw);\nconst safe = Boolean(fallback) && raw.length > 0 && raw.length <= 700 && mentionsOrder && !leaksInternals\n  && requiredMeaning[meaning]?.test(raw) && !(forbidden[meaning]?.test(raw));\nreturn [{ json: { ...event, customer_message: safe ? raw : fallback, ai_fallback_used: !safe } }];"
+        "jsCode": "const event = $('Claim Admin Customer Event').item.json;\nconst raw = String($input.first().json.output || '').trim();\nconst orderId = String(event.order_id);\nconst history = JSON.stringify(event.recent_messages || []);\nconst preferred = String(event.preferred_language || '').toLowerCase();\nconst pashtoScript = /[ځڅډړږښګڼۍې]/u.test(history);\nconst urduScript = /[\\u0600-\\u06ff]/.test(history);\nconst romanUrdu = /\\b(aap|apka|aapka|mera|meri|hai|hain|nahi|shukriya|order kahan)\\b/i.test(history);\nconst language = preferred.includes('pashto') || preferred === 'ps' || pashtoScript\n  ? 'pashto'\n  : preferred.includes('urdu') || preferred === 'ur' || urduScript\n    ? (urduScript ? 'urdu' : 'roman_urdu')\n    : (romanUrdu ? 'roman_urdu' : 'english');\n\nconst english = {\n  received: 'Your Order #' + orderId + ' has been received and placed successfully. 🍕',\n  preparing: 'Good news! Your Order #' + orderId + ' is now being prepared. 🍕',\n  oven: 'Your Order #' + orderId + ' is now in the oven. 🔥🍕',\n  out_for_delivery: 'Your Order #' + orderId + ' is out for delivery. 🛵🍕',\n  completed: 'Your Order #' + orderId + ' has been delivered. Enjoy! 🍕',\n  cancelled: 'Your Order #' + orderId + ' has been cancelled.',\n  cancellation_denied: 'Sorry, the cancellation for Order #' + orderId + ' was not approved. Your order remains active.',\n  admin_address_clarification: 'Could you please provide a clearer delivery address for Order #' + orderId + '? A nearby landmark, street, house number, or other location detail would help.',\n};\nconst roman = {\n  received: 'Aap ka Order #' + orderId + ' receive ho gaya hai. 🍕',\n  preparing: 'Aap ka Order #' + orderId + ' ab tayyar ho raha hai. 🍕',\n  oven: 'Aap ka Order #' + orderId + ' ab oven mein hai. 🔥🍕',\n  out_for_delivery: 'Aap ka Order #' + orderId + ' delivery ke liye nikal gaya hai. 🛵🍕',\n  completed: 'Aap ka Order #' + orderId + ' deliver ho gaya hai. Mazay se khaiye! 🍕',\n  cancelled: 'Aap ka Order #' + orderId + ' cancel kar diya gaya hai.',\n  cancellation_denied: 'Maazrat, Order #' + orderId + ' ki cancellation approve nahi hui. Aap ka order active hai.',\n  admin_address_clarification: 'Meharbani karke Order #' + orderId + ' ka delivery address thora clear share kar dein. Qareebi landmark, street ya house number bhi bata dein.',\n};\nconst urdu = {\n  received: 'آپ کا آرڈر #' + orderId + ' موصول ہو گیا ہے۔ 🍕',\n  preparing: 'آپ کا آرڈر #' + orderId + ' اب تیار ہو رہا ہے۔ 🍕',\n  oven: 'آپ کا آرڈر #' + orderId + ' اب اوون میں ہے۔ 🔥🍕',\n  out_for_delivery: 'آپ کا آرڈر #' + orderId + ' ڈیلیوری کے لیے روانہ ہو گیا ہے۔ 🛵🍕',\n  completed: 'آپ کا آرڈر #' + orderId + ' ڈیلیور ہو گیا ہے۔ 🍕',\n  cancelled: 'آپ کا آرڈر #' + orderId + ' منسوخ کر دیا گیا ہے۔',\n  cancellation_denied: 'معذرت، آرڈر #' + orderId + ' کی منسوخی منظور نہیں ہوئی۔ آپ کا آرڈر فعال ہے۔',\n  admin_address_clarification: 'براہ کرم آرڈر #' + orderId + ' کے لیے ڈیلیوری کا پتہ مزید واضح بتا دیں۔ قریبی نشانی، گلی یا گھر کا نمبر بھی شامل کر دیں۔',\n};\nconst pashto = {\n  received: 'ستاسو آرډر #' + orderId + ' ترلاسه او ثبت شو. 🍕',\n  preparing: 'ستاسو آرډر #' + orderId + ' اوس چمتو کېږي. 🍕',\n  oven: 'ستاسو آرډر #' + orderId + ' اوس په اوون کې دی. 🔥🍕',\n  out_for_delivery: 'ستاسو آرډر #' + orderId + ' د ډیليورۍ لپاره روان شو. 🛵🍕',\n  completed: 'ستاسو آرډر #' + orderId + ' ډیليور شو. 🍕',\n  cancelled: 'ستاسو آرډر #' + orderId + ' لغوه شو.',\n  cancellation_denied: 'بخښنه، د آرډر #' + orderId + ' د لغوه کولو غوښتنه ونه منل شوه. آرډر فعال دی.',\n  admin_address_clarification: 'مهرباني وکړئ د آرډر #' + orderId + ' لپاره د ډیليورۍ پته لږه روښانه کړئ. نږدې نښه، کوڅه یا د کور شمېره هم ولیکئ.',\n};\nconst meaning = event.event_type === 'cancellation_denied' || event.event_type === 'admin_address_clarification'\n  ? event.event_type\n  : event.order_status;\nconst messages = language === 'pashto' ? pashto : language === 'urdu' ? urdu : language === 'roman_urdu' ? roman : english;\nconst fallback = messages[meaning] || english[meaning];\nconst feedbackRequests = {\n  english: '⭐ Rate your experience out of 5, and if you like, tell us what you enjoyed or how we can improve. You can send a rating, feedback, or both.',\n  roman_urdu: '⭐ Apna experience 5 mein se rate karein. Agar chahein to batayein kya acha laga ya hum kya behtar kar sakte hain. Rating, feedback, ya dono bhej sakte hain.',\n  urdu: '⭐ اپنے تجربے کو 5 میں سے ریٹ کریں۔ اگر چاہیں تو بتائیں کیا اچھا لگا یا ہم کیا بہتر کر سکتے ہیں۔ آپ ریٹنگ، رائے، یا دونوں بھیج سکتے ہیں۔',\n  pashto: '⭐ خپله تجربه له 5 څخه درجه کړئ. که وغواړئ، راته ووایئ څه مو خوښ شول یا موږ څه ښه کولی شو. درجه، نظر، یا دواړه رالېږلی شئ.',\n};\nconst forbidden = {\n  received: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  preparing: /oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  oven: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  out_for_delivery: /prepar|tayyar|تیار|oven|اوون|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  completed: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|cancel|منسوخ/i,\n  cancelled: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور/i,\n  cancellation_denied: /has been cancelled|kar diya gaya|منسوخ کر دیا/i,\n  admin_address_clarification: /has been (?:received|cancelled|delivered)|is now (?:being prepared|in the oven|out for delivery)/i,\n};\nconst requiredMeaning = {\n  received: /received|receive ho|موصول|ترلاسه/i,\n  preparing: /prepar|tayyar|تیار|چمتو/i,\n  oven: /oven|اوون/i,\n  out_for_delivery: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|ډیليورۍ لپاره روان/i,\n  completed: /delivered|deliver ho|ڈیلیور|ډیليور شو/i,\n  cancelled: /cancelled|cancel kar|منسوخ|لغوه/i,\n  cancellation_denied: /not approved|approve nahi|منظور نہیں|ونه منل/i,\n  admin_address_clarification: /address|location|pin|landmark|street|house number|pata|thora clear|پتہ|نشانی|گلی|لوکیشن|مقام|پته|نښه|کوڅه/i,\n};\nconst mentionsOrder = raw.includes('#' + orderId) || new RegExp('\\\\b' + orderId + '\\\\b').test(raw);\nconst leaksInternals = /database|webhook|event[_ ]?id|prompt|admin|dashboard|internal tool|workflow|system|\\bAI\\b/i.test(raw);\nconst safe = Boolean(fallback) && raw.length > 0 && raw.length <= 700 && mentionsOrder && !leaksInternals\n  && requiredMeaning[meaning]?.test(raw) && !(forbidden[meaning]?.test(raw));\nconst statusMessage = safe ? raw : fallback;\nconst customerMessage = meaning === 'completed'\n  ? statusMessage + '\\n\\n' + feedbackRequests[language]\n  : statusMessage;\nreturn [{ json: { ...event, customer_message: customerMessage, ai_fallback_used: !safe } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1182,40 +1083,47 @@
         224,
         0
       ],
-      "id": "e4871927-b7fa-48b6-b746-4de2acd99c79",
+      "id": "05790b22-148e-485c-88c1-a5ed3da30367",
       "name": "Build Safe Admin Customer Message"
     },
     {
       "parameters": {
-        "operation": "send",
-        "phoneNumberId": "=1328729090313034",
-        "recipientPhoneNumber": "={{ $('Build Safe Admin Customer Message').item.json.customer_phone }}",
-        "textBody": "={{ $('Build Safe Admin Customer Message').item.json.customer_message }}",
-        "additionalFields": {}
+        "method": "POST",
+        "url": "https://cst-evolution-api-109416ce-2a4cac9f.cloud-station.app/message/sendText/Assistance",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $('Build Safe Admin Customer Message').item.json.customer_phone, text: $('Build Safe Admin Customer Message').item.json.customer_message } }}",
+        "options": {}
       },
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
       "position": [
         448,
         0
       ],
-      "id": "edfca022-ecc7-4fe4-b13e-5a47a918c116",
-      "name": "Send Admin Status to Customer",
-      "webhookId": "723b8300-e4cf-4f02-ae0d-7e33181b5ab2",
+      "id": "4eca18ec-6b50-412e-8100-98d835feaac7",
+      "name": "Evolution API Send Admin Status",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notesInFlow": true,
       "credentials": {
-        "whatsAppApi": {
-          "id": "OSqLF91lj6xvuHQt",
-          "name": "WhatsApp account"
+        "httpHeaderAuth": {
+          "id": "OBdeJEp1HcymvfQw",
+          "name": "Header Auth account"
         }
       },
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notes": "Uses the configured Assistance instance because this branch starts from the admin webhook rather than an incoming Evolution message."
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE customer_notification_events\nSET delivery_status = CASE WHEN $3::boolean THEN 'sent' ELSE 'failed' END,\n    provider_message_id = CASE WHEN $3::boolean THEN $4::text ELSE provider_message_id END,\n    last_error = CASE WHEN $3::boolean THEN NULL ELSE LEFT(COALESCE(NULLIF($5::text, ''), 'WhatsApp send failed'), 1000) END,\n    sent_at = CASE WHEN $3::boolean THEN NOW() ELSE sent_at END,\n    claim_token = NULL,\n    claimed_at = NULL,\n    updated_at = NOW()\nWHERE id = $1::bigint\n  AND delivery_status = 'processing'\n  AND claim_token = $2::text\nRETURNING id AS event_id, request_id, delivery_status AS lifecycle,\n          attempts, provider_message_id, last_error, sent_at;",
+        "query": "WITH event_updated AS (\n  UPDATE customer_notification_events\n  SET delivery_status = CASE WHEN $3::boolean THEN 'sent' ELSE 'failed' END,\n      provider_message_id = CASE WHEN $3::boolean THEN $4::text ELSE provider_message_id END,\n      last_error = CASE WHEN $3::boolean THEN NULL ELSE LEFT(COALESCE(NULLIF($5::text, ''), 'Evolution API send failed'), 1000) END,\n      sent_at = CASE WHEN $3::boolean THEN NOW() ELSE sent_at END,\n      claim_token = NULL,\n      claimed_at = NULL,\n      updated_at = NOW()\n  WHERE id = $1::bigint\n    AND delivery_status = 'processing'\n    AND claim_token = $2::text\n  RETURNING id AS event_id, request_id, event_type, order_id, customer_id,\n            order_status, delivery_status AS lifecycle, attempts,\n            provider_message_id, last_error, sent_at\n), order_marked AS (\n  UPDATE orders o\n  SET feedback_requested_at = COALESCE(o.feedback_requested_at, NOW()),\n      updated_at = NOW()\n  FROM event_updated e\n  WHERE o.id = e.order_id\n    AND o.customer_id = e.customer_id\n    AND e.event_type = 'order_status_update'\n    AND e.order_status = 'completed'\n    AND e.lifecycle = 'sent'\n  RETURNING o.id\n), feedback_state AS (\n  UPDATE conversation_sessions cs\n  SET awaiting_feedback_order_id = e.order_id,\n      updated_at = NOW()\n  FROM event_updated e\n  WHERE cs.customer_id = e.customer_id\n    AND e.event_type = 'order_status_update'\n    AND e.order_status = 'completed'\n    AND e.lifecycle = 'sent'\n    AND EXISTS (SELECT 1 FROM order_marked WHERE id = e.order_id)\n    AND NOT EXISTS (SELECT 1 FROM feedback f WHERE f.order_id = e.order_id)\n  RETURNING cs.id\n)\nSELECT event_id, request_id, lifecycle, attempts, provider_message_id,\n       last_error, sent_at,\n       EXISTS (SELECT 1 FROM feedback_state) AS awaiting_feedback\nFROM event_updated;",
         "options": {
-          "queryReplacement": "={{ [ $('Claim Admin Customer Event').item.json.event_id, $('Claim Admin Customer Event').item.json.claim_token, Boolean(!$json.error && $json.messages?.[0]?.id), $json.messages?.[0]?.id || null, $json.error?.message || $json.error || (!$json.messages?.[0]?.id ? 'WhatsApp send returned no message id' : '') ] }}"
+          "queryReplacement": "={{ [ $('Claim Admin Customer Event').item.json.event_id, $('Claim Admin Customer Event').item.json.claim_token, Boolean(!$json.error && ($json.key?.id || $json.message?.key?.id)), $json.key?.id || $json.message?.key?.id || null, $json.error?.message || $json.error || (!($json.key?.id || $json.message?.key?.id) ? 'Evolution API send returned no message id' : '') ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -1224,7 +1132,7 @@
         672,
         0
       ],
-      "id": "5cd4dc31-0b6f-44e7-9769-2d12d6b9bad2",
+      "id": "cb4521e0-85b3-494a-9e3f-dff36b79060f",
       "name": "Record Admin Event Result",
       "credentials": {
         "postgres": {
@@ -1247,7 +1155,7 @@
         896,
         0
       ],
-      "id": "48c25da9-4047-4700-b5ed-8784891fac0b",
+      "id": "1668628d-d10a-4c4a-809a-9501ea7ea2ef",
       "name": "Respond Admin Event Processed"
     },
     {
@@ -1260,8 +1168,149 @@
         1472,
         544
       ],
-      "id": "ecce0cb8-0c0b-47ed-a4ce-d6e84c5d8f97",
+      "id": "0ad936fe-8309-4ee8-a0f9-179ab7ae4f55",
       "name": "Guard Cancellation Reply"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "assistant",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1328,
+        1056
+      ],
+      "id": "1ca2be34-badf-4e6f-9cfc-9df59029e63b",
+      "name": "Evolution API Webhook",
+      "webhookId": "54936811-25aa-4992-9cb2-ff9575584730",
+      "notesInFlow": true,
+      "notes": "Production URL: https://abbasbajwa03.app.n8n.cloud/webhook/assistant. Configure the n8n Header Auth credential named \"Evolution Webhook Secret\" and send the same custom header from the Evolution API per-instance webhook."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c02c6576-3027-4f97-b9b3-09853131822b",
+              "leftValue": "={{ $json.is_supported_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -768,
+        1040
+      ],
+      "id": "ad3fd644-0172-42bb-93f6-bae30ce62a2b",
+      "name": "Process Incoming Text?",
+      "notesInFlow": true,
+      "notes": "Only the true output reaches the customer-message workflow. The Webhook already acknowledges ignored events with HTTP 200."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5400fe27-1c43-457a-8f86-f092028d2f5a",
+              "leftValue": "={{ Boolean($('Upsert Customer and Session').item.json.awaiting_feedback_order_id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        1024
+      ],
+      "id": "7badf031-1dbb-4ca4-8098-b279cec6cb17",
+      "name": "Awaiting Feedback Response?"
+    },
+    {
+      "parameters": {
+        "jsCode": "function parseFeedback(input) {\n  const original = String(input || \"\").trim().slice(0, 2000);\n  let remainder = original;\n  let rawRating = null;\n\n  const takeNumericMatch = (pattern, ratingGroup = 1) => {\n    const match = remainder.match(pattern);\n    if (!match) return false;\n    rawRating = Number(match[ratingGroup]);\n    remainder = `${remainder.slice(0, match.index)} ${remainder.slice(match.index + match[0].length)}`;\n    return true;\n  };\n\n  takeNumericMatch(\n    /\\b(?:i(?:\\s+would|'d)?\\s+)?(?:would\\s+)?(?:give|rate)(?:\\s+(?:it|this|the\\s+(?:order|experience)))?(?:\\s+(?:a|as))?\\s*(-?\\d+)(?:\\s*\\/\\s*\\d+|\\s+out\\s+of\\s+\\d+)?\\b/i\n  )\n    || takeNumericMatch(/^\\s*(-?\\d+)(?:\\s*(?:\\/\\s*\\d+|out\\s+of\\s+\\d+))?/i)\n    || takeNumericMatch(/\\b(?:rating|score)\\s*(?::|is)?\\s*(-?\\d+)(?:\\s*\\/\\s*\\d+|\\s+out\\s+of\\s+\\d+)?\\b/i)\n    || takeNumericMatch(/(-?\\d+)\\s*\\/\\s*\\d+\\b/i);\n\n  if (rawRating === null) {\n    const stars = remainder.match(/(?:⭐\\uFE0F?\\s*)+/u);\n    if (stars) {\n      rawRating = (stars[0].match(/⭐/gu) || []).length;\n      remainder = `${remainder.slice(0, stars.index)} ${remainder.slice(stars.index + stars[0].length)}`;\n    }\n  }\n\n  const rating = rawRating === null || !Number.isFinite(rawRating)\n    ? null\n    : Math.max(0, Math.min(5, Math.trunc(rawRating)));\n  const message = remainder\n    .replace(/^\\s*(?:[-–—,:;.!]+\\s*)+/, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim() || null;\n\n  return { rating, message };\n}\nconst parsed = parseFeedback($('Claim Latest Customer Turn').item.json.combined_text);\nreturn [{ json: { ...$input.first().json, feedback_rating: parsed.rating, feedback_message: parsed.message } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        976
+      ],
+      "id": "062f5a4e-1e5e-41d8-9c51-1cbd949ac36c",
+      "name": "Parse Feedback Response"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH locked_session AS (\n  SELECT cs.customer_id, cs.awaiting_feedback_order_id AS order_id\n  FROM conversation_sessions cs\n  JOIN orders o\n    ON o.id = cs.awaiting_feedback_order_id\n   AND o.customer_id = cs.customer_id\n   AND o.status = 'completed'\n  WHERE cs.customer_id = $1::bigint\n    AND cs.awaiting_feedback_order_id = $2::bigint\n  FOR UPDATE OF cs\n), saved AS (\n  INSERT INTO feedback (customer_id, order_id, rating, message)\n  SELECT customer_id, order_id, $3::smallint, NULLIF(BTRIM($4::text), '')\n  FROM locked_session\n  WHERE $3::smallint IS NOT NULL OR NULLIF(BTRIM($4::text), '') IS NOT NULL\n  ON CONFLICT (order_id) WHERE order_id IS NOT NULL\n  DO UPDATE SET\n    rating = COALESCE(EXCLUDED.rating, feedback.rating),\n    message = COALESCE(EXCLUDED.message, feedback.message)\n  RETURNING id, customer_id, order_id, rating, message, created_at\n)\nSELECT *, TRUE AS feedback_saved FROM saved;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Upsert Customer and Session').item.json.awaiting_feedback_order_id, $('Parse Feedback Response').item.json.feedback_rating, $('Parse Feedback Response').item.json.feedback_message ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1360,
+        976
+      ],
+      "id": "888aaed9-1593-4f35-a8da-5226bf791860",
+      "name": "Save Customer Feedback",
+      "credentials": {
+        "postgres": {
+          "id": "A3W0kjWxeXeN7KOu",
+          "name": "Postgres account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Parameterized, idempotent upsert against the existing feedback table. A database failure stops the branch before any thank-you is sent."
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $('Upsert Customer and Session').item.json || {};\nconst source = String($('Claim Latest Customer Turn').item.json.combined_text || '');\nconst history = JSON.stringify(session.recent_messages || []);\nconst preferred = String(session.preferred_language || '').toLowerCase();\nconst pashto = preferred.includes('pashto') || preferred === 'ps' || /[ځڅډړږښګڼۍې]/u.test(source + history);\nconst urduScript = /[\\u0600-\\u06ff]/u.test(source + history);\nconst roman = !urduScript && /\\b(aap|apka|aapka|mera|meri|hai|hain|nahi|shukriya)\\b/i.test(source + history);\nconst reply_text = pashto\n  ? 'ستاسو د نظر څخه مننه! ❤️🍕 موږ یې ډېر قدر کوو.'\n  : urduScript\n    ? 'آپ کی رائے کا بہت شکریہ! ❤️🍕 ہم واقعی اس کی قدر کرتے ہیں۔'\n    : (preferred.includes('urdu') || preferred === 'ur' || roman)\n      ? 'Aap ke feedback ka bohat shukriya! ❤️🍕 Hum iski bohat qadar karte hain.'\n      : 'Thank you for your feedback! ❤️🍕 We really appreciate it.';\nreturn [{ json: { ...$input.first().json, reply_text } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        976
+      ],
+      "id": "1ef0f22d-3bba-42db-af12-ab91190af1f6",
+      "name": "Build Feedback Thank You"
     }
   ],
   "pinData": {},
@@ -1392,22 +1441,11 @@
         ]
       ]
     },
-    "WhatsApp Trigger": {
-      "main": [
-        [
-          {
-            "node": "Normalize Incoming Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Normalize Incoming Message": {
       "main": [
         [
           {
-            "node": "Insert Message to Buffer",
+            "node": "Process Incoming Text?",
             "type": "main",
             "index": 0
           }
@@ -1571,51 +1609,11 @@
         ]
       ]
     },
-    "Agent Output Valid": {
-      "main": [
-        [
-          {
-            "node": "Reply Text",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Agent Fallback Reply",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Reply Text": {
       "main": [
         [
           {
-            "node": "Send message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Agent Fallback Reply": {
-      "main": [
-        [
-          {
-            "node": "Reply Text",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send message": {
-      "main": [
-        [
-          {
-            "node": "Record Reply Sent",
+            "node": "Evolution API Send Message",
             "type": "main",
             "index": 0
           }
@@ -1659,7 +1657,7 @@
       "main": [
         [
           {
-            "node": "Send Simple Reply",
+            "node": "Evolution API Send Simple Reply",
             "type": "main",
             "index": 0
           }
@@ -1684,17 +1682,6 @@
         ]
       ]
     },
-    "Send Simple Reply": {
-      "main": [
-        [
-          {
-            "node": "Finalize Simple Reply",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Recover Reply Before Routing": {
       "main": [
         [
@@ -1706,7 +1693,7 @@
         ],
         [
           {
-            "node": "Route Simple Messages",
+            "node": "Awaiting Feedback Response?",
             "type": "main",
             "index": 0
           }
@@ -1797,18 +1784,7 @@
       "main": [
         [
           {
-            "node": "Send Admin Status to Customer",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send Admin Status to Customer": {
-      "main": [
-        [
-          {
-            "node": "Record Admin Event Result",
+            "node": "Evolution API Send Admin Status",
             "type": "main",
             "index": 0
           }
@@ -1830,7 +1806,113 @@
       "main": [
         [
           {
-            "node": "Agent Output Valid",
+            "node": "Reply Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evolution API Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Incoming Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Incoming Text?": {
+      "main": [
+        [
+          {
+            "node": "Insert Message to Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evolution API Send Message": {
+      "main": [
+        [
+          {
+            "node": "Record Reply Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evolution API Send Simple Reply": {
+      "main": [
+        [
+          {
+            "node": "Finalize Simple Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evolution API Send Admin Status": {
+      "main": [
+        [
+          {
+            "node": "Record Admin Event Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Awaiting Feedback Response?": {
+      "main": [
+        [
+          {
+            "node": "Parse Feedback Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Simple Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Feedback Response": {
+      "main": [
+        [
+          {
+            "node": "Save Customer Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Customer Feedback": {
+      "main": [
+        [
+          {
+            "node": "Build Feedback Thank You",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Feedback Thank You": {
+      "main": [
+        [
+          {
+            "node": "Reply Text",
             "type": "main",
             "index": 0
           }
@@ -1843,11 +1925,12 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "608a0acd-a51a-4c29-8bd4-aa9e8c15e21f",
+  "versionId": "e33707d5-c6d5-493f-99f8-bc2a78169d5e",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "28d8415a8092a2e1816ea01c6472c7fb3bef93f4d13363a8dda85216b4e62e8a"
   },
   "nodeGroups": [],
-  "id": "jFb5LP3DJS3mtLlV",
+  "id": "698yUFMhAppYMtOy",
   "tags": []
 }

@@ -829,8 +829,8 @@ async function loadFeedback(requestOptions = {}) {
   const data = await api(`/admin/feedback${queryString({ rating: filters.rating, page: state.pages.feedback, limit: 20 })}`, requestOptions);
   if (state.route !== "feedback" || requestOptions.loadId !== pageLoadId) return;
   app.querySelector("#page-content").innerHTML = `${pageHeading("Feedback", "Customer ratings collected through the Pizza Bar backend.")}
-    <section class="feedback-summary">${statCard("Average rating", `${Number(data.summary.average_rating).toFixed(1)} / 5`, "★", null, "all reviews", "#e6a83c")}${statCard("Total reviews", data.summary.total, "☆", null, "submitted feedback", "#5d8ee2")}${statCard("Five-star reviews", `${data.summary.five_star_percentage}%`, "✦", null, "of all reviews", "#47b978")}</section>
-    <div class="toolbar"><select class="select" data-filter="rating"><option value="">All ratings</option>${[5,4,3,2,1].map((rating) => `<option value="${rating}" ${String(filters.rating) === String(rating) ? "selected" : ""}>${rating} stars</option>`).join("")}</select></div>
+    <section class="feedback-summary">${statCard("Average rating", `${Number(data.summary.average_rating).toFixed(1)} / 5`, "★", null, "all reviews", "#e6a83c")}${statCard("Total reviews", data.summary.total, "☆", null, "submitted feedback", "#5d8ee2")}${statCard("Five-star reviews", `${data.summary.five_star_percentage}%`, "✦", null, "of rated reviews", "#47b978")}</section>
+    <div class="toolbar"><select class="select" data-filter="rating"><option value="">All ratings</option>${[5,4,3,2,1,0].map((rating) => `<option value="${rating}" ${String(filters.rating) === String(rating) ? "selected" : ""}>${rating} stars</option>`).join("")}</select></div>
     <section class="panel">${data.feedback.length ? `${renderFeedbackList(data.feedback)}${pagination(data.pagination, "feedback")}` : emptyState("No feedback yet", "Ratings submitted through WhatsApp will appear here once the feedback workflow stores them.", "☆")}</section>`;
   bindFilterControls("feedback");
   bindCommonActions();
@@ -838,7 +838,13 @@ async function loadFeedback(requestOptions = {}) {
 
 function renderFeedbackList(feedback) {
   if (!feedback.length) return emptyState("No feedback yet", "Customer reviews will appear here.", "☆");
-  return `<div>${feedback.map((item) => `<article class="feedback-card"><div class="split"><div><div class="primary-cell">${escapeHtml(item.customer_name || item.customer_phone)}</div><div class="stars" aria-label="${item.rating} out of 5 stars">${"★".repeat(item.rating)}${"☆".repeat(5 - item.rating)}</div></div><span class="subtle">${escapeHtml(dateOnly(item.created_at))}</span></div><div class="feedback-message">${escapeHtml(item.message || "No written comment")}</div>${item.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(item.order_id)}">Order #${escapeHtml(item.order_id)}</button>` : ""}</article>`).join("")}</div>`;
+  return `<div>${feedback.map((item) => {
+    const rating = item.rating === null || item.rating === undefined ? null : Math.max(0, Math.min(5, Number(item.rating)));
+    const ratingHtml = rating === null
+      ? '<div class="stars" aria-label="No rating provided">No rating</div>'
+      : `<div class="stars" aria-label="${rating} out of 5 stars">${"★".repeat(rating)}${"☆".repeat(5 - rating)}</div>`;
+    return `<article class="feedback-card"><div class="split"><div><div class="primary-cell">${escapeHtml(item.customer_name || item.customer_phone)}</div>${ratingHtml}</div><span class="subtle">${escapeHtml(dateOnly(item.created_at))}</span></div><div class="feedback-message">${escapeHtml(item.message || "No written comment")}</div>${item.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(item.order_id)}">Order #${escapeHtml(item.order_id)}</button>` : ""}</article>`;
+  }).join("")}</div>`;
 }
 
 async function loadMenu(requestOptions = {}) {
