@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { parseFeedback } = require("../src/feedback-parser");
+const { detectMessageLanguage } = require("../src/message-language");
 
 const workflowPath = path.resolve(__dirname, "../../final-pizza.json");
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
@@ -19,7 +20,18 @@ function edge(node, index = 0) {
 function upsert(node) {
   const index = workflow.nodes.findIndex((entry) => entry.name === node.name);
   if (index === -1) workflow.nodes.push(node);
-  else workflow.nodes[index] = node;
+  else {
+    const existing = workflow.nodes[index];
+    node.id = existing.id;
+    const existingConditions = existing.parameters?.conditions?.conditions;
+    const nextConditions = node.parameters?.conditions?.conditions;
+    if (Array.isArray(existingConditions) && Array.isArray(nextConditions)) {
+      nextConditions.forEach((condition, conditionIndex) => {
+        if (existingConditions[conditionIndex]?.id) condition.id = existingConditions[conditionIndex].id;
+      });
+    }
+    workflow.nodes[index] = node;
+  }
 }
 
 const postgresCredentials = find("Upsert Customer and Session").credentials;
@@ -27,14 +39,6 @@ const postgresCredentials = find("Upsert Customer and Session").credentials;
 const upsertSession = find("Upsert Customer and Session");
 if (!upsertSession.parameters.query.includes("session.awaiting_feedback_order_id")) {
   upsertSession.parameters.query = upsertSession.parameters.query
-    .replace(
-      "RETURNING id, whatsapp_phone, name\n),",
-      "RETURNING id, whatsapp_phone, name, preferred_language\n),"
-    )
-    .replace(
-      "    customer.name,\n    session.id AS session_id,",
-      "    customer.name,\n    customer.preferred_language,\n    session.id AS session_id,"
-    )
     .replace(
       "    session.active_order_id,\n    active_order.status AS active_order_status,",
       "    session.active_order_id,\n    session.awaiting_feedback_order_id,\n    active_order.status AS active_order_status,"
@@ -116,21 +120,17 @@ SELECT *, TRUE AS feedback_saved FROM saved;`,
 
 upsert({
   parameters: {
-    jsCode: `const session = $('Upsert Customer and Session').item.json || {};
-const source = String($('Claim Latest Customer Turn').item.json.combined_text || '');
-const history = JSON.stringify(session.recent_messages || []);
-const preferred = String(session.preferred_language || '').toLowerCase();
-const pashto = preferred.includes('pashto') || preferred === 'ps' || /[ځڅډړږښګڼۍې]/u.test(source + history);
-const urduScript = /[\\u0600-\\u06ff]/u.test(source + history);
-const roman = !urduScript && /\\b(aap|apka|aapka|mera|meri|hai|hain|nahi|shukriya)\\b/i.test(source + history);
-const reply_text = pashto
-  ? 'ستاسو د نظر څخه مننه! ❤️🍕 موږ یې ډېر قدر کوو.'
-  : urduScript
-    ? 'آپ کی رائے کا بہت شکریہ! ❤️🍕 ہم واقعی اس کی قدر کرتے ہیں۔'
-    : (preferred.includes('urdu') || preferred === 'ur' || roman)
-      ? 'Aap ke feedback ka bohat shukriya! ❤️🍕 Hum iski bohat qadar karte hain.'
-      : 'Thank you for your feedback! ❤️🍕 We really appreciate it.';
-return [{ json: { ...$input.first().json, reply_text } }];`,
+    jsCode: `${detectMessageLanguage.toString()}
+const session = $('Upsert Customer and Session').item.json || {};
+const source = String($('Claim Latest Customer Turn').item.json.latest_text || $('Claim Latest Customer Turn').item.json.combined_text || '');
+const language = detectMessageLanguage(source, session.recent_messages);
+const replies = {
+  english: 'Thank you for your feedback! ❤️🍕 We really appreciate it.',
+  roman_urdu: 'Aap ke feedback ka bohat shukriya! ❤️🍕 Hum iski bohat qadar karte hain.',
+  urdu: 'آپ کی رائے کا بہت شکریہ! ❤️🍕 ہم واقعی اس کی قدر کرتے ہیں۔',
+  pashto: 'ستاسو د نظر څخه مننه! ❤️🍕 موږ یې ډېر قدر کوو.',
+};
+return [{ json: { ...$input.first().json, reply_text: replies[language] || replies.english, response_language: language } }];`,
   },
   type: "n8n-nodes-base.code",
   typeVersion: 2,
