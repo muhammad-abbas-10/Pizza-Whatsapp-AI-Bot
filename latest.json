@@ -1,5 +1,5 @@
 {
-  "name": "final-pizza",
+  "name": "latest",
   "nodes": [
     {
       "parameters": {
@@ -11,7 +11,7 @@
         -1056,
         1040
       ],
-      "id": "327f0708-af35-4b25-9bd1-ceca77f46bed",
+      "id": "c4b05e3b-120c-4fa4-9aa4-1d736676f6f1",
       "name": "Normalize Incoming Message",
       "notesInFlow": true,
       "notes": "Normalizes Evolution API v2.3.7 messages.upsert payloads. Rejects outgoing, group, broadcast, non-message, malformed, and non-text events before they reach the assistant."
@@ -30,7 +30,7 @@
         848,
         896
       ],
-      "id": "68a6f2bb-4545-4381-9c7c-16c44a743c6c",
+      "id": "f9650f0e-6a07-4ca4-82d0-cf5939f83d66",
       "name": "Upsert Customer and Session",
       "credentials": {
         "postgres": {
@@ -53,7 +53,7 @@
         1888,
         1584
       ],
-      "id": "b04ab2e4-dae1-4351-83ae-67149c57a94a",
+      "id": "af0db1f4-5885-4284-a900-20c0f2b319dc",
       "name": "Load Active Menu",
       "credentials": {
         "postgres": {
@@ -74,7 +74,7 @@
         912,
         768
       ],
-      "id": "64697908-0d80-43d6-a4fd-4adbc69e54f2",
+      "id": "1000b83e-097f-4ce6-9d9c-1648095052bf",
       "name": "Get Restaurant Settings",
       "credentials": {
         "postgres": {
@@ -99,7 +99,7 @@
         1712,
         624
       ],
-      "id": "30fd0af3-4e7d-48a2-bf3f-e8b10fa90a71",
+      "id": "188b6aa7-5cfd-4e09-b996-aca8f32a7112",
       "name": "Update Cart",
       "credentials": {
         "postgres": {
@@ -122,7 +122,7 @@
         3296,
         640
       ],
-      "id": "48c29d3a-b665-4b0d-bf8d-79fd1832b3bf",
+      "id": "ecb5f8c5-edc9-47ed-b8de-705a84268078",
       "name": "Set Order Type",
       "credentials": {
         "postgres": {
@@ -145,7 +145,7 @@
         2080,
         624
       ],
-      "id": "95f00139-bfd3-4bf4-a87a-ef4eda6d7c0b",
+      "id": "b16f9173-68da-4849-9160-0ed47e1b95ad",
       "name": "Set Delivery Info",
       "credentials": {
         "postgres": {
@@ -168,7 +168,7 @@
         2256,
         640
       ],
-      "id": "86bdc32e-6807-46db-89f9-da521445a8fd",
+      "id": "3949ed0e-ff23-4591-88f3-16c9b248fc93",
       "name": "Place Order",
       "credentials": {
         "postgres": {
@@ -191,7 +191,7 @@
         2416,
         640
       ],
-      "id": "e24db8df-5417-4333-857b-f73dda74fd84",
+      "id": "05fc3a41-6276-4bad-916f-c4fc16b1265e",
       "name": "Cancel Order",
       "credentials": {
         "postgres": {
@@ -214,7 +214,7 @@
         3120,
         640
       ],
-      "id": "547a6b1f-001c-4186-80e7-8a267caa2e71",
+      "id": "2d8c6360-06b5-4690-ba60-2741743c08ea",
       "name": "Escalate To Human",
       "credentials": {
         "postgres": {
@@ -241,7 +241,7 @@
         3488,
         640
       ],
-      "id": "5eba04d0-fb8b-4d55-9856-f76cedf42101",
+      "id": "15cfa485-a27f-49ff-9b70-7288e0b48003",
       "name": "Send Menu Image 1",
       "retryOnFail": true,
       "maxTries": 3,
@@ -273,7 +273,7 @@
         3712,
         640
       ],
-      "id": "4c32d535-fe2e-46f9-8704-fd5ba53a2ec6",
+      "id": "c426c458-76c9-4476-b2b3-0123c38137a9",
       "name": "Send Menu Image 2",
       "retryOnFail": true,
       "maxTries": 3,
@@ -286,29 +286,6 @@
         }
       },
       "notes": "Evolution API v2.3.7 POST /message/sendMedia/{instance}."
-    },
-    {
-      "parameters": {
-        "modelName": "models/gemini-3.5-flash-lite",
-        "options": {
-          "maxOutputTokens": 1024,
-          "temperature": 0.1
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1.1,
-      "position": [
-        816,
-        432
-      ],
-      "id": "edd8c589-015c-4e6e-9a1d-bb1bc577fed1",
-      "name": "Google Gemini Chat Model",
-      "credentials": {
-        "googlePalmApi": {
-          "id": "E96rEhD8p8mwthMZ",
-          "name": "Google Gemini(PaLM) Api account"
-        }
-      }
     },
     {
       "parameters": {
@@ -326,7 +303,7 @@
         1520,
         192
       ],
-      "id": "c777e66f-8955-46a9-a722-f89225f5d99d",
+      "id": "30e5c36f-d8f1-4821-ab05-b7885c6e2c06",
       "name": "Pizza Ordering Agent",
       "continueOnFail": true
     },
@@ -350,7 +327,7 @@
         1472,
         784
       ],
-      "id": "a03f6dd5-b689-46b1-8ce4-d71c35297a3a",
+      "id": "b9b61a76-2a64-4f2b-b084-9755ab84a37a",
       "name": "Reply Text"
     },
     {
@@ -370,7 +347,7 @@
         1872,
         816
       ],
-      "id": "876ad281-2021-4f60-ba10-694970f384b8",
+      "id": "49a4027f-2d89-4389-a5cc-5be884e2e81b",
       "name": "Evolution API Send Message",
       "retryOnFail": true,
       "maxTries": 3,
@@ -398,7 +375,7 @@
         2832,
         1056
       ],
-      "id": "0ac58c3a-fb8a-401e-af80-30022e3b120a",
+      "id": "d09ab703-737e-417b-9ce3-a2fae4bc9ea9",
       "name": "Finalize Customer Turn",
       "credentials": {
         "postgres": {
@@ -421,7 +398,7 @@
         -96,
         1120
       ],
-      "id": "69eb89b2-6352-4bc2-badf-689b3388c6f7",
+      "id": "c2519b32-2457-4b8b-af10-0c4be76db983",
       "name": "Insert Message to Buffer",
       "credentials": {
         "postgres": {
@@ -440,7 +417,7 @@
         240,
         1072
       ],
-      "id": "8524b50f-f793-4574-8ccb-4d246b497598",
+      "id": "2e4931cd-2f54-4b58-97d5-74c31de1c5f6",
       "name": "Debounce Customer Messages",
       "webhookId": "45527a8b-bd1a-43a0-972b-7b1b9476c476"
     },
@@ -460,7 +437,7 @@
         1904,
         608
       ],
-      "id": "a0dee8b6-6bc4-4b51-9d8b-e9cd8a12979a",
+      "id": "a6bc1c33-d1f9-4a86-ae2a-ce437897ae1d",
       "name": "Request Cancellation Approval",
       "credentials": {
         "postgres": {
@@ -483,7 +460,7 @@
         432,
         1072
       ],
-      "id": "57421ccc-7888-4792-8ced-b0d012b5a173",
+      "id": "e01cd7a6-8af2-41f2-a1b2-8e319f3f3484",
       "name": "Claim Latest Customer Turn",
       "credentials": {
         "postgres": {
@@ -523,7 +500,7 @@
         640,
         1184
       ],
-      "id": "85388dc4-349a-4515-b19a-4e11fc9a0618",
+      "id": "b1e14c6c-13b2-4e21-ba45-637faab439e1",
       "name": "Customer Turn Ready"
     },
     {
@@ -557,7 +534,7 @@
         112,
         1072
       ],
-      "id": "71cc9efa-c865-4592-9cc7-28787d79392b",
+      "id": "47e519ba-a9a1-4aed-9ceb-c805d603fbd1",
       "name": "Customer Message Accepted"
     },
     {
@@ -591,7 +568,7 @@
         848,
         1328
       ],
-      "id": "7c9a080f-caf2-425c-9532-c6fa0754f63e",
+      "id": "f237f745-6301-41fc-9f88-4d78dcf76b09",
       "name": "Customer Turn Busy"
     },
     {
@@ -604,7 +581,7 @@
         1040,
         1520
       ],
-      "id": "68a74d38-ffd6-4f3b-b08b-8c6dd53ad3bd",
+      "id": "6a630406-f45c-4c1d-b563-2a6c3f4fbba4",
       "name": "Wait For Active Customer Turn",
       "webhookId": "68ed6f0c-bc8c-433f-9405-66dc994a56f8"
     },
@@ -628,7 +605,7 @@
         1280,
         912
       ],
-      "id": "9ae0ce8c-9caa-442b-893e-08dd7628e656",
+      "id": "bfaf38c0-d793-4ba7-866a-57c7bae63bcf",
       "name": "Restore Stored Reply"
     },
     {
@@ -645,7 +622,7 @@
         2304,
         832
       ],
-      "id": "a59ab51d-5d2c-4256-aecd-7b158185f471",
+      "id": "153fe32a-1f92-4fff-a56d-5caba625eb48",
       "name": "Record Reply Sent",
       "credentials": {
         "postgres": {
@@ -670,7 +647,7 @@
         2592,
         640
       ],
-      "id": "fd30966b-b347-41bf-81b9-dfffa0d8fb27",
+      "id": "12b7fd98-6255-493a-8f3f-d922c92cd28d",
       "name": "Update Placed Order Delivery Info",
       "credentials": {
         "postgres": {
@@ -710,7 +687,7 @@
         1056,
         928
       ],
-      "id": "0bb730ed-984b-473b-a27d-3e45146c6243",
+      "id": "3b8129a5-14a6-4abe-af11-0ae179ede53e",
       "name": "Reply Already Sent For This Batch"
     },
     {
@@ -723,7 +700,7 @@
         1120,
         1200
       ],
-      "id": "4ca61b4f-66f1-49da-8513-5efce3ccf0aa",
+      "id": "22940c9f-8305-4a57-a503-d67905713e17",
       "name": "Route Simple Messages"
     },
     {
@@ -757,7 +734,7 @@
         1968,
         1184
       ],
-      "id": "add42b38-21ce-44c4-8b9a-552a7b9618e5",
+      "id": "411ff4aa-9cb8-44e2-aeb9-aa93ed39916d",
       "name": "Use Simple Reply"
     },
     {
@@ -776,7 +753,7 @@
         2960,
         640
       ],
-      "id": "82191966-25f0-4fe4-897b-71d933e912f6",
+      "id": "532ac14e-e321-475a-af5e-8a7c77b5c13d",
       "name": "Menu Lookup",
       "credentials": {
         "postgres": {
@@ -801,7 +778,7 @@
         2800,
         640
       ],
-      "id": "d98301b5-747a-4bf1-8b44-dd5da0da5a36",
+      "id": "f59269a4-c656-442d-a812-d966ce51da77",
       "name": "Update Menu Item Cart",
       "credentials": {
         "postgres": {
@@ -841,7 +818,7 @@
         560,
         816
       ],
-      "id": "65a315be-8471-49bf-8b06-87e3bdc421c1",
+      "id": "387ce72d-8d08-48be-82e9-fea40c499528",
       "name": "Recover Reply Before Routing"
     },
     {
@@ -861,7 +838,7 @@
         2448,
         1248
       ],
-      "id": "0f3d9ba0-b116-4564-b70a-8dadad1356cb",
+      "id": "8d235bf8-6156-434d-a66d-395015be6a39",
       "name": "Evolution API Send Simple Reply",
       "retryOnFail": true,
       "maxTries": 3,
@@ -888,7 +865,7 @@
         2864,
         1232
       ],
-      "id": "c5fce185-5c86-4ec9-8bd3-eabfed88294b",
+      "id": "be13908b-8b2f-436b-91b5-cd191fac0c12",
       "name": "Finalize Simple Reply",
       "credentials": {
         "postgres": {
@@ -910,7 +887,7 @@
         -1120,
         192
       ],
-      "id": "fba52c86-9888-42e2-8e25-97da0e5eea68",
+      "id": "32368986-553b-42a3-9cbe-e589bd972ff1",
       "name": "Admin Order Status Webhook",
       "webhookId": "6184a7ac-f35d-4b5d-857c-41798246b79b",
       "notesInFlow": true,
@@ -926,7 +903,7 @@
         -896,
         192
       ],
-      "id": "6b39e4f9-c543-4ded-aa44-3659d19646db",
+      "id": "eff5ac8e-228b-4bcc-b6d0-91858eeb0ce3",
       "name": "Validate Admin Status Payload"
     },
     {
@@ -960,7 +937,7 @@
         -672,
         192
       ],
-      "id": "e8f7e4e5-574b-4abe-9c67-757634d8b96a",
+      "id": "10c0e2f2-9dd4-46c6-bf03-1741bbb15e05",
       "name": "Admin Status Payload Valid"
     },
     {
@@ -977,7 +954,7 @@
         -448,
         336
       ],
-      "id": "3ad77748-0f49-4b61-91c5-d4dec3245623",
+      "id": "60ec22e9-c5f7-4c34-bd42-294cff7c52df",
       "name": "Reject Invalid Admin Status Payload"
     },
     {
@@ -994,7 +971,7 @@
         -448,
         112
       ],
-      "id": "2185c372-9bb0-49b9-8965-7cf6eef7b485",
+      "id": "70c6f31f-395a-4f7c-945d-186cfe8f68cb",
       "name": "Claim Admin Customer Event",
       "credentials": {
         "postgres": {
@@ -1034,7 +1011,7 @@
         -224,
         112
       ],
-      "id": "d394f037-d299-4515-9fb6-ef7524f0b75e",
+      "id": "1358e102-0a04-4f69-b7c9-9784662fde8e",
       "name": "Admin Event Claimed"
     },
     {
@@ -1051,7 +1028,7 @@
         -96,
         368
       ],
-      "id": "a8d65f06-b390-4979-95fb-b0e9caf22bd4",
+      "id": "0c5f0ef5-c782-4035-b7b3-befabe41a19d",
       "name": "Respond Admin Event Not Claimed"
     },
     {
@@ -1069,7 +1046,7 @@
         0,
         0
       ],
-      "id": "c0b3bc6e-852f-45a7-b2b1-940e55b14446",
+      "id": "5313f1ce-7e45-40c5-8a9e-f4b5d441432c",
       "name": "Admin Customer Message Agent",
       "continueOnFail": true
     },
@@ -1083,7 +1060,7 @@
         224,
         0
       ],
-      "id": "05790b22-148e-485c-88c1-a5ed3da30367",
+      "id": "6197136f-c359-4e3b-9b58-c90abd472ba3",
       "name": "Build Safe Admin Customer Message"
     },
     {
@@ -1103,7 +1080,7 @@
         448,
         0
       ],
-      "id": "4eca18ec-6b50-412e-8100-98d835feaac7",
+      "id": "a0d5a848-14d4-438f-a93a-0ac8b5263f53",
       "name": "Evolution API Send Admin Status",
       "retryOnFail": true,
       "maxTries": 3,
@@ -1132,7 +1109,7 @@
         672,
         0
       ],
-      "id": "cb4521e0-85b3-494a-9e3f-dff36b79060f",
+      "id": "12366ed7-cd20-4256-b14f-50974f8c55b6",
       "name": "Record Admin Event Result",
       "credentials": {
         "postgres": {
@@ -1155,7 +1132,7 @@
         896,
         0
       ],
-      "id": "1668628d-d10a-4c4a-809a-9501ea7ea2ef",
+      "id": "b2f78dbf-3bc4-4123-b125-7719cd761519",
       "name": "Respond Admin Event Processed"
     },
     {
@@ -1168,7 +1145,7 @@
         1472,
         544
       ],
-      "id": "0ad936fe-8309-4ee8-a0f9-179ab7ae4f55",
+      "id": "06b72900-35b5-4f0f-b6e7-0ddb5e496533",
       "name": "Guard Cancellation Reply"
     },
     {
@@ -1183,7 +1160,7 @@
         -1328,
         1056
       ],
-      "id": "1ca2be34-badf-4e6f-9cfc-9df59029e63b",
+      "id": "a6363ff9-4f1a-43f0-838c-9f97258e7090",
       "name": "Evolution API Webhook",
       "webhookId": "54936811-25aa-4992-9cb2-ff9575584730",
       "notesInFlow": true,
@@ -1220,7 +1197,7 @@
         -768,
         1040
       ],
-      "id": "ad3fd644-0172-42bb-93f6-bae30ce62a2b",
+      "id": "5c3b3b89-11a0-4c42-a4b1-e6fe841f49dd",
       "name": "Process Incoming Text?",
       "notesInFlow": true,
       "notes": "Only the true output reaches the customer-message workflow. The Webhook already acknowledges ignored events with HTTP 200."
@@ -1256,7 +1233,7 @@
         880,
         1024
       ],
-      "id": "7badf031-1dbb-4ca4-8098-b279cec6cb17",
+      "id": "ccd4c302-a075-4b0d-acba-672e2a9a84c9",
       "name": "Awaiting Feedback Response?"
     },
     {
@@ -1269,7 +1246,7 @@
         1120,
         976
       ],
-      "id": "062f5a4e-1e5e-41d8-9c51-1cbd949ac36c",
+      "id": "53d4e2eb-29d0-408f-9808-3411303a976d",
       "name": "Parse Feedback Response"
     },
     {
@@ -1286,17 +1263,17 @@
         1360,
         976
       ],
-      "id": "888aaed9-1593-4f35-a8da-5226bf791860",
+      "id": "3bfdbbdc-20b4-46a4-b0c2-1d2d2df5b54e",
       "name": "Save Customer Feedback",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
       "credentials": {
         "postgres": {
           "id": "A3W0kjWxeXeN7KOu",
           "name": "Postgres account"
         }
       },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1000,
       "notes": "Parameterized, idempotent upsert against the existing feedback table. A database failure stops the branch before any thank-you is sent."
     },
     {
@@ -1309,28 +1286,37 @@
         1600,
         976
       ],
-      "id": "1ef0f22d-3bba-42db-af12-ab91190af1f6",
+      "id": "cb166e37-793d-44de-a6bf-0dba93867e48",
       "name": "Build Feedback Thank You"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "openrouter/free",
+          "mode": "id"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        368
+      ],
+      "id": "71b25be8-4de6-4382-928a-2a535153a096",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "VwYrLtVYSQrEp4T7",
+          "name": "OpenAI account"
+        }
+      }
     }
   ],
   "pinData": {},
   "connections": {
-    "Google Gemini Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Pizza Ordering Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Admin Customer Message Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Update Cart": {
       "ai_tool": [
         [
@@ -1918,6 +1904,22 @@
           }
         ]
       ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Admin Customer Message Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Pizza Ordering Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1925,12 +1927,12 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "c3e84847-5138-4dfa-bba5-d2ac68311524",
+  "versionId": "4f57b253-d3b8-405a-b466-b8d235b91f4d",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "28d8415a8092a2e1816ea01c6472c7fb3bef93f4d13363a8dda85216b4e62e8a"
   },
   "nodeGroups": [],
-  "id": "698yUFMhAppYMtOy",
+  "id": "J7ECIalyqxoNkeOF",
   "tags": []
 }
