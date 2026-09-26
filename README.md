@@ -31,7 +31,7 @@
 | Menu image API | 🟢 Live | [Image catalogue](https://pizza-whatsapp-ai-bot.vercel.app/images) |
 | Database | 🟢 Connected | Neon PostgreSQL |
 | Automation | 🟢 Configured | n8n workflow; production webhook is private |
-| Messaging | 🟢 Integrated | Meta WhatsApp Cloud API; no public bot URL |
+| Messaging | 🟢 Integrated | Evolution API for WhatsApp; no public bot URL |
 
 The Vite SPA and Express API are deployed as two Vercel services behind one origin. `/admin/*`, `/images*`, `/health`, and `/dashboard` are routed to the backend; all other paths are served by the frontend.
 
@@ -95,7 +95,7 @@ The frontend is framework-free, modular JavaScript rendered by Vite. It does **n
 ```mermaid
 flowchart LR
     Customer[Customer]
-    WA[Meta WhatsApp<br/>Cloud API]
+    WA[Evolution API<br/>for WhatsApp]
     N8N[n8n automation]
     Gemini[Google Gemini]
     DB[(Neon PostgreSQL)]
@@ -127,7 +127,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     actor Customer
-    participant WA as WhatsApp Cloud API
+    participant WA as Evolution API / WhatsApp
     participant Flow as n8n workflow
     participant AI as Gemini
     participant DB as Neon PostgreSQL
@@ -135,7 +135,7 @@ sequenceDiagram
     participant API as Express API
 
     Customer->>WA: Send menu or order message
-    WA->>Flow: WhatsApp trigger
+    WA->>Flow: Incoming-message webhook
     Flow->>DB: Deduplicate, buffer, load session and live menu
     Flow->>AI: Message + relevant menu + session context
     AI-->>Flow: Intent and tool calls
@@ -249,7 +249,7 @@ The tracked [workflow.json](workflow.json) contains one active workflow definiti
 ### Customer ordering path
 
 ```text
-WhatsApp Trigger
+Evolution API Webhook
   → normalize and buffer incoming message
   → deduplicate / debounce / claim latest customer turn
   → upsert customer and conversation session
@@ -284,7 +284,7 @@ Implemented reliability controls include message buffering, duplicate-message pr
 | Database | Neon PostgreSQL | Ordered SQL migrations in `database/migration/` |
 | Automation | n8n | `workflow.json` import |
 | AI | Google Gemini | n8n Gemini credential and model node |
-| Messaging | Meta WhatsApp Cloud API | n8n WhatsApp Trigger and send/tool credentials |
+| Messaging | Evolution API | n8n Evolution API webhook and send-request credentials |
 
 The same-origin Vercel layout means production normally needs no `VITE_API_URL`: the frontend safely defaults to `window.location.origin`, and Vercel rewrites API traffic to the backend service.
 
@@ -325,11 +325,11 @@ Run migration `018` and set `ADMIN_USERNAME` and `ADMIN_PASSWORD`; the first log
 VITE_API_URL=http://localhost:3000
 ```
 
-`VITE_API_URL` is optional in the same-origin Vercel deployment. The client also refuses to use a loopback API URL from a non-loopback page. Never place `DATABASE_URL`, admin credentials, webhook URLs, Meta tokens, or WhatsApp credentials in a `VITE_*` variable.
+`VITE_API_URL` is optional in the same-origin Vercel deployment. The client also refuses to use a loopback API URL from a non-loopback page. Never place `DATABASE_URL`, admin credentials, webhook URLs, Evolution API keys, or WhatsApp credentials in a `VITE_*` variable.
 
 ### n8n credentials
 
-Configure credentials inside n8n for PostgreSQL, the WhatsApp Trigger, WhatsApp sending, and Google Gemini. Recheck the WhatsApp Phone Number ID fields after import. Credential secrets are intentionally not documented or stored as environment examples in this repository.
+Configure credentials inside n8n for PostgreSQL, the Evolution API webhook, Evolution API send requests, and Google Gemini. Recheck the Evolution API instance name and base URL after import. Credential secrets are intentionally not documented or stored as environment examples in this repository.
 
 ## 🧑‍💻 Local development
 
@@ -337,7 +337,7 @@ Configure credentials inside n8n for PostgreSQL, the WhatsApp Trigger, WhatsApp 
 
 - Node.js and npm compatible with Vite 7
 - A PostgreSQL/Neon database
-- n8n, Gemini, and Meta WhatsApp credentials only when testing the complete messaging flow
+- n8n, Gemini, and Evolution API credentials only when testing the complete messaging flow
 
 ### 1. Clone and install
 
@@ -413,16 +413,16 @@ Database-backed integration scripts are available separately and require a confi
 2. Apply the migration set in numeric order for a fresh installation, or use the runtime-hardening guide for an existing database.
 3. Confirm `/health` reports a connected database before enabling production traffic.
 
-### n8n, Gemini, and WhatsApp
+### n8n, Gemini, and Evolution API
 
 1. Import `workflow.json` into n8n and deactivate any older competing workflow before activation.
-2. Reconnect the target instance's PostgreSQL, WhatsApp Trigger, WhatsApp API, and Google Gemini credentials.
-3. Verify the WhatsApp Phone Number ID on every send/tool node and confirm `/images/1` and `/images/2` resolve if menu-image delivery is enabled.
-4. Activate the workflow and configure Meta's production webhook to use the native **WhatsApp Trigger**.
+2. Reconnect the target instance's PostgreSQL, Evolution API webhook, Evolution API send-request, and Google Gemini credentials.
+3. Verify the Evolution API base URL and instance name on every send node and confirm `/images/1` and `/images/2` resolve if menu-image delivery is enabled.
+4. Activate the workflow and configure the Evolution API instance webhook to send incoming `messages.upsert` events to the n8n **Evolution API Webhook** endpoint.
 5. Copy the production URL for **Admin Order Status Webhook** (`/webhook/admin-order-status`) into `N8N_ADMIN_WEBHOOK_URL`, then redeploy the backend environment.
 6. Exercise one test order and one forward status change, checking the dashboard event lifecycle before production use.
 
-The WhatsApp Trigger credential must be configured with the Meta application secret needed for webhook signature verification. Keep all provider credentials in their native secure stores.
+Protect the n8n Evolution API webhook with its configured header-auth secret, and configure the same secret on the Evolution API instance webhook. Keep all provider credentials in their native secure stores.
 
 ## 🛡️ Security model
 
@@ -533,7 +533,7 @@ The response separates the committed order state from customer-notification deli
 
 ## ✅ Project status
 
-**Deployed and operational.** The customer ordering workflow, AI/menu tools, WhatsApp integration, responsive admin dashboard, Express API, Neon schema, durable status notifications, and Vercel multi-service deployment are implemented. The public dashboard, health check, and image catalogue were verified during this README update.
+**Deployed and operational.** The customer ordering workflow, AI/menu tools, Evolution API-powered WhatsApp integration, responsive admin dashboard, Express API, Neon schema, durable status notifications, and Vercel multi-service deployment are implemented. The public dashboard, health check, and image catalogue were verified during this README update.
 
 ## 🛣️ Future improvements
 
