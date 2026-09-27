@@ -29,6 +29,11 @@ assert(workflow.connections["Replace Draft Cart"]?.ai_tool, "Replace Draft Cart 
 const place = find("Place Order");
 assert.match(place.parameters.query, /checkout_error/);
 assert.match(place.parameters.query, /delivery_address_required/);
+const clearedSession = place.parameters.query.slice(
+  place.parameters.query.indexOf("cleared_session AS"),
+  place.parameters.query.indexOf("SELECT (SELECT COUNT(*) FROM new_order)")
+);
+assert.equal((clearedSession.match(/cart_updated_at = NOW\(\)/g) || []).length, 1, "Place Order assigns cart_updated_at more than once");
 
 const handoff = find("Escalate To Human");
 assert.match(handoff.parameters.query, /human_handoff/);

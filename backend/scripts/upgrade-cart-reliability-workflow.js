@@ -200,8 +200,8 @@ toolEdge("Replace Draft Cart");
 const placeOrder = node("Place Order");
 placeOrder.parameters.query = placeOrder.parameters.query
   .replace(
-    "UPDATE conversation_sessions SET cart = '{\"items\": []}'::jsonb, order_type = NULL,\n    delivery_address = NULL, delivery_name = NULL, order_status = 'placed',",
-    "UPDATE conversation_sessions SET cart = '{\"items\": []}'::jsonb, order_type = NULL,\n    delivery_address = NULL, delivery_name = NULL, order_status = 'placed', cart_updated_at = NOW(),"
+    /delivery_address = NULL, delivery_name = NULL, order_status = 'placed'(?:, cart_updated_at = NOW\(\))*,\s*active_order_id =/,
+    "delivery_address = NULL, delivery_name = NULL, order_status = 'placed', cart_updated_at = NOW(),\n    active_order_id ="
   )
   .replace(
     "SELECT (SELECT COUNT(*) FROM new_order) > 0 AS order_created,\n  (SELECT invalid_items FROM invalid) AS invalid_items, no.*\nFROM (SELECT 1) AS one LEFT JOIN new_order no ON TRUE;",
