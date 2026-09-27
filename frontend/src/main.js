@@ -747,7 +747,7 @@ async function loadRequests(requestOptions = {}) {
   bindFilterControls("requests");
   bindLocalSearch("requests");
   bindCommonActions();
-  app.querySelectorAll("[data-resolve-request]").forEach((button) => button.addEventListener("click", () => confirmRequest(button.dataset.requestId, button.dataset.resolveRequest)));
+  app.querySelectorAll("[data-resolve-request]").forEach((button) => button.addEventListener("click", () => confirmRequest(button.dataset.requestId, button.dataset.resolveRequest, button.dataset.resolveLabel)));
   app.querySelectorAll("[data-retry-request]").forEach((button) => button.addEventListener("click", () => retryNotification(button)));
 }
 
@@ -755,18 +755,22 @@ function renderRequestCard(request, currency) {
   const cancellable = request.request_type !== "cancel_order" || Boolean(request.order_id && request.order_cancellable);
   const deliveryStatus = request.notification_delivery_status || (request.notification_sent ? "sent" : request.notification_error ? "failed" : null);
   const notificationRetryable = request.status !== "pending" && deliveryStatus === "failed" && Boolean(request.notification_event_id);
-  const typeLabel = ({ cancel_order: "Cancellation request", modification: "Order modification", delivery: "Delivery issue" })[request.request_type] || "Customer request";
+  const humanHandoff = request.request_type === "human_handoff";
+  const typeLabel = ({ cancel_order: "Cancellation request", modification: "Order modification", delivery: "Delivery issue", human_handoff: "Customer complaint / staff handoff" })[request.request_type] || "Customer request";
   return `<article class="request-card"><div class="request-card-top"><div class="request-number">REQUEST #${escapeHtml(request.id)}</div>${badge(request.status)}</div><div class="request-type">${escapeHtml(typeLabel)}</div>
     <div class="request-question">${escapeHtml(request.question)}</div>
     <div class="request-facts"><div><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(request.customer_name || "Unnamed")}<br><span class="subtle">${escapeHtml(request.customer_phone)}</span></div></div><div><div class="fact-label">Order</div><div class="fact-value">${request.order_id ? `#${escapeHtml(request.order_id)}<br>${escapeHtml(itemSummary(request.order_items, 1))}` : "Not linked"}</div></div><div><div class="fact-label">Total</div><div class="fact-value">${request.order_total ? escapeHtml(money(request.order_total, currency)) : "—"}</div></div><div><div class="fact-label">Delivery</div><div class="fact-value">${escapeHtml(request.delivery_address || (request.order_type ? statusLabel(request.order_type) : "—"))}</div></div><div><div class="fact-label">Requested</div><div class="fact-value">${escapeHtml(relativeTime(request.created_at))}</div></div><div><div class="fact-label">Notification</div><div class="fact-value">${deliveryStatus === "sent" ? '<span class="success-text">Delivered</span>' : deliveryStatus === "failed" ? '<span class="danger-text">Failed</span>' : deliveryStatus === "processing" ? "Processing" : deliveryStatus === "pending" ? "Queued" : deliveryStatus === "superseded" ? "Superseded" : "Not sent"}</div></div></div>
     ${request.request_type === "cancel_order" && !cancellable && request.status === "pending" ? `<div class="notification-failure">Order #${escapeHtml(request.order_id || "?")} can no longer be cancelled at status ${escapeHtml(statusLabel(request.order_status))}. The backend will reject approval.</div>` : ""}
     ${deliveryStatus === "failed" ? `<div class="notification-failure">Customer notification failed: ${escapeHtml(request.event_notification_error || request.notification_error || "Delivery failed")}</div>` : ""}
-    <div class="request-actions">${request.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}${request.status === "pending" ? `${cancellable ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>` : ""}<button class="btn btn-danger btn-sm" data-resolve-request="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>` : notificationRetryable ? `<button class="btn btn-sm" data-retry-request="${escapeHtml(request.id)}">Retry notification</button>` : ""}<span class="subtle" style="margin-left:auto">${escapeHtml(dateTime(request.created_at))}</span></div></article>`;
+    <div class="request-actions">${request.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}${request.status === "pending" ? humanHandoff ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-resolve-label="Mark resolved" data-request-id="${escapeHtml(request.id)}">Mark resolved</button><button class="btn btn-danger btn-sm" data-resolve-request="deny" data-resolve-label="Dismiss" data-request-id="${escapeHtml(request.id)}">Dismiss</button>` : `${cancellable ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>` : ""}<button class="btn btn-danger btn-sm" data-resolve-request="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>` : notificationRetryable ? `<button class="btn btn-sm" data-retry-request="${escapeHtml(request.id)}">Retry notification</button>` : ""}<span class="subtle" style="margin-left:auto">${escapeHtml(dateTime(request.created_at))}</span></div></article>`;
 }
 
-function confirmRequest(requestId, decision) {
-  const action = decision === "approve" ? "Approve" : "Deny";
-  showModal(`<form id="request-decision-form"><div class="modal-head"><h2>${action} request #${escapeHtml(requestId)}?</h2><button type="button" class="btn icon-btn" data-close-modal>×</button></div><div class="modal-body"><p class="muted" style="margin-top:0">This commits the decision, queues a durable event, and asks n8n to notify the customer. Staff stay entirely in this dashboard.</p><div class="field"><label for="admin-note">Customer-safe reason (optional)</label><textarea class="textarea" id="admin-note" name="admin_note" placeholder="Add a short explanation"></textarea></div></div><div class="modal-foot"><button type="button" class="btn" data-close-modal>Cancel</button><button type="submit" class="btn ${decision === "approve" ? "btn-primary" : "btn-danger"}">${action} request</button></div></form>`, { label: `${action} request` });
+function confirmRequest(requestId, decision, actionLabel) {
+  const action = actionLabel || (decision === "approve" ? "Approve" : "Deny");
+  const resolutionCopy = actionLabel
+    ? "This records the staff resolution and closes the customer handoff."
+    : "This commits the decision, queues a durable event, and asks n8n to notify the customer. Staff stay entirely in this dashboard.";
+  showModal(`<form id="request-decision-form"><div class="modal-head"><h2>${action} request #${escapeHtml(requestId)}?</h2><button type="button" class="btn icon-btn" data-close-modal>×</button></div><div class="modal-body"><p class="muted" style="margin-top:0">${resolutionCopy}</p><div class="field"><label for="admin-note">Customer-safe reason (optional)</label><textarea class="textarea" id="admin-note" name="admin_note" placeholder="Add a short explanation"></textarea></div></div><div class="modal-foot"><button type="button" class="btn" data-close-modal>Cancel</button><button type="submit" class="btn ${decision === "approve" ? "btn-primary" : "btn-danger"}">${action} request</button></div></form>`, { label: `${action} request` });
   modalRoot.querySelector("#request-decision-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = event.currentTarget.querySelector("[type='submit']");
@@ -776,10 +780,12 @@ function confirmRequest(requestId, decision) {
     try {
       const result = await api(`/admin/requests/${requestId}/${decision}`, { method: "POST", body: JSON.stringify({ admin_note: note || undefined }) });
       closeModal();
-      const decisionLabel = decision === "approve" ? "approved" : "denied";
+      const decisionLabel = action.toLowerCase();
       const deliveryStatus = result.notification?.delivery_status;
       toast(
-        deliveryStatus === "sent"
+        !result.notification
+          ? `Request ${decisionLabel}.`
+          : deliveryStatus === "sent"
           ? `Request ${decisionLabel} and customer notified.`
           : deliveryStatus === "failed"
             ? `Request ${decisionLabel}; customer notification failed and can be retried.`

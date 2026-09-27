@@ -14,6 +14,7 @@
     "test:admin-status-db": "node scripts/test-dashboard-status-migration.js",
     "test:workflow-cancellation": "node scripts/test-workflow-cancellation-query.js",
     "test:workflow-cart": "node scripts/test-workflow-cart-query.js",
+    "test:workflow-cart-reliability": "node scripts/test-cart-reliability-workflow.js",
     "test:workflow-runtime": "node scripts/test-admin-status-architecture.js",
     "test:workflow-order-safety": "node scripts/test-workflow-order-safety.js",
     "test:customer-journey": "node scripts/test-customer-journey.js",
@@ -24,6 +25,7 @@
     "test:language-switching": "node scripts/test-language-switching.js",
     "test:menu-management": "node scripts/test-menu-management.js",
     "workflow:upgrade": "node scripts/upgrade-dashboard-status-workflow.js",
+    "workflow:cart-reliability": "node scripts/upgrade-cart-reliability-workflow.js",
     "workflow:address-clarification": "node scripts/upgrade-address-clarification-workflow.js",
     "migrate:workflow-runtime": "node scripts/run-migration.js 012_n8n_workflow_runtime_hardening.sql",
     "migrate:menu-v2": "node scripts/run-migration.js 013_menu_v2.sql",
@@ -34,6 +36,7 @@
     "migrate:admin-auth": "node scripts/run-migration.js 018_admin_username_password_auth.sql",
     "migrate:address-clarification": "node scripts/run-migration.js 019_admin_address_clarification.sql",
     "migrate:feedback": "node scripts/run-migration.js 020_post_delivery_feedback.sql",
+    "migrate:cart-reliability": "node scripts/run-migration.js 021_draft_cart_and_handoff.sql",
     "workflow:feedback": "node scripts/upgrade-feedback-workflow.js",
     "workflow:language-switching": "node scripts/upgrade-language-switching-workflow.js",
     "workflow:dashboard-status": "node scripts/upgrade-dashboard-status-workflow.js"

@@ -640,9 +640,37 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
         });
       }
 
+      if (requestRow.request_type === "human_handoff") {
+        // A human handoff is a staff work item, not an order-state decision.
+        // Resolving it must not cancel or otherwise mutate an order.
+        await client.query(
+          `UPDATE admin_requests
+           SET status = $1, admin_note = $2, resolved_at = NOW()
+           WHERE id = $3`,
+          [decision, admin_note?.trim() || null, requestId]
+        );
+        await client.query(
+          `UPDATE conversation_sessions
+           SET awaiting_human = EXISTS (
+                 SELECT 1 FROM admin_requests pending
+                 WHERE pending.customer_id = $1 AND pending.status = 'pending'
+               ),
+               updated_at = NOW()
+           WHERE customer_id = $1`,
+          [requestRow.customer_id]
+        );
+        await client.query("COMMIT");
+        committed = true;
+        return res.json({
+          success: true,
+          decision,
+          notification: null,
+        });
+      }
+
       if (requestRow.request_type !== "cancel_order") {
         await client.query("ROLLBACK");
-        return res.status(409).json({ success: false, message: "Only cancellation decisions are supported by this workflow" });
+        return res.status(409).json({ success: false, message: "This request type is not supported by this workflow" });
       }
       if (!requestRow.order_id) {
         await client.query("ROLLBACK");
