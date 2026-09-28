@@ -115,13 +115,18 @@ async function run() {
     assert.equal(result.cart.items.filter((entry) => entry.record_type === "deal").length, 1);
     assert.equal(result.cart.items.filter((entry) => entry.item_name === "Garlic Mayo").length, 1);
 
+    // SQL NULL semantics must never let a missing order type reach orders.order_type.
+    let quote = await callJson(client, "SELECT pizza_prepare_checkout_quote($1) AS value", [customer.id]);
+    assert.equal(quote.quote_created, false);
+    assert.equal(quote.checkout_error, "order_type_required");
+
     await client.query(`
       UPDATE conversation_sessions
       SET order_type = 'delivery', delivery_name = 'Abbas', delivery_address = 'Durrani Hostel'
       WHERE customer_id = $1
     `, [customer.id]);
 
-    let quote = await callJson(client, "SELECT pizza_prepare_checkout_quote($1) AS value", [customer.id]);
+    quote = await callJson(client, "SELECT pizza_prepare_checkout_quote($1) AS value", [customer.id]);
     assert.equal(quote.quote_created, true);
     assert.equal(Number(quote.subtotal), Number(deal.price) + Number(oldCartItem.price));
     assert(Number(quote.total) >= Number(quote.subtotal));

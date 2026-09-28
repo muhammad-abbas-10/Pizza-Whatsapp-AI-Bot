@@ -224,7 +224,7 @@ SELECT jsonb_build_object(
   'checkout_error', CASE
     WHEN t.cart_line_count = 0 THEN 'cart_empty'
     WHEN t.cart_line_count <> t.valid_line_count THEN 'invalid_cart'
-    WHEN t.order_type NOT IN ('delivery', 'pickup') THEN 'order_type_required'
+    WHEN t.order_type IS NULL OR t.order_type NOT IN ('delivery', 'pickup') THEN 'order_type_required'
     WHEN t.order_type = 'delivery' AND NULLIF(BTRIM(t.delivery_name), '') IS NULL THEN 'delivery_name_required'
     WHEN t.order_type = 'delivery' AND NULLIF(BTRIM(t.delivery_address), '') IS NULL THEN 'delivery_address_required'
     ELSE NULL

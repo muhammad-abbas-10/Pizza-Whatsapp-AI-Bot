@@ -207,5 +207,6 @@ assert.match(migration, /CREATE TRIGGER trg_pizza_invalidate_quote/);
 assert.match(migration, /CREATE OR REPLACE FUNCTION pizza_apply_draft_deal_action/);
 assert.match(migration, /CREATE OR REPLACE FUNCTION pizza_place_confirmed_order/);
 assert.match(migration, /quote_cart_revision IS DISTINCT FROM v_session\.cart_revision/);
+assert.match(migration, /order_type IS NULL OR t\.order_type NOT IN/);
 
 console.log("Persistent draft-deal and guarded checkout workflow tests: PASS");
