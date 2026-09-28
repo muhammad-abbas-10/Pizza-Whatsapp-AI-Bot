@@ -1,13 +1,13 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const { root, loadWorkflow } = require("./workflow-fixture");
 
 const {
   dispatchCustomerNotificationEvent,
 } = require("../src/customer-notification-events");
 
-const workflow = loadWorkflow();
+const root = path.resolve(__dirname, "../..");
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "pizza-bar-whatsapp-ai-bot.json"), "utf8"));
 const migration = fs.readFileSync(path.join(root, "database/migration/016_dashboard_customer_status_events.sql"), "utf8");
 const backend = fs.readFileSync(path.join(root, "backend/src/admin-routes.js"), "utf8");
 const frontend = fs.readFileSync(path.join(root, "frontend/src/main.js"), "utf8");
@@ -39,7 +39,7 @@ function staticArchitectureTests() {
     "Claim Admin Customer Event",
     "Admin Customer Message Agent",
     "Build Safe Admin Customer Message",
-    "Evolution API Send Admin Status",
+    "Send Admin Status to Customer",
     "Record Admin Event Result",
   ];
   required.forEach((name) => assert(names.has(name), `Missing workflow node: ${name}`));
@@ -81,11 +81,11 @@ function staticArchitectureTests() {
   assert(String(workflow.nodes.find((node) => node.name === "Respond Admin Event Not Claimed").parameters.options.responseCode).includes("404"));
   assert(String(workflow.nodes.find((node) => node.name === "Respond Admin Event Processed").parameters.options.responseCode).includes("502"));
 
-  const customerPath = reachableFrom("Evolution API Webhook");
+  const customerPath = reachableFrom("WhatsApp Trigger");
   const adminPath = reachableFrom("Admin Order Status Webhook");
-  assert(customerPath.has("Pizza Ordering Agent") && customerPath.has("Evolution API Send Message"));
+  assert(customerPath.has("Pizza Ordering Agent") && customerPath.has("Send message"));
   assert(!customerPath.has("Claim Admin Customer Event"), "Customer input can enter the admin-event claim path");
-  assert(adminPath.has("Admin Customer Message Agent") && adminPath.has("Evolution API Send Admin Status"));
+  assert(adminPath.has("Admin Customer Message Agent") && adminPath.has("Send Admin Status to Customer"));
   assert(!adminPath.has("Pizza Ordering Agent"), "Admin event can enter customer ordering logic");
   assert(!adminPath.has("Update Cart") && !adminPath.has("Place Order"));
 

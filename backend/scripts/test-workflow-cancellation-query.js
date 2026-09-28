@@ -3,14 +3,9 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
-const { loadWorkflow } = require("./workflow-fixture");
-const workflow = loadWorkflow();
+const workflow = require("../../workflow.json");
 const migration = fs.readFileSync(
   path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql"),
-  "utf8"
-).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
-const transactionMigration = fs.readFileSync(
-  path.resolve(__dirname, "../../database/migration/022_transactional_order_state.sql"),
   "utf8"
 ).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
 
@@ -53,21 +48,10 @@ async function runCancellationGuard(agentJson, customerMessage, session = { orde
 }
 
 function agentOutputValid(json) {
-  const hasReply = Boolean(
-    json
-    && typeof json.output === "string"
-    && json.output.trim()
-    && json.cancellation_reply_safe === true
-  );
-  if (!hasReply) return false;
-  if (!json.cancellation_success_claimed) return true;
-  return Boolean(
-    json.cancellation_submission_confirmed
-    && json.request_created
-    && json.dashboard_request_visible
-    && json.request_id
-    && !json.cancellation_error
-  );
+  const raw = workflowNode("Agent Output Valid")
+    .parameters.conditions.conditions[0].leftValue;
+  const expression = raw.replace(/^=\{\{\s*/, "").replace(/\s*\}\}$/, "");
+  return new Function("$json", `return (${expression});`)(json);
 }
 
 async function createCustomer(client, suffix) {
@@ -121,19 +105,6 @@ async function refillCart(client, customerId, cartLine, quantity) {
   );
 }
 
-async function quoteAndConfirm(client, customerId) {
-  const quoted = (await client.query(
-    "SELECT pizza_prepare_checkout_quote($1) AS value",
-    [customerId]
-  )).rows[0].value;
-  if (!quoted.quote_created) throw new Error(`Could not quote test cart: ${quoted.checkout_error}`);
-  const confirmed = (await client.query(
-    "SELECT pizza_confirm_checkout_quote($1) AS value",
-    [customerId]
-  )).rows[0].value;
-  if (!confirmed.confirmed) throw new Error(`Could not confirm test cart: ${confirmed.checkout_error}`);
-}
-
 function toolStep(row) {
   return {
     action: { tool: "Request_Cancellation_Approval" },
@@ -146,7 +117,6 @@ async function main() {
   try {
     await client.query("BEGIN");
     await client.query(migration);
-    await client.query(transactionMigration);
     const placeOrder = workflowQuery("Place Order");
     const requestCancellation = workflowQuery("Request Cancellation Approval");
 
@@ -174,7 +144,6 @@ async function main() {
       || !agentOutputValid(draftGuard)
     ) throw new Error("Placed-order guard interfered with draft cart cancellation");
 
-    await quoteAndConfirm(client, customerId);
     const placed = await client.query(placeOrder, [customerId]);
     if (!placed.rows[0].order_created || !placed.rows[0].id) {
       throw new Error("Workflow Place Order did not create an order");
@@ -232,7 +201,6 @@ async function main() {
     ) throw new Error("Existing request was incorrectly described as newly submitted");
 
     const { customerId: ovenCustomerId } = await createCustomer(client, "oven");
-    await quoteAndConfirm(client, ovenCustomerId);
     const ovenPlaced = await client.query(placeOrder, [ovenCustomerId]);
     const ovenOrderId = ovenPlaced.rows[0].id;
     await client.query("UPDATE orders SET status = 'preparing' WHERE id = $1", [ovenOrderId]);
@@ -268,7 +236,6 @@ async function main() {
     const orderIds = [];
     for (let index = 0; index < 4; index += 1) {
       if (index > 0) await refillCart(client, multiCustomerId, cartLine, index + 1);
-      await quoteAndConfirm(client, multiCustomerId);
       const result = await client.query(placeOrder, [multiCustomerId]);
       orderIds.push(result.rows[0].id);
     }
@@ -325,7 +292,6 @@ async function main() {
     ) throw new Error("Invalid explicit order was not rejected");
 
     const { customerId: failureCustomerId } = await createCustomer(client, "failure");
-    await quoteAndConfirm(client, failureCustomerId);
     const failurePlaced = await client.query(placeOrder, [failureCustomerId]);
     const failureOrderId = failurePlaced.rows[0].id;
     await client.query("SAVEPOINT cancellation_insert_failure");

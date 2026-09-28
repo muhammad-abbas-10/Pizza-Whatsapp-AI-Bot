@@ -4,14 +4,9 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
-const { loadWorkflow } = require("./workflow-fixture");
-const workflow = loadWorkflow();
+const workflow = require("../../admin request.json");
 const migration = fs.readFileSync(
   path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql"),
-  "utf8"
-).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
-const transactionMigration = fs.readFileSync(
-  path.resolve(__dirname, "../../database/migration/022_transactional_order_state.sql"),
   "utf8"
 ).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
 
@@ -27,7 +22,6 @@ async function main() {
   try {
     await client.query("BEGIN");
     await client.query(migration);
-    await client.query(transactionMigration);
     const variants = (await client.query(`
       SELECT mi.id AS menu_item_id, mi.name, mv.id AS variant_id, mv.variant_label, mv.price
       FROM restaurant_menu_items mi JOIN restaurant_menu_variants mv ON mv.menu_item_id = mi.id
@@ -50,10 +44,9 @@ async function main() {
     );
 
     await setCart(line);
-    await client.query("SELECT pizza_prepare_checkout_quote($1)", [customerId]);
-    await client.query("SELECT pizza_confirm_checkout_quote($1)", [customerId]);
     const placed = (await client.query(query("Place Order"), [customerId])).rows[0];
     assert.equal(placed.order_created, true);
+    assert.deepEqual(placed.invalid_items, []);
 
     const upsertState = (await client.query(query("Upsert Customer and Session"), [phone, "Order Safety"])).rows[0];
     assert.equal(upsertState.active_order_status, "received", "Active order status was not loaded from orders");
@@ -72,22 +65,18 @@ async function main() {
     ];
     for (const invalid of invalidCases) {
       await setCart(invalid);
-      const result = (await client.query("SELECT pizza_prepare_checkout_quote($1) AS value", [customerId])).rows[0].value;
-      assert.equal(result.quote_created, false);
-      assert.equal(result.checkout_error, "invalid_cart", `${invalid.item_name} was not rejected`);
+      const result = (await client.query(query("Place Order"), [customerId])).rows[0];
+      assert.equal(result.order_created, false);
+      assert(result.invalid_items.includes(invalid.item_name), `${invalid.item_name} was not reported`);
     }
 
     const firstEscalation = (await client.query(query("Escalate To Human"), [customerId, "Wrong delivered item"])).rows[0];
     const secondEscalation = (await client.query(query("Escalate To Human"), [customerId, "Customer requested a person"])).rows[0];
     assert(firstEscalation.admin_notification_id && secondEscalation.admin_notification_id);
-    assert.equal(
-      firstEscalation.admin_notification_id,
-      secondEscalation.admin_notification_id,
-      "Repeated escalation should reuse the pending handoff notification",
-    );
+    assert.notEqual(firstEscalation.admin_notification_id, secondEscalation.admin_notification_id);
 
     await client.query("ROLLBACK");
-    console.log("Order revalidation, quote gate, active status, placed-order edit guard, and escalation idempotency: PASS");
+    console.log("Order revalidation, active status, placed-order edit guard, and escalation persistence: PASS");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     throw error;

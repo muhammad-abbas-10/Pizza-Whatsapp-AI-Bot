@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const { parseFeedback } = require("../src/feedback-parser");
-const { root, loadWorkflow } = require("./workflow-fixture");
 
-const workflow = loadWorkflow();
+const root = path.resolve(__dirname, "../..");
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "final-pizza.json"), "utf8"));
 const migration = fs.readFileSync(path.join(root, "database/migration/020_post_delivery_feedback.sql"), "utf8");
 const routes = fs.readFileSync(path.join(root, "backend/src/admin-routes.js"), "utf8");
 const frontend = fs.readFileSync(path.join(root, "frontend/src/main.js"), "utf8");

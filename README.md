@@ -10,7 +10,7 @@
 ![Database](https://img.shields.io/badge/database-Neon%20PostgreSQL-00E599?style=for-the-badge&logo=postgresql&logoColor=white)
 
 ![Automation](https://img.shields.io/badge/automation-n8n-EA4B71?style=flat-square&logo=n8n&logoColor=white)
-![AI](https://img.shields.io/badge/AI-GPT--4.1%20Mini%20%2B%20Gemini-8E75B2?style=flat-square)
+![AI](https://img.shields.io/badge/AI-Google%20Gemini-8E75B2?style=flat-square&logo=googlegemini&logoColor=white)
 ![Messaging](https://img.shields.io/badge/messaging-WhatsApp-25D366?style=flat-square&logo=whatsapp&logoColor=white)
 ![Runtime](https://img.shields.io/badge/runtime-Node.js-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)
 
@@ -52,7 +52,7 @@ Staff sign in to a responsive dark dashboard with an admin username and password
 
 | 🤖 Menu-aware AI ordering | 💬 Multilingual WhatsApp | 🛒 Database-validated cart |
 |---|---|---|
-| A pinned ordering model receives only relevant live menu and session context. | Replies follow the customer's English, Urdu, Roman Urdu, or Pashto style. | SQL verifies records, variants, deal choices, quantities, and prices. |
+| Gemini receives only relevant live menu and session context. | Replies follow the customer's English, Urdu, or Roman Urdu style. | SQL verifies records, variants, deal choices, quantities, and prices. |
 
 | 📊 Operations dashboard | 🔄 Safe status workflow | 🙋 Human decisions |
 |---|---|---|
@@ -98,8 +98,7 @@ flowchart LR
     Customer[Customer]
     WA[Evolution API<br/>for WhatsApp]
     N8N[n8n automation]
-    OrderingAI[GPT-4.1 Mini<br/>ordering agent]
-    Gemini[Google Gemini<br/>voice transcription]
+    Gemini[Google Gemini]
     DB[(Neon PostgreSQL)]
     Browser[Restaurant staff]
 
@@ -111,8 +110,7 @@ flowchart LR
     Customer <--> WA
     WA -->|incoming text or voice message| N8N
     N8N -->|customer reply| WA
-    N8N <--> OrderingAI
-    N8N --> Gemini
+    N8N <--> Gemini
     N8N <--> DB
 
     Browser --> SPA
@@ -121,7 +119,7 @@ flowchart LR
     API -->|persisted event ID| N8N
 ```
 
-- Customer ordering is handled inside n8n using WhatsApp, a pinned tool-capable ordering model, Gemini voice transcription, and direct parameterized PostgreSQL operations.
+- Customer ordering is handled inside n8n using WhatsApp, Gemini, and direct parameterized PostgreSQL operations.
 - The admin SPA communicates only with the authenticated Express API; database and automation credentials never enter the browser bundle.
 - Admin status changes commit to Neon first. The backend then asks n8n to deliver the corresponding persisted customer event.
 
@@ -132,7 +130,7 @@ sequenceDiagram
     actor Customer
     participant WA as Evolution API / WhatsApp
     participant Flow as n8n workflow
-    participant AI as GPT-4.1 Mini ordering agent
+    participant AI as Gemini
     participant DB as Neon PostgreSQL
     actor Admin
     participant API as Express API
@@ -233,7 +231,7 @@ Menu images are stored in `menu_images.image_data` as PostgreSQL `BYTEA`; this p
 
 ## 🧠 AI ordering system
 
-The ordering workflow uses the explicitly pinned `openai/gpt-4.1-mini` model through its existing OpenAI-compatible n8n credential, with temperature `0.1` and bounded output. It does not use the dynamic `openrouter/free` router. Google Gemini remains responsible for voice-note transcription.
+The workflow uses `models/gemini-3.1-flash-lite` through n8n's Google Gemini chat-model node with a low-temperature, bounded-output configuration.
 
 The ordering agent receives restaurant settings, relevant active menu records, menu rules, the persisted customer session, recent messages, and the latest debounced customer turn. It can invoke narrowly scoped PostgreSQL tools to look up menu records, update the cart, choose delivery or pickup, collect delivery details, place an explicitly confirmed order, request cancellation approval, or escalate a complaint.
 
@@ -242,8 +240,6 @@ For a supported WhatsApp voice note, the workflow asks Gemini to produce a trans
 Safety is layered around the model:
 
 - Live database records—not model memory—define item IDs, variants, prices, deals, and policy.
-- In-progress configurable deals are stored in `conversation_sessions.draft_deal`; every selected component is persisted immediately and the database-defined deal size remains authoritative.
-- Checkout quotes persist their cart revision, server-calculated totals, timestamp, and confirmation state. Cart or delivery changes invalidate an older confirmation before placement.
 - Tool results must confirm an operation before the assistant may claim it succeeded.
 - Customer text is treated as untrusted data and internal prompts, credentials, and database details are forbidden in replies.
 - Admin status messages use a separate agent branch with no ordering tools.
@@ -265,7 +261,7 @@ Evolution API Webhook
   → deduplicate / debounce / claim latest customer turn
   → upsert customer and conversation session
   → load relevant active menu and restaurant settings
-  → fast-path simple greetings or invoke the pinned ordering agent
+  → fast-path simple greetings or invoke Gemini ordering agent
   → execute validated PostgreSQL tools
   → send WhatsApp response
   → persist reply and finalize the claimed turn
@@ -294,7 +290,7 @@ Implemented reliability controls include message buffering, duplicate-message pr
 | Routing | Vercel multi-service project | Root `vercel.json` |
 | Database | Neon PostgreSQL | Ordered SQL migrations in `database/migration/` |
 | Automation | n8n | `workflow.json` import |
-| AI | GPT-4.1 Mini + Google Gemini | Pinned ordering model plus Gemini voice transcription |
+| AI | Google Gemini | n8n Gemini credential and model node |
 | Messaging | Evolution API | n8n Evolution API webhook and send-request credentials |
 
 The same-origin Vercel layout means production normally needs no `VITE_API_URL`: the frontend safely defaults to `window.location.origin`, and Vercel rewrites API traffic to the backend service.
@@ -340,7 +336,7 @@ VITE_API_URL=http://localhost:3000
 
 ### n8n credentials
 
-Configure credentials inside n8n for PostgreSQL, the Evolution API webhook, Evolution API send requests and media retrieval, the existing OpenAI-compatible ordering-model connection, and Google Gemini. Voice-note handling uses a Gemini `generateContent` HTTP request with inline OGG audio, so configure an HTTP-header credential authorized for that request. Recheck the Evolution API instance name and base URL after import. Credential secrets are intentionally not documented or stored as environment examples in this repository.
+Configure credentials inside n8n for PostgreSQL, the Evolution API webhook, Evolution API send requests and media retrieval, and Google Gemini. Voice-note handling uses a Gemini `generateContent` HTTP request with inline OGG audio, so configure an HTTP-header credential authorized for that request as well as the model credential used by the agents. Recheck the Evolution API instance name and base URL after import. Credential secrets are intentionally not documented or stored as environment examples in this repository.
 
 ## 🧑‍💻 Local development
 
@@ -375,7 +371,7 @@ Get-ChildItem ../database/migration/*.sql |
   ForEach-Object { node scripts/run-migration.js $_.Name }
 ```
 
-For an existing database, review [runtime-hardening-013-016.md](docs/runtime-hardening-013-016.md) before running menu migration `013` or legacy cleanup `014`; then apply only the migrations appropriate to that environment. Performance indexes are in migration `017`; admin username/password tables are in migration `018`; persistent deal and checkout state is added by migration `022`.
+For an existing database, review [runtime-hardening-013-016.md](docs/runtime-hardening-013-016.md) before running menu migration `013` or legacy cleanup `014`; then apply only the migrations appropriate to that environment. Performance indexes are in migration `017`; admin username/password tables are in migration `018`.
 
 ### 3. Start both applications
 
@@ -424,10 +420,10 @@ Database-backed integration scripts are available separately and require a confi
 2. Apply the migration set in numeric order for a fresh installation, or use the runtime-hardening guide for an existing database.
 3. Confirm `/health` reports a connected database before enabling production traffic.
 
-### n8n, AI providers, and Evolution API
+### n8n, Gemini, and Evolution API
 
 1. Import `workflow.json` into n8n and deactivate any older competing workflow before activation.
-2. Reconnect the target instance's PostgreSQL, Evolution API webhook, Evolution API send-request, OpenAI-compatible ordering-model, and Google Gemini credentials.
+2. Reconnect the target instance's PostgreSQL, Evolution API webhook, Evolution API send-request, and Google Gemini credentials.
 3. Verify the Evolution API base URL and instance name on every send node and confirm `/images/1` and `/images/2` resolve if menu-image delivery is enabled.
 4. Activate the workflow and configure the Evolution API instance webhook to send incoming `messages.upsert` events to the n8n **Evolution API Webhook** endpoint.
 5. Copy the production URL for **Admin Order Status Webhook** (`/webhook/admin-order-status`) into `N8N_ADMIN_WEBHOOK_URL`, then redeploy the backend environment.
@@ -473,7 +469,7 @@ Pizza-Whatsapp-Bot/
 │   ├── server.js                    # local server entrypoint
 │   └── vercel.json
 ├── database/
-│   └── migration/                   # ordered migrations 001–022
+│   └── migration/                   # ordered migrations 001–017
 ├── docs/
 │   ├── n8n-workflow-audit.md
 │   ├── runtime-hardening-013-015.md

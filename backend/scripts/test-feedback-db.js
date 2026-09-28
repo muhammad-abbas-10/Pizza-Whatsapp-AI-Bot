@@ -3,7 +3,6 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
 const { parseFeedback } = require("../src/feedback-parser");
-const { root, loadWorkflow } = require("./workflow-fixture");
 
 require("dotenv").config({ quiet: true });
 
@@ -12,11 +11,12 @@ if (!process.env.DATABASE_URL) {
   process.exit(0);
 }
 
+const root = path.resolve(__dirname, "../..");
 const migration = fs.readFileSync(
   path.join(root, "database/migration/020_post_delivery_feedback.sql"),
   "utf8"
 ).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
-const workflow = loadWorkflow();
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "final-pizza.json"), "utf8"));
 const saveFeedbackSql = workflow.nodes.find((node) => node.name === "Save Customer Feedback")?.parameters?.query;
 assert(saveFeedbackSql, "Save Customer Feedback SQL is missing");
 

@@ -5,7 +5,7 @@ const path = require("path");
 const workflowPath = path.resolve(
   __dirname,
   "../..",
-  process.argv[2] || "workflow.json"
+  process.argv[2] || "workflow-ai-bot.json"
 );
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 
