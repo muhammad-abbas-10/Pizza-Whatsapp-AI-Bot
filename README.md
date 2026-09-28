@@ -32,6 +32,7 @@
 | Database | 🟢 Connected | Neon PostgreSQL |
 | Automation | 🟢 Configured | n8n workflow; production webhook is private |
 | Messaging | 🟢 Integrated | Evolution API for WhatsApp; no public bot URL |
+| Voice messages | 🟢 Integrated | Gemini API transcription for customer voice notes |
 
 The Vite SPA and Express API are deployed as two Vercel services behind one origin. `/admin/*`, `/images*`, `/health`, and `/dashboard` are routed to the backend; all other paths are served by the frontend.
 
@@ -39,7 +40,7 @@ The Vite SPA and Express API are deployed as two Vercel services behind one orig
 
 ### Customer experience
 
-Customers chat with Pizza Bar through WhatsApp in English, Urdu, or Roman Urdu. The automation can answer menu questions from live database records, add or change items, configure supported deals, maintain a cart, collect delivery or pickup details, require explicit confirmation, place an order, send menu images, and submit eligible cancellation requests for staff review.
+Customers chat with Pizza Bar through WhatsApp in English, Urdu, Roman Urdu, or Pashto. They can send text or a direct voice note: intelligible voice notes are transcribed and then handled by the same menu, cart, confirmation, and ordering flow as text. The automation can answer menu questions from live database records, add or change items, configure supported deals, maintain a cart, collect delivery or pickup details, require explicit confirmation, place an order, send menu images, and submit eligible cancellation requests for staff review.
 
 Prices, variants, deal selections, quantities, and active menu records are revalidated in PostgreSQL before an order is committed. The AI is never treated as the source of truth for price or availability.
 
@@ -107,7 +108,7 @@ flowchart LR
     end
 
     Customer <--> WA
-    WA -->|incoming message| N8N
+    WA -->|incoming text or voice message| N8N
     N8N -->|customer reply| WA
     N8N <--> Gemini
     N8N <--> DB
@@ -234,6 +235,8 @@ The workflow uses `models/gemini-3.1-flash-lite` through n8n's Google Gemini cha
 
 The ordering agent receives restaurant settings, relevant active menu records, menu rules, the persisted customer session, recent messages, and the latest debounced customer turn. It can invoke narrowly scoped PostgreSQL tools to look up menu records, update the cart, choose delivery or pickup, collect delivery details, place an explicitly confirmed order, request cancellation approval, or escalate a complaint.
 
+For a supported WhatsApp voice note, the workflow asks Gemini to produce a transcription before the ordering agent sees the customer's message. The transcription prompt preserves English words, menu items, quantities, and addresses; it renders Urdu and Pashto speech in Roman Urdu. A non-empty transcription other than `NO_SPEECH` is passed into the standard text pipeline, so it receives the same database validation, debouncing, and order safeguards as a typed message.
+
 Safety is layered around the model:
 
 - Live database records—not model memory—define item IDs, variants, prices, deals, and policy.
@@ -244,12 +247,16 @@ Safety is layered around the model:
 
 ## ⚙️ n8n automation
 
-The tracked [workflow.json](workflow.json) contains one active workflow definition with two isolated execution paths.
+The tracked [workflow.json](workflow.json) contains one active workflow definition with two primary execution paths. Its customer branch accepts both typed messages and supported direct voice notes.
 
 ### Customer ordering path
 
 ```text
 Evolution API Webhook
+  → identify a direct customer voice note or pass the payload to text normalization
+  → voice only: retrieve OGG media from Evolution API and transcribe it with Gemini
+  → voice only, valid transcript: inject it as the incoming customer text
+  → voice only, unavailable or unintelligible audio: send a polite retry-or-type fallback
   → normalize and buffer incoming message
   → deduplicate / debounce / claim latest customer turn
   → upsert customer and conversation session
@@ -272,7 +279,7 @@ Private admin-order-status webhook
   → persist provider ID or failure for dashboard retry
 ```
 
-Implemented reliability controls include message buffering, duplicate-message protection, customer-turn claims, reply idempotency, a two-minute recovery lease for outbound events, stale-event superseding, status/request idempotency keys, failure visibility, and deliberate retry actions.
+Implemented reliability controls include message buffering, duplicate-message protection, customer-turn claims, reply idempotency, a two-minute recovery lease for outbound events, stale-event superseding, status/request idempotency keys, failure visibility, and deliberate retry actions. Voice media retrieval and transcription failures do not enter the order pipeline: the customer receives a concise prompt to send a clearer note or type the order instead.
 
 ## ☁️ Deployment architecture
 
@@ -329,7 +336,7 @@ VITE_API_URL=http://localhost:3000
 
 ### n8n credentials
 
-Configure credentials inside n8n for PostgreSQL, the Evolution API webhook, Evolution API send requests, and Google Gemini. Recheck the Evolution API instance name and base URL after import. Credential secrets are intentionally not documented or stored as environment examples in this repository.
+Configure credentials inside n8n for PostgreSQL, the Evolution API webhook, Evolution API send requests and media retrieval, and Google Gemini. Voice-note handling uses a Gemini `generateContent` HTTP request with inline OGG audio, so configure an HTTP-header credential authorized for that request as well as the model credential used by the agents. Recheck the Evolution API instance name and base URL after import. Credential secrets are intentionally not documented or stored as environment examples in this repository.
 
 ## 🧑‍💻 Local development
 
@@ -420,7 +427,7 @@ Database-backed integration scripts are available separately and require a confi
 3. Verify the Evolution API base URL and instance name on every send node and confirm `/images/1` and `/images/2` resolve if menu-image delivery is enabled.
 4. Activate the workflow and configure the Evolution API instance webhook to send incoming `messages.upsert` events to the n8n **Evolution API Webhook** endpoint.
 5. Copy the production URL for **Admin Order Status Webhook** (`/webhook/admin-order-status`) into `N8N_ADMIN_WEBHOOK_URL`, then redeploy the backend environment.
-6. Exercise one test order and one forward status change, checking the dashboard event lifecycle before production use.
+6. Exercise a text order, a direct voice-note order, and one forward status change. Confirm an intelligible voice note reaches the normal ordering flow, while unclear audio receives the retry-or-type fallback; then check the dashboard event lifecycle.
 
 Protect the n8n Evolution API webhook with its configured header-auth secret, and configure the same secret on the Evolution API instance webhook. Keep all provider credentials in their native secure stores.
 
@@ -562,5 +569,7 @@ No repository-level `LICENSE` file is currently present. The backend package met
 AI ordering, reliable automation, and restaurant operations in one connected platform.
 
 **[🌐 Live Dashboard](https://pizza-whatsapp-ai-bot.vercel.app/) · [📦 Repository](https://github.com/muhammad-abbas-10/Pizza-Whatsapp-AI-Bot)**
+
+Developed by **Muhammad Abbas Bajwa**
 
 </div>

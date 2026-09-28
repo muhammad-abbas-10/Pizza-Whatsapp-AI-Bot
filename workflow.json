@@ -8,10 +8,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1056,
-        1040
+        -864,
+        1296
       ],
-      "id": "7bcb3073-07d0-4095-bf83-f9995fd4055a",
+      "id": "f54d94ff-2a41-496a-b655-7e6d589bf611",
       "name": "Normalize Incoming Message",
       "notesInFlow": true,
       "notes": "Normalizes Evolution API v2.3.7 messages.upsert payloads. Rejects outgoing, group, broadcast, non-message, malformed, and non-text events before they reach the assistant."
@@ -27,10 +27,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        848,
-        896
+        1040,
+        1152
       ],
-      "id": "ae314c17-d0a0-4af7-84cb-d0a6b0c804de",
+      "id": "33c2e9b0-f075-4da6-9c1e-4ce6aae39c55",
       "name": "Upsert Customer and Session",
       "credentials": {
         "postgres": {
@@ -50,10 +50,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        1888,
-        1584
+        2080,
+        1840
       ],
-      "id": "8373ac8b-8e0b-41c4-8a7b-4c6b62404e14",
+      "id": "f2d8257a-9dac-4700-a5db-b7959bdcdfd5",
       "name": "Load Active Menu",
       "credentials": {
         "postgres": {
@@ -71,10 +71,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        912,
-        768
+        1104,
+        1024
       ],
-      "id": "1b270216-55e8-4ba8-9deb-6963d6b4bc78",
+      "id": "c897ea60-2fcc-4d81-8750-c6439a861d2f",
       "name": "Get Restaurant Settings",
       "credentials": {
         "postgres": {
@@ -96,10 +96,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1712,
-        624
+        1904,
+        880
       ],
-      "id": "26cd2264-2576-4672-aa8a-07ffc891ed61",
+      "id": "5b8eee0e-89a4-4fff-8aab-80fa7dafa06c",
       "name": "Update Cart",
       "credentials": {
         "postgres": {
@@ -119,10 +119,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        3296,
-        640
+        3488,
+        896
       ],
-      "id": "5f11691d-d2fc-4f2d-af72-eada8d114e49",
+      "id": "79d887c7-8ff1-48c5-8bf1-0c7158f82352",
       "name": "Set Order Type",
       "credentials": {
         "postgres": {
@@ -142,10 +142,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2080,
-        624
+        2272,
+        880
       ],
-      "id": "13cba1ca-c4bb-4ee9-a430-dd8b216092a3",
+      "id": "eb62a5ac-9862-4390-9c62-6b0258827a27",
       "name": "Set Delivery Info",
       "credentials": {
         "postgres": {
@@ -165,10 +165,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2256,
-        640
+        2448,
+        896
       ],
-      "id": "ba056b56-556e-43b7-9565-5bf284d70163",
+      "id": "e250858c-2df1-4038-97e2-2fa5e02ace00",
       "name": "Place Order",
       "credentials": {
         "postgres": {
@@ -188,10 +188,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2416,
-        640
+        2608,
+        896
       ],
-      "id": "b6dedf53-116b-4bcb-8c02-d9d786fc52a4",
+      "id": "900b818d-96cc-4598-aff3-b5afe194153b",
       "name": "Cancel Order",
       "credentials": {
         "postgres": {
@@ -206,16 +206,15 @@
         "query": "WITH active_order AS (\n  SELECT cs.customer_id,\n         CASE WHEN o.status NOT IN ('completed', 'cancelled') THEN o.id ELSE NULL END AS order_id\n  FROM conversation_sessions cs\n  LEFT JOIN orders o ON o.id = cs.active_order_id\n  WHERE cs.customer_id = $1::bigint\n),\nescalated AS (\n  UPDATE conversation_sessions\n  SET awaiting_human = TRUE, updated_at = NOW()\n  WHERE customer_id = $1::bigint\n  RETURNING customer_id\n),\ncreated AS (\n  INSERT INTO admin_requests (customer_id, order_id, request_type, question)\n  SELECT e.customer_id, ao.order_id, 'human_handoff',\n         COALESCE(NULLIF(BTRIM($2::text), ''), 'Customer requested human assistance.')\n  FROM escalated e\n  LEFT JOIN active_order ao ON ao.customer_id = e.customer_id\n  ON CONFLICT (customer_id) WHERE request_type = 'human_handoff' AND status = 'pending' DO NOTHING\n  RETURNING id, customer_id, order_id\n),\nrequest_record AS (\n  SELECT id, customer_id, order_id FROM created\n  UNION ALL\n  SELECT r.id, r.customer_id, r.order_id\n  FROM admin_requests r\n  WHERE r.customer_id = $1::bigint\n    AND r.request_type = 'human_handoff'\n    AND r.status = 'pending'\n  ORDER BY id DESC\n  LIMIT 1\n),\nnotified AS (\n  INSERT INTO admin_notifications (\n    notification_type, title, source_key, request_id, order_id, customer_id, message, created_at\n  )\n  SELECT 'customer_request', 'Customer handoff #' || rr.id,\n         'human_handoff:' || rr.id, rr.id, rr.order_id, rr.customer_id,\n         COALESCE(NULLIF(BTRIM($2::text), ''), 'Customer requested human assistance.'), NOW()\n  FROM request_record rr\n  ON CONFLICT (source_key) DO UPDATE\n    SET message = EXCLUDED.message, read_at = NULL\n  RETURNING id\n)\nSELECT EXISTS (SELECT 1 FROM escalated) AS awaiting_human,\n       (SELECT id FROM request_record) AS request_id,\n       EXISTS (SELECT 1 FROM created) AS request_created,\n       EXISTS (SELECT 1 FROM request_record) AS dashboard_request_visible,\n       (SELECT order_id FROM request_record) AS order_id,\n       (SELECT id FROM notified) AS admin_notification_id;",
         "options": {
           "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $fromAI('reason', 'Specific reason staff must follow up, including the customer issue and relevant order context', 'string') ] }}"
-        },
-        "toolDescription": "Create or reuse one visible Pending Request for a customer complaint or request for staff. Use it for wrong items, delivery problems, complaints, or human assistance. Say the restaurant team will review it only when dashboard_request_visible=true and request_id exists."
+        }
       },
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        3120,
-        640
+        3312,
+        896
       ],
-      "id": "72568079-74d8-4f66-b7a5-21db4ded5790",
+      "id": "9a17ee52-c75b-4932-8865-6c1ba0ab4593",
       "name": "Escalate To Human",
       "credentials": {
         "postgres": {
@@ -239,10 +238,10 @@
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.3,
       "position": [
-        3488,
-        640
+        3680,
+        896
       ],
-      "id": "5512cb65-b790-42ee-8d9c-89b5c8871944",
+      "id": "8f6fd5cc-4d44-402e-bcf3-bb57a81bb137",
       "name": "Send Menu Image 1",
       "retryOnFail": true,
       "maxTries": 3,
@@ -271,10 +270,10 @@
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.3,
       "position": [
-        3712,
-        640
+        3904,
+        896
       ],
-      "id": "d014be47-6fa5-4421-b6af-71b8c673ab11",
+      "id": "6b1a92d4-31ed-44e2-bce1-ee1e3f71cc52",
       "name": "Send Menu Image 2",
       "retryOnFail": true,
       "maxTries": 3,
@@ -301,10 +300,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.9,
       "position": [
-        1520,
-        192
+        1712,
+        448
       ],
-      "id": "2c7b975b-b5f1-499d-ae13-5a22a86c8560",
+      "id": "47ad8603-b736-4023-9d11-1b39445ad4e5",
       "name": "Pizza Ordering Agent",
       "continueOnFail": true
     },
@@ -325,10 +324,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1472,
-        784
+        1664,
+        1040
       ],
-      "id": "f89d00d5-a345-46f9-b7d1-9ac604a55553",
+      "id": "713011d2-08ed-469d-9fbf-7565f8d54f21",
       "name": "Reply Text"
     },
     {
@@ -345,10 +344,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        1872,
-        816
+        2064,
+        1072
       ],
-      "id": "0ebd5e92-e2c4-4e01-a845-b6840af0e7b1",
+      "id": "059057e1-d3f2-4f6c-bf81-f207d2368a23",
       "name": "Evolution API Send Message",
       "retryOnFail": true,
       "maxTries": 3,
@@ -373,10 +372,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2832,
-        1056
+        3024,
+        1312
       ],
-      "id": "ca6f7134-5aa4-4353-9e0c-bb6aceb29372",
+      "id": "490b6c2d-fea1-4101-b23c-e3a6b292d75f",
       "name": "Finalize Customer Turn",
       "credentials": {
         "postgres": {
@@ -396,10 +395,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -96,
-        1120
+        96,
+        1376
       ],
-      "id": "ceca2448-9c97-4452-98e8-931703e6dc77",
+      "id": "5cd030e8-ca81-416b-b580-fe68e2862ebf",
       "name": "Insert Message to Buffer",
       "credentials": {
         "postgres": {
@@ -415,10 +414,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        240,
-        1072
+        432,
+        1328
       ],
-      "id": "88e12240-5bfc-45db-8cae-f589e88672ea",
+      "id": "19285316-de0c-48e5-b94e-ea09634b04c0",
       "name": "Debounce Customer Messages",
       "webhookId": "45527a8b-bd1a-43a0-972b-7b1b9476c476"
     },
@@ -435,10 +434,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1904,
-        608
+        2096,
+        864
       ],
-      "id": "56506a79-1e39-47bf-aad2-ae5750453c7e",
+      "id": "8fe7d222-b648-49c4-b590-bcbee6232b0a",
       "name": "Request Cancellation Approval",
       "credentials": {
         "postgres": {
@@ -458,10 +457,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        432,
-        1072
+        624,
+        1328
       ],
-      "id": "20723a5f-874e-4d17-be55-aa13ac286fcb",
+      "id": "0a1efb15-b6b5-4571-816f-fc1eeaf047cf",
       "name": "Claim Latest Customer Turn",
       "credentials": {
         "postgres": {
@@ -498,10 +497,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        640,
-        1184
+        832,
+        1440
       ],
-      "id": "18a0015f-0381-468f-936a-b4d6cc715fe8",
+      "id": "318445b7-bc3c-4eb8-8899-0b298f5675ba",
       "name": "Customer Turn Ready"
     },
     {
@@ -532,10 +531,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        112,
-        1072
+        304,
+        1328
       ],
-      "id": "6b8b0e29-e955-4445-be56-58c21b77c79b",
+      "id": "7d5603bf-3f72-43a3-acda-3a3d2ba6b799",
       "name": "Customer Message Accepted"
     },
     {
@@ -566,10 +565,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        848,
-        1328
+        1040,
+        1584
       ],
-      "id": "986d516a-4cdf-46a2-ba8d-ff757ab61157",
+      "id": "5c59e9d1-8ef3-4237-898f-f6c08ab50b6d",
       "name": "Customer Turn Busy"
     },
     {
@@ -579,10 +578,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1040,
-        1520
+        1232,
+        1776
       ],
-      "id": "d1563835-e073-4ee7-b061-4f93a954df60",
+      "id": "a178ae84-ef2b-4308-a592-ec14e69130cb",
       "name": "Wait For Active Customer Turn",
       "webhookId": "68ed6f0c-bc8c-433f-9405-66dc994a56f8"
     },
@@ -603,10 +602,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1280,
-        912
+        1472,
+        1168
       ],
-      "id": "48649d37-7aa4-483c-9301-bcedc8c6ce7a",
+      "id": "9a6e39f4-e0b8-46b5-ab0d-f075f922bf0f",
       "name": "Restore Stored Reply"
     },
     {
@@ -620,10 +619,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2304,
-        832
+        2496,
+        1088
       ],
-      "id": "ba34825b-df79-46bf-9607-8d45ee455f3f",
+      "id": "959d8b8c-6a55-4903-b117-4526b9a921c4",
       "name": "Record Reply Sent",
       "credentials": {
         "postgres": {
@@ -645,10 +644,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2592,
-        640
+        2784,
+        896
       ],
-      "id": "fd0a0b74-0088-4567-93be-84c985e9cca5",
+      "id": "33e151ea-cf1d-4a8f-ba17-eba32be42e05",
       "name": "Update Placed Order Delivery Info",
       "credentials": {
         "postgres": {
@@ -685,10 +684,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1056,
-        928
+        1248,
+        1184
       ],
-      "id": "6de0c711-3187-4121-aac4-fd263b9cd97a",
+      "id": "fbeb32e3-164d-4d10-af76-855b4a8effef",
       "name": "Reply Already Sent For This Batch"
     },
     {
@@ -698,10 +697,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1120,
-        1200
+        1312,
+        1456
       ],
-      "id": "d03a1417-e7fa-4815-a0b4-35525ab11059",
+      "id": "f55c946a-8d05-40cc-934d-6c9e01803e8e",
       "name": "Route Simple Messages"
     },
     {
@@ -732,10 +731,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1968,
-        1184
+        2160,
+        1440
       ],
-      "id": "b603dfac-c73b-41a3-92e2-1a3b64a9f987",
+      "id": "00414791-e8f9-4157-a04e-40192cb9b604",
       "name": "Use Simple Reply"
     },
     {
@@ -751,10 +750,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2960,
-        640
+        3152,
+        896
       ],
-      "id": "eff0ac3e-e522-4188-b490-b3aa2b54a2a7",
+      "id": "2b67ff66-98db-4ba5-bd4f-cd6afd7fe7d3",
       "name": "Menu Lookup",
       "credentials": {
         "postgres": {
@@ -776,10 +775,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2800,
-        640
+        2992,
+        896
       ],
-      "id": "451a0ec0-7176-4677-a0d2-ade6d722fcf2",
+      "id": "f44fb322-362f-4c6a-8bde-aef44b6dc8e6",
       "name": "Update Menu Item Cart",
       "credentials": {
         "postgres": {
@@ -816,10 +815,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        560,
-        816
+        752,
+        1072
       ],
-      "id": "f0ec4953-4225-4534-b02a-2e1bf52c3c52",
+      "id": "bb3563a1-4772-4aad-bf5b-58045fb3262c",
       "name": "Recover Reply Before Routing"
     },
     {
@@ -836,10 +835,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        2448,
-        1248
+        2640,
+        1504
       ],
-      "id": "12cc9697-687f-41a1-a072-8e9077869138",
+      "id": "defe2e73-b644-4287-8e31-a7714818d085",
       "name": "Evolution API Send Simple Reply",
       "retryOnFail": true,
       "maxTries": 3,
@@ -863,10 +862,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2864,
-        1232
+        3056,
+        1488
       ],
-      "id": "22c0208a-8beb-4fc3-8eb4-2dc6b6f70375",
+      "id": "d01f80cf-3e26-416e-abb4-e9b28077688f",
       "name": "Finalize Simple Reply",
       "credentials": {
         "postgres": {
@@ -885,10 +884,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -1120,
-        192
+        -928,
+        448
       ],
-      "id": "b510c673-95dc-464c-b88c-29448c2749ff",
+      "id": "812f5a31-2832-4f9c-b2cb-f2a9f228eedc",
       "name": "Admin Order Status Webhook",
       "webhookId": "6184a7ac-f35d-4b5d-857c-41798246b79b",
       "notesInFlow": true,
@@ -901,10 +900,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -896,
-        192
+        -704,
+        448
       ],
-      "id": "c4eb7a9b-eda8-478b-b3f8-9df271c3b74a",
+      "id": "658f3bf9-9b12-4f1a-8ca7-2d776d1426d9",
       "name": "Validate Admin Status Payload"
     },
     {
@@ -935,10 +934,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -672,
-        192
+        -480,
+        448
       ],
-      "id": "06e12fc7-dd4f-4780-ad23-06074725fbfe",
+      "id": "ac9bbfba-f4b8-42c5-9987-96ead291c5b8",
       "name": "Admin Status Payload Valid"
     },
     {
@@ -952,10 +951,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        -448,
-        336
+        -256,
+        592
       ],
-      "id": "68746046-965c-42b3-9bb0-32edc1bcdc08",
+      "id": "28ed577e-ed1b-4ca9-a522-3b41c6ac74ff",
       "name": "Reject Invalid Admin Status Payload"
     },
     {
@@ -969,10 +968,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -448,
-        112
+        -256,
+        368
       ],
-      "id": "b17ea018-5b10-4e44-8ce4-320868a3696c",
+      "id": "c4ab268d-6612-45ec-b67f-8f879d27a1ca",
       "name": "Claim Admin Customer Event",
       "credentials": {
         "postgres": {
@@ -1009,10 +1008,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -224,
-        112
+        -32,
+        368
       ],
-      "id": "c66a7ab5-a387-401c-b22d-81cf73e99c7b",
+      "id": "d332273a-6658-4b83-ba11-8be5314a2a2a",
       "name": "Admin Event Claimed"
     },
     {
@@ -1026,10 +1025,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        -96,
-        368
+        96,
+        624
       ],
-      "id": "69917295-7241-465d-a6af-cecc95a5d6e3",
+      "id": "f051b514-d6ca-4faf-8bc8-e427c0b8a657",
       "name": "Respond Admin Event Not Claimed"
     },
     {
@@ -1044,10 +1043,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.9,
       "position": [
-        0,
-        0
+        192,
+        256
       ],
-      "id": "697efc05-ed18-47a6-b8b3-67200764a63e",
+      "id": "731e31cd-c99a-46ed-9d52-51ff2caad523",
       "name": "Admin Customer Message Agent",
       "continueOnFail": true
     },
@@ -1058,10 +1057,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        224,
-        0
+        416,
+        256
       ],
-      "id": "9b99a80e-2883-4286-96e4-a925dbea84ea",
+      "id": "ac214ad2-aa41-427b-9125-b100ce50e5b5",
       "name": "Build Safe Admin Customer Message"
     },
     {
@@ -1078,10 +1077,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        448,
-        0
+        640,
+        256
       ],
-      "id": "5f38be13-ef83-4842-809f-923dc72caef7",
+      "id": "bc716482-6c60-425e-ac2d-f45d637cc944",
       "name": "Evolution API Send Admin Status",
       "retryOnFail": true,
       "maxTries": 3,
@@ -1107,10 +1106,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        672,
-        0
+        864,
+        256
       ],
-      "id": "c67cee94-fe47-4bc7-b46d-f9cc01581c00",
+      "id": "1e725f1e-1fce-4312-a057-3e702de98bea",
       "name": "Record Admin Event Result",
       "credentials": {
         "postgres": {
@@ -1130,10 +1129,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        896,
-        0
+        1088,
+        256
       ],
-      "id": "e645ad5c-d10b-40ad-92bf-f89221b2513f",
+      "id": "21439b5c-7ddd-4ef7-b77d-74032751e0a7",
       "name": "Respond Admin Event Processed"
     },
     {
@@ -1143,10 +1142,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1472,
-        544
+        1664,
+        800
       ],
-      "id": "00ce6cd5-b8d5-4149-906a-d4754fdf5c69",
+      "id": "14876ef2-9d12-4453-8c84-1032e95cf5fe",
       "name": "Guard Cancellation Reply"
     },
     {
@@ -1158,10 +1157,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -1328,
-        1056
+        -1488,
+        1312
       ],
-      "id": "59df9005-0953-42c7-8fe9-86fb5e123def",
+      "id": "9dbe6ac8-cc37-49d6-abe5-39518c005789",
       "name": "Evolution API Webhook",
       "webhookId": "54936811-25aa-4992-9cb2-ff9575584730",
       "notesInFlow": true,
@@ -1195,10 +1194,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -768,
-        1040
+        -576,
+        1296
       ],
-      "id": "5e1c203b-6348-465a-a0ed-a84fe392b4bb",
+      "id": "ef784fb2-16a1-49f7-a177-a81f60db6b60",
       "name": "Process Incoming Text?",
       "notesInFlow": true,
       "notes": "Only the true output reaches the customer-message workflow. The Webhook already acknowledges ignored events with HTTP 200."
@@ -1231,10 +1230,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        880,
-        1024
+        1072,
+        1280
       ],
-      "id": "db4c55b1-751d-4c63-97b4-4662c16251a7",
+      "id": "5fc7be95-37a2-4085-b0cb-10df7158bd55",
       "name": "Awaiting Feedback Response?"
     },
     {
@@ -1244,10 +1243,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1120,
-        976
+        1312,
+        1232
       ],
-      "id": "b5deb396-3e60-4aae-84d3-423a280d4734",
+      "id": "3b152058-cf8b-40f2-bd26-c4f7961dcf9f",
       "name": "Parse Feedback Response"
     },
     {
@@ -1261,10 +1260,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        1360,
-        976
+        1552,
+        1232
       ],
-      "id": "cb4a0b37-0814-4933-bd57-3357911aee5e",
+      "id": "398b71ae-f1a7-4897-a34a-3bd75db95852",
       "name": "Save Customer Feedback",
       "retryOnFail": true,
       "maxTries": 3,
@@ -1284,10 +1283,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1600,
-        976
+        1792,
+        1232
       ],
-      "id": "a131d6c7-12e9-4112-90a5-26a92ccc9804",
+      "id": "b2f182ce-b2f1-4dd4-b194-b53b370bfa6b",
       "name": "Build Feedback Thank You"
     },
     {
@@ -1303,10 +1302,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        800,
-        368
+        992,
+        624
       ],
-      "id": "348d3fff-1b24-46b9-b03c-fede2754ad63",
+      "id": "d57eeffd-7f6a-47e0-918f-313c4b526e82",
       "name": "OpenAI Chat Model",
       "credentials": {
         "openAiApi": {
@@ -1316,14 +1315,6 @@
       }
     },
     {
-      "id": "4f7d13a3-7122-4c4a-97c4-a11c0de00001",
-      "name": "Replace Draft Cart",
-      "type": "n8n-nodes-base.postgresTool",
-      "typeVersion": 2.7,
-      "position": [
-        3040,
-        720
-      ],
       "parameters": {
         "descriptionType": "manual",
         "toolDescription": "Replace the ENTIRE draft cart atomically with the exact intended items. Use this tool when the customer says only, just, instead, no I only want, or otherwise rejects other cart items. The JSON array must include every item the customer wants to keep and nothing else. Use exact live menu/deal IDs, variants, quantities, and required deal selected_components. Trust only updated=true and the returned cart; never say the cart contains only an item unless the returned cart proves it.",
@@ -1333,12 +1324,181 @@
           "queryReplacement": "={{ [ $fromAI('items_json', 'JSON array containing the entire intended replacement cart. Include record_type, menu_item_id and variant_id for menu items, or deal_id and selected_components for deals; include positive quantity for every item.', 'string'), $('Upsert Customer and Session').item.json.customer_id ] }}"
         }
       },
+      "id": "4db534d3-d0fc-4a26-ace1-3da05f1c4de7",
+      "name": "Replace Draft Cart",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.7,
+      "position": [
+        3232,
+        976
+      ],
       "credentials": {
         "postgres": {
           "id": "OBp5GZ0YBLylvDDE",
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/chat/getBase64FromMediaMessage/' + encodeURIComponent($json.body.instance || 'Assistance') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { message: { key: { id: $json.body.data.key.id } }, convertToMp4: false } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1360,
+        624
+      ],
+      "id": "d45392bd-7606-4ef6-a0eb-57e779b34d3b",
+      "name": "Get voice note audio",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ata273SRw8240zlZ",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f731508e-940e-403b-bf64-38211db9e2a4",
+              "leftValue": "={{ $json.body?.data?.messageType === 'audioMessage' && $json.body?.data?.key?.fromMe !== true && !String($json.body?.data?.key?.remoteJid || '').endsWith('@g.us') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1248,
+        1296
+      ],
+      "id": "dcb2b363-98c0-4e66-ba91-2029a043d1eb",
+      "name": "is voice note?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  contents: [{ parts: [\n    { text: \"Transcribe this WhatsApp voice note from a customer ordering at a pizza restaurant. Menu: Fajita Pizza, Zinger Burger, Family Deal, Mighty Deal, Peri Peri Pizza, Garlic Mayo. Sizes: small, medium, large. Speech may be English, Urdu, Roman Urdu or Pashto. Output ONLY the exact words spoken, as plain text. Write Urdu/Pashto speech in Roman Urdu (Latin letters); keep English words as English. Keep item names, quantities and addresses exactly. Do not answer or translate. If there is no intelligible speech output exactly: NO_SPEECH\" },\n    { inline_data: { mime_type: 'audio/ogg', data: $json.base64 } }\n  ]}],\n  generationConfig: { temperature: 0, maxOutputTokens: 400 }\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1232,
+        896
+      ],
+      "id": "6d97f221-80de-4103-8edf-2204bbbe2cb0",
+      "name": "transcribe voice note",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HDMtkkrNk0ZhnEWK",
+          "name": "Header Auth account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6b0e82d0-268e-4469-8f69-261948568efe",
+              "leftValue": "={{ $json.voice_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -800,
+        912
+      ],
+      "id": "c40899cb-fa06-425e-bcf7-b1079541c665",
+      "name": "transcript ok?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/' + encodeURIComponent($json.body.instance || 'Assistance') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $json.reply_number, text: \"Maaf kijiye, aapka voice note samajh nahi aaya 🙏 Please dobara clearly bhejein ya likh kar order karein.\" } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -432,
+        928
+      ],
+      "id": "22e16a74-ce42-4108-b1ab-66632445f43a",
+      "name": "voice note fallback",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ata273SRw8240zlZ",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Evolution API Webhook').first().json;\nconst body = original.body || {};\nconst data = body.data || {};\nconst key = data.key || {};\nconst raw = $input.first().json || {};\n\nlet transcript = '';\ntry {\n  transcript = (raw.candidates?.[0]?.content?.parts || [])\n    .map(p => p.text || '').join(' ').trim();\n} catch (e) {}\n\nconst ok = Boolean(transcript) && transcript !== 'NO_SPEECH' && !raw.error;\n\nconst remoteJid = String(key.remoteJid || '');\nconst alt = String(key.remoteJidAlt || '');\nconst direct = [alt, remoteJid].find(v => /@s\\.whatsapp\\.net$/i.test(v)) || alt || remoteJid;\n\nreturn [{\n  json: {\n    ...original,\n    body: { ...body, data: { ...data, message: { conversation: ok ? transcript : '' } } },\n    voice_ok: ok,\n    voice_transcript: ok ? transcript : '',\n    reply_number: direct.split('@')[0].replace(/\\D/g, ''),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        912
+      ],
+      "id": "7b3069d8-6a65-46df-9182-e81a9b73b007",
+      "name": "inject transcript"
     }
   ],
   "pinData": {},
@@ -1829,7 +1989,7 @@
       "main": [
         [
           {
-            "node": "Normalize Incoming Message",
+            "node": "is voice note?",
             "type": "main",
             "index": 0
           }
@@ -1957,6 +2117,75 @@
           }
         ]
       ]
+    },
+    "is voice note?": {
+      "main": [
+        [
+          {
+            "node": "Get voice note audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Incoming Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get voice note audio": {
+      "main": [
+        [
+          {
+            "node": "transcribe voice note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "transcribe voice note": {
+      "main": [
+        [
+          {
+            "node": "inject transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "transcript ok?": {
+      "main": [
+        [
+          {
+            "node": "Normalize Incoming Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "voice note fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "inject transcript": {
+      "main": [
+        [
+          {
+            "node": "transcript ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1964,12 +2193,11 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "5050e0d1-e9d3-4a2c-9870-2141f3b93c97",
+  "versionId": "00b5b90c-613a-44a7-8245-dd963deec007",
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "6998a274d9a8cd3fce2ab752d130672ae6124f7b05aecf297ee5a82201ba7afa"
   },
   "nodeGroups": [],
-  "id": "J3HNEInH5s0vVX6L",
+  "id": "SkirT14GNnHcny35",
   "tags": []
 }
