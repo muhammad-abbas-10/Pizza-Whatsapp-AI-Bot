@@ -1,7 +1,8 @@
 require("dotenv").config();
 
 const { Pool } = require("pg");
-const workflow = require("../../admin request.json");
+const { loadWorkflow } = require("./workflow-fixture");
+const workflow = loadWorkflow();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

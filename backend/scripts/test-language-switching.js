@@ -1,11 +1,9 @@
 const assert = require("assert/strict");
-const fs = require("fs");
-const path = require("path");
 const vm = require("vm");
 const { detectMessageLanguage } = require("../src/message-language");
+const { loadWorkflow } = require("./workflow-fixture");
 
-const root = path.resolve(__dirname, "../..");
-const workflow = JSON.parse(fs.readFileSync(path.join(root, "final-pizza.json"), "utf8"));
+const workflow = loadWorkflow();
 const node = (name) => {
   const found = workflow.nodes.find((entry) => entry.name === name);
   assert(found, `Missing workflow node ${name}`);
@@ -54,8 +52,8 @@ assert.equal(runRouter("زه پیزا غواړم").response_language, "pashto");
 
 const agent = node("Pizza Ordering Agent");
 assert.match(agent.parameters.text, /LATEST message \(authoritative for response language\)/);
-assert.match(agent.parameters.options.systemMessage, /Never let SESSION, preferred_language, RECENT_MESSAGES/);
-assert.match(agent.parameters.options.systemMessage, /Current customer message \(including its response language\)\n4\. Current SESSION state/);
+assert.match(agent.parameters.options.systemMessage, /Recent conversation is context only, never transactional truth/);
+assert.match(agent.parameters.options.systemMessage, /Reply in the language\/style of the latest customer message/);
 assert.doesNotMatch(node("Upsert Customer and Session").parameters.query, /customer\.preferred_language/);
 assert(!workflow.nodes.some((entry) => /memory/i.test(entry.type)), "Unexpected AI memory node is connected");
 

@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-const workflowPath = path.resolve(__dirname, "../../pizza-bar-whatsapp-ai-bot.json");
+const workflowPath = path.resolve(__dirname, "../../workflow.json");
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 
 function node(name) {

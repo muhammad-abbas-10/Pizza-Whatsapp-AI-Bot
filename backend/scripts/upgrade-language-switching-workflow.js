@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { detectMessageLanguage } = require("../src/message-language");
 
-const workflowPath = path.resolve(__dirname, "../../final-pizza.json");
+const workflowPath = path.resolve(__dirname, "../../workflow.json");
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 
 function find(name) {

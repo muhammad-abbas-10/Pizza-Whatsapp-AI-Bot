@@ -1,9 +1,13 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const { root, loadWorkflow } = require("./workflow-fixture");
 
-const root = path.resolve(__dirname, "../..");
-const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow-ai-bot.json"), "utf8"));
+const workflow = loadWorkflow();
+const transactionMigration = fs.readFileSync(
+  path.join(root, "database/migration/022_transactional_order_state.sql"),
+  "utf8"
+);
 const find = (name) => {
   const found = workflow.nodes.find((node) => node.name === name);
   assert(found, `Missing workflow node: ${name}`);
@@ -28,12 +32,10 @@ assert(workflow.connections["Replace Draft Cart"]?.ai_tool, "Replace Draft Cart 
 
 const place = find("Place Order");
 assert.match(place.parameters.query, /checkout_error/);
-assert.match(place.parameters.query, /delivery_address_required/);
-const clearedSession = place.parameters.query.slice(
-  place.parameters.query.indexOf("cleared_session AS"),
-  place.parameters.query.indexOf("SELECT (SELECT COUNT(*) FROM new_order)")
-);
-assert.equal((clearedSession.match(/cart_updated_at = NOW\(\)/g) || []).length, 1, "Place Order assigns cart_updated_at more than once");
+assert.match(place.parameters.query, /pizza_place_confirmed_order/);
+assert.match(transactionMigration, /delivery_address_required/);
+assert.match(transactionMigration, /confirmation_status <> 'confirmed'/);
+assert.match(transactionMigration, /quote_cart_revision IS DISTINCT FROM v_session\.cart_revision/);
 
 const handoff = find("Escalate To Human");
 assert.match(handoff.parameters.query, /human_handoff/);
@@ -41,9 +43,9 @@ assert.match(handoff.parameters.query, /admin_requests/);
 assert.match(handoff.parameters.query, /dashboard_request_visible/);
 
 const agent = find("Pizza Ordering Agent");
-assert.match(agent.parameters.options.systemMessage, /FULL-CART REPLACEMENT/);
-assert.match(agent.parameters.options.systemMessage, /DELIVERY ADDRESS CAPTURE/);
-assert.match(agent.parameters.options.systemMessage, /PLACE ORDER RESULT/);
+assert.match(agent.parameters.options.systemMessage, /Replace Draft Cart/);
+assert.match(agent.parameters.options.systemMessage, /landmarks, hostels/);
+assert.match(agent.parameters.options.systemMessage, /confirmation_status is confirmed/);
 
 const guard = find("Guard Cancellation Reply");
 assert.match(guard.parameters.jsCode, /checkout_error/);

@@ -5,7 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const { performance } = require("perf_hooks");
 const { Pool } = require("pg");
-const workflow = require("../../admin request.json");
+const { loadWorkflow } = require("./workflow-fixture");
+const workflow = loadWorkflow();
 const migration = fs.readFileSync(
   path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql"),
   "utf8"

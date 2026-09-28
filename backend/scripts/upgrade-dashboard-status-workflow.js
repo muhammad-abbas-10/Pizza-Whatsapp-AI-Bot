@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const workflowPath = path.resolve(__dirname, "../../admin request.json");
+const workflowPath = path.resolve(__dirname, "../../workflow.json");
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 
 const find = (name) => {
