@@ -21,6 +21,7 @@
     "test:notification-claim": "node scripts/test-admin-status-architecture.js",
     "test:admin-auth-db": "node scripts/test-admin-auth-db.js",
     "test:feedback": "node scripts/test-feedback-flow.js",
+    "test:feedback-intent": "node scripts/test-feedback-intent.js",
     "test:feedback-db": "node scripts/test-feedback-db.js",
     "test:language-switching": "node scripts/test-language-switching.js",
     "test:menu-management": "node scripts/test-menu-management.js",

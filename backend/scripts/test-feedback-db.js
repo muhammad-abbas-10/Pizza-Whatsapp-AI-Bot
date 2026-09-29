@@ -16,9 +16,11 @@ const migration = fs.readFileSync(
   path.join(root, "database/migration/020_post_delivery_feedback.sql"),
   "utf8"
 ).replace(/^\s*BEGIN;\s*/i, "").replace(/\s*COMMIT;\s*$/i, "");
-const workflow = JSON.parse(fs.readFileSync(path.join(root, "final-pizza.json"), "utf8"));
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
 const saveFeedbackSql = workflow.nodes.find((node) => node.name === "Save Customer Feedback")?.parameters?.query;
+const complaintSql = workflow.nodes.find((node) => node.name === "Escalate Post-Delivery Complaint")?.parameters?.query;
 assert(saveFeedbackSql, "Save Customer Feedback SQL is missing");
+assert(complaintSql, "Post-delivery complaint SQL is missing");
 
 async function run() {
   const client = new Client({
@@ -43,6 +45,7 @@ async function run() {
       CREATE TEMP TABLE conversation_sessions (
         id BIGSERIAL PRIMARY KEY,
         customer_id BIGINT UNIQUE NOT NULL REFERENCES customers(id),
+        awaiting_human BOOLEAN NOT NULL DEFAULT FALSE,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TEMP TABLE feedback (
@@ -52,6 +55,29 @@ async function run() {
         rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
         message TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TEMP TABLE admin_requests (
+        id BIGSERIAL PRIMARY KEY,
+        customer_id BIGINT NOT NULL REFERENCES customers(id),
+        order_id BIGINT REFERENCES orders(id),
+        request_type TEXT NOT NULL,
+        question TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending'
+      );
+      CREATE UNIQUE INDEX idx_temp_pending_human_handoff
+        ON admin_requests (customer_id)
+        WHERE request_type = 'human_handoff' AND status = 'pending';
+      CREATE TEMP TABLE admin_notifications (
+        id BIGSERIAL PRIMARY KEY,
+        notification_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source_key TEXT UNIQUE NOT NULL,
+        request_id BIGINT,
+        order_id BIGINT,
+        customer_id BIGINT,
+        message TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        read_at TIMESTAMPTZ
       );
       SET LOCAL search_path TO pg_temp, public;
     `);
@@ -103,7 +129,36 @@ async function run() {
     );
     assert.equal(session.rows[0].awaiting_feedback_order_id, null);
 
-    console.log("Feedback migration, one-row-per-order upsert, admin query, and session reset: PASS");
+    await client.query(
+      "UPDATE conversation_sessions SET awaiting_feedback_order_id = $2, awaiting_human = FALSE WHERE customer_id = $1",
+      [customer.id, order.id]
+    );
+    const complaint = (await client.query(
+      complaintSql,
+      [customer.id, order.id, "We did not receive the order"]
+    )).rows[0];
+    assert.equal(complaint.dashboard_request_visible, true);
+    assert.equal(String(complaint.order_id), String(order.id));
+    const handoff = await client.query(
+      "SELECT order_id, question FROM admin_requests WHERE customer_id = $1 AND request_type = 'human_handoff'",
+      [customer.id]
+    );
+    assert.equal(handoff.rowCount, 1);
+    assert.equal(String(handoff.rows[0].order_id), String(order.id));
+    assert.match(handoff.rows[0].question, /did not receive/i);
+    const complaintSession = await client.query(
+      "SELECT awaiting_feedback_order_id, awaiting_human FROM conversation_sessions WHERE customer_id = $1",
+      [customer.id]
+    );
+    assert.equal(complaintSession.rows[0].awaiting_feedback_order_id, null);
+    assert.equal(complaintSession.rows[0].awaiting_human, true);
+    const feedbackAfterComplaint = await client.query(
+      "SELECT COUNT(*)::int AS count FROM feedback WHERE order_id = $1",
+      [order.id]
+    );
+    assert.equal(feedbackAfterComplaint.rows[0].count, 1, "A complaint-only message must not create another feedback record");
+
+    console.log("Feedback migration, one-row-per-order upsert, complaint handoff, admin query, and session reset: PASS");
   } finally {
     await client.query("ROLLBACK").catch(() => {});
     await client.end();

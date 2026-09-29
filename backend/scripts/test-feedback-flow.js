@@ -3,9 +3,10 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const { parseFeedback } = require("../src/feedback-parser");
+const { classifyPendingFeedback } = require("../src/feedback-intent");
 
 const root = path.resolve(__dirname, "../..");
-const workflow = JSON.parse(fs.readFileSync(path.join(root, "final-pizza.json"), "utf8"));
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
 const migration = fs.readFileSync(path.join(root, "database/migration/020_post_delivery_feedback.sql"), "utf8");
 const routes = fs.readFileSync(path.join(root, "backend/src/admin-routes.js"), "utf8");
 const frontend = fs.readFileSync(path.join(root, "frontend/src/main.js"), "utf8");
@@ -34,15 +35,50 @@ const cases = [
 for (const [input, expected] of cases) assert.deepEqual(parseFeedback(input), expected, input);
 
 const parseNode = node("Parse Feedback Response");
+const classifyNode = node("Classify Pending Feedback Intent");
 assert(parseNode.parameters.jsCode.includes(parseFeedback.toString()), "Workflow parser differs from tested parser");
 assert.equal(
   workflow.connections["Awaiting Feedback Response?"].main[0][0].node,
-  "Parse Feedback Response"
+  "Classify Pending Feedback Intent"
 );
 assert.equal(
   workflow.connections["Awaiting Feedback Response?"].main[1][0].node,
   "Route Simple Messages"
 );
+assert(classifyNode.parameters.jsCode.includes(classifyPendingFeedback.toString()));
+assert.equal(workflow.connections["Classify Pending Feedback Intent"].main[0][0].node, "Feedback Submission?");
+assert.equal(workflow.connections["Feedback Submission?"].main[0][0].node, "Parse Feedback Response");
+assert.equal(workflow.connections["Feedback Submission?"].main[1][0].node, "Feedback Complaint?");
+assert.equal(workflow.connections["Feedback Complaint?"].main[0][0].node, "Escalate Post-Delivery Complaint");
+assert.equal(workflow.connections["Feedback Complaint?"].main[1][0].node, "Dismiss Pending Feedback Request");
+assert.equal(workflow.connections["Dismiss Pending Feedback Request"].main[0][0].node, "Route Simple Messages");
+assert.equal(workflow.connections["Save Customer Feedback"].main[0][0].node, "Saved Feedback Is Complaint?");
+assert.equal(workflow.connections["Saved Feedback Is Complaint?"].main[0][0].node, "Escalate Post-Delivery Complaint");
+assert.equal(workflow.connections["Saved Feedback Is Complaint?"].main[1][0].node, "Build Feedback Thank You");
+
+const recent = "2026-09-29T11:30:00Z";
+const now = Date.parse("2026-09-29T12:00:00Z");
+assert.equal(classifyPendingFeedback("I want small chicken tikka pizza place my order", { requestedAt: recent, now }).intent, "normal");
+assert.equal(classifyPendingFeedback("We did not receive the order", { requestedAt: recent, now }).intent, "complaint");
+assert.equal(classifyPendingFeedback("1/5, the pizza was cold", { requestedAt: recent, now }).intent, "feedback_complaint");
+assert.equal(classifyPendingFeedback("Pizza was amazing!", { requestedAt: recent, now }).intent, "feedback");
+
+function classifyWithWorkflow(message, requestedAt = recent) {
+  return vm.runInNewContext(`(function () { ${classifyNode.parameters.jsCode} })()`, {
+    $: (name) => {
+      if (name === "Upsert Customer and Session") {
+        return { item: { json: { awaiting_feedback_requested_at: requestedAt } } };
+      }
+      if (name === "Claim Latest Customer Turn") return { item: { json: { combined_text: message } } };
+      throw new Error(`Unexpected node lookup: ${name}`);
+    },
+    $input: { first: () => ({ json: {} }) },
+  })[0].json.feedback_intent;
+}
+
+assert.equal(classifyWithWorkflow("I want small chicken tikka pizza place my order"), "normal");
+assert.equal(classifyWithWorkflow("We did not receive the order"), "complaint");
+assert.equal(classifyWithWorkflow("1/5, the pizza was cold"), "feedback_complaint");
 
 const safeMessageCode = node("Build Safe Admin Customer Message").parameters.jsCode;
 function buildStatusMessage(orderStatus) {
@@ -70,6 +106,8 @@ const claimSql = node("Claim Admin Customer Event").parameters.query;
 const recordSql = node("Record Admin Event Result").parameters.query;
 const saveSql = node("Save Customer Feedback").parameters.query;
 const finalizeSql = node("Finalize Customer Turn").parameters.query;
+const dismissSql = node("Dismiss Pending Feedback Request").parameters.query;
+const complaintSql = node("Escalate Post-Delivery Complaint").parameters.query;
 
 assert.match(claimSql, /feedback_requested_at IS NOT NULL/);
 assert.match(recordSql, /e\.order_status = 'completed'/);
@@ -78,6 +116,11 @@ assert.match(recordSql, /awaiting_feedback_order_id = e\.order_id/);
 assert.match(saveSql, /o\.status = 'completed'/);
 assert.match(saveSql, /ON CONFLICT \(order_id\)/);
 assert.match(finalizeSql, /THEN NULL\s+ELSE cs\.awaiting_feedback_order_id/);
+assert.match(dismissSql, /awaiting_feedback_order_id = NULL/);
+assert.match(complaintSql, /o\.status = 'completed'/);
+assert.match(complaintSql, /admin_requests/);
+assert.match(complaintSql, /awaiting_human = TRUE/);
+assert.match(complaintSql, /Post-delivery customer issue for order #/);
 
 assert.match(migration, /ALTER COLUMN rating DROP NOT NULL/);
 assert.match(migration, /rating BETWEEN 0 AND 5/);

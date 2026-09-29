@@ -19,7 +19,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH customer AS (\n  INSERT INTO customers (whatsapp_phone, name, updated_at)\n  VALUES ($1, NULLIF(BTRIM($2::text), ''), NOW())\n  ON CONFLICT (whatsapp_phone)\n  DO UPDATE SET\n    name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name),\n    updated_at = NOW()\n  RETURNING id, whatsapp_phone, name\n),\nsession AS (\n  INSERT INTO conversation_sessions (customer_id)\n  SELECT id FROM customer\n  ON CONFLICT (customer_id)\n  DO UPDATE SET\n    cart = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN '{\"items\":[]}'::jsonb\n      ELSE conversation_sessions.cart\n    END,\n    order_type = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN NULL\n      ELSE conversation_sessions.order_type\n    END,\n    delivery_address = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN NULL\n      ELSE conversation_sessions.delivery_address\n    END,\n    delivery_name = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN NULL\n      ELSE conversation_sessions.delivery_name\n    END,\n    pending_items = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN '[]'::jsonb\n      ELSE conversation_sessions.pending_items\n    END,\n    awaiting_confirmation = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN FALSE\n      ELSE conversation_sessions.awaiting_confirmation\n    END,\n    active_order_id = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND (\n         COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n         OR EXISTS (\n           SELECT 1 FROM orders active_order\n           WHERE active_order.id = conversation_sessions.active_order_id\n             AND active_order.status IN ('completed', 'cancelled')\n         )\n       ) THEN NULL\n      ELSE conversation_sessions.active_order_id\n    END,\n    updated_at = NOW()\n  RETURNING *\n)\nSELECT\n  customer.id AS customer_id,\n  customer.whatsapp_phone,\n  customer.name,\n  session.id AS session_id,\n  session.cart,\n  session.cart_updated_at,\n  session.order_type,\n  session.delivery_address,\n  session.awaiting_confirmation,\n  session.awaiting_human,\n  session.delivery_name,\n  session.recent_messages,\n  session.order_status,\n  session.active_order_id,\n  session.awaiting_feedback_order_id,\n  active_order.status AS active_order_status,\n  session.pending_items\nFROM customer\nJOIN session ON session.customer_id = customer.id\nLEFT JOIN orders active_order ON active_order.id = session.active_order_id;",
+        "query": "WITH customer AS (\n  INSERT INTO customers (whatsapp_phone, name, updated_at)\n  VALUES ($1, NULLIF(BTRIM($2::text), ''), NOW())\n  ON CONFLICT (whatsapp_phone)\n  DO UPDATE SET\n    name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name),\n    updated_at = NOW()\n  RETURNING id, whatsapp_phone, name\n),\nsession AS (\n  INSERT INTO conversation_sessions (customer_id)\n  SELECT id FROM customer\n  ON CONFLICT (customer_id)\n  DO UPDATE SET\n    cart = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN '{\"items\":[]}'::jsonb\n      ELSE conversation_sessions.cart\n    END,\n    order_type = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN NULL\n      ELSE conversation_sessions.order_type\n    END,\n    delivery_address = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN NULL\n      ELSE conversation_sessions.delivery_address\n    END,\n    delivery_name = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN NULL\n      ELSE conversation_sessions.delivery_name\n    END,\n    pending_items = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN '[]'::jsonb\n      ELSE conversation_sessions.pending_items\n    END,\n    awaiting_confirmation = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n        THEN FALSE\n      ELSE conversation_sessions.awaiting_confirmation\n    END,\n    active_order_id = CASE\n      WHEN conversation_sessions.order_status = 'draft'\n       AND (\n         COALESCE(conversation_sessions.cart_updated_at, conversation_sessions.updated_at) < NOW() - INTERVAL '4 hours'\n         OR EXISTS (\n           SELECT 1 FROM orders active_order\n           WHERE active_order.id = conversation_sessions.active_order_id\n             AND active_order.status IN ('completed', 'cancelled')\n         )\n       ) THEN NULL\n      ELSE conversation_sessions.active_order_id\n    END,\n    updated_at = NOW()\n  RETURNING *\n)\nSELECT\n  customer.id AS customer_id,\n  customer.whatsapp_phone,\n  customer.name,\n  session.id AS session_id,\n  session.cart,\n  session.cart_updated_at,\n  session.order_type,\n  session.delivery_address,\n  session.awaiting_confirmation,\n  session.awaiting_human,\n  session.delivery_name,\n  session.recent_messages,\n  session.order_status,\n  session.active_order_id,\n  session.awaiting_feedback_order_id,\n  feedback_order.feedback_requested_at AS awaiting_feedback_requested_at,\n  active_order.status AS active_order_status,\n  session.pending_items\nFROM customer\nJOIN session ON session.customer_id = customer.id\nLEFT JOIN orders active_order ON active_order.id = session.active_order_id\nLEFT JOIN orders feedback_order ON feedback_order.id = session.awaiting_feedback_order_id;",
         "options": {
           "queryReplacement": "={{ [   $('Normalize Incoming Message').item.json.customer_phone,   $('Normalize Incoming Message').item.json.customer_name ] }}"
         }
@@ -1230,8 +1230,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1072,
-        1280
+        880,
+        1024
       ],
       "id": "5fc7be95-37a2-4085-b0cb-10df7158bd55",
       "name": "Awaiting Feedback Response?"
@@ -1243,8 +1243,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1312,
-        1232
+        1120,
+        976
       ],
       "id": "3b152058-cf8b-40f2-bd26-c4f7961dcf9f",
       "name": "Parse Feedback Response"
@@ -1260,20 +1260,20 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        1552,
-        1232
+        1360,
+        976
       ],
       "id": "398b71ae-f1a7-4897-a34a-3bd75db95852",
       "name": "Save Customer Feedback",
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1000,
       "credentials": {
         "postgres": {
           "id": "OBp5GZ0YBLylvDDE",
           "name": "Postgres account"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
       "notes": "Parameterized, idempotent upsert against the existing feedback table. A database failure stops the branch before any thank-you is sent."
     },
     {
@@ -1283,8 +1283,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1792,
-        1232
+        1600,
+        976
       ],
       "id": "b2f182ce-b2f1-4dd4-b194-b53b370bfa6b",
       "name": "Build Feedback Thank You"
@@ -1499,6 +1499,189 @@
       ],
       "id": "7b3069d8-6a65-46df-9182-e81a9b73b007",
       "name": "inject transcript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const FEEDBACK_WINDOW_MS = 86400000;\nfunction hasRecentFeedbackRequest(requestedAt, now) {\n  const timestamp = Date.parse(String(requestedAt || \"\"));\n  return Number.isFinite(timestamp)\n    && timestamp <= now\n    && now - timestamp <= FEEDBACK_WINDOW_MS;\n}\nfunction parseFeedback(input) {\n  const original = String(input || \"\").trim().slice(0, 2000);\n  let remainder = original;\n  let rawRating = null;\n\n  const takeNumericMatch = (pattern, ratingGroup = 1) => {\n    const match = remainder.match(pattern);\n    if (!match) return false;\n    rawRating = Number(match[ratingGroup]);\n    remainder = `${remainder.slice(0, match.index)} ${remainder.slice(match.index + match[0].length)}`;\n    return true;\n  };\n\n  takeNumericMatch(\n    /\\b(?:i(?:\\s+would|'d)?\\s+)?(?:would\\s+)?(?:give|rate)(?:\\s+(?:it|this|the\\s+(?:order|experience)))?(?:\\s+(?:a|as))?\\s*(-?\\d+)(?:\\s*\\/\\s*\\d+|\\s+out\\s+of\\s+\\d+)?\\b/i\n  )\n    || takeNumericMatch(/^\\s*(-?\\d+)(?:\\s*(?:\\/\\s*\\d+|out\\s+of\\s+\\d+))?/i)\n    || takeNumericMatch(/\\b(?:rating|score)\\s*(?::|is)?\\s*(-?\\d+)(?:\\s*\\/\\s*\\d+|\\s+out\\s+of\\s+\\d+)?\\b/i)\n    || takeNumericMatch(/(-?\\d+)\\s*\\/\\s*\\d+\\b/i);\n\n  if (rawRating === null) {\n    const stars = remainder.match(/(?:⭐\\uFE0F?\\s*)+/u);\n    if (stars) {\n      rawRating = (stars[0].match(/⭐/gu) || []).length;\n      remainder = `${remainder.slice(0, stars.index)} ${remainder.slice(stars.index + stars[0].length)}`;\n    }\n  }\n\n  const rating = rawRating === null || !Number.isFinite(rawRating)\n    ? null\n    : Math.max(0, Math.min(5, Math.trunc(rawRating)));\n  const message = remainder\n    .replace(/^\\s*(?:[-–—,:;.!]+\\s*)+/, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim() || null;\n\n  return { rating, message };\n}\nfunction classifyPendingFeedback(input, { requestedAt, now = Date.now() } = {}) {\n  const text = String(input || \"\").trim().slice(0, 2000);\n  const feedbackWindowOpen = hasRecentFeedbackRequest(requestedAt, now);\n  const parsed = parseFeedback(text);\n\n  // A rating prompt must never take over the conversation.  A request to order,\n  // ask a normal question, or report an operational problem wins over feedback.\n  const generalRequest = /(?:\\?|\\b(?:want|would\\s+like|i'?d\\s+like|place|add|buy|get|need|send|deliver|delivery|pickup|pick\\s*up|show|menu|price|cost|how\\s+much|available|cancel|change|modify|track|where(?:'s|\\s+is)|status)\\b|(?:آرڈر\\s*(?:کرنا|کر\\s*دیں|دینا)|مینو|دکھائیں|دکھاو|بھیجیں|بھیجو|قیمت|کتنے\\s*کا|ڈیلیوری|پک\\s*اپ|منسوخ|کینسل)|(?:order\\s*(?:karna|karo|kardo)|menu\\s*(?:dikhao|bhejo)|kitna|kitni|delivery|pickup|cancel)|(?:آرډر\\s*(?:کول|کړئ)|مېنو|بیه|ډیليوري|لغوه))/iu.test(text);\n  const directOrderRequest = /(?:\\b(?:want|would\\s+like|i'?d\\s+like|place|add|buy)\\b|\\b(?:need|send)\\s+(?:me\\s+)?(?:a|an|some|\\d+)\\b|(?:آرڈر\\s*(?:کرنا|کر\\s*دیں|دینا)|مینو|دکھائیں|دکھاو|بھیجیں|بھیجو|ڈیلیوری|پک\\s*اپ)|(?:order\\s*(?:karna|karo|kardo)|menu\\s*(?:dikhao|bhejo)|delivery|pickup)|(?:آرډر\\s*(?:کول|کړئ)|مېنو|ډیليوري))/iu.test(text);\n  const complaint = /(?:\\b(?:did(?:\\s+not|n't)\\s+(?:receive|get)|not\\s+(?:receive|delivered|arrive)|never\\s+(?:received|arrived)|missing|wrong\\s+(?:item|order|pizza)?|cold|late|delay(?:ed)?|refund|overcharg\\w*|extra\\s+charge|raw|burnt|stale|spoiled|allerg\\w*|damaged|rude|terrible|awful|disappoint\\w*|not\\s+good|poor)\\b|(?:nahi|nahin)\\s*(?:mila|aya|aaya|pohncha)|(?:galat|thanda|der|dair|late|refund|extra\\s*(?:paisa|paise|charge)|kharab|kharaab|kacha|jala|masla|shikayat)|(?:نہیں|نہيں)\\s*(?:ملا|آیا|پہنچا)|(?:غلط|ٹھنڈا|تاخیر|دیر|رقم\\s*واپس|اضافی\\s*چارج|خراب|کچا|جلا|مسئلہ|شکایت)|(?:نه\\s*(?:دی\\s*)?(?:رسېد|راغ|ترلاسه)|یخ|غلط|ځنډ|ناوخته|بیرته|شکایت|ستونزه))/iu.test(text);\n  const explicitFeedback = parsed.rating !== null\n    || /⭐/u.test(text)\n    || /\\b(?:feedback|review|rating|rate|score)\\b|(?:رائے|ریٹنگ|درجہ|تجربہ|نظر)/iu.test(text);\n  const positiveFeedback = /(?:\\b(?:amazing|excellent|great|good|loved?|enjoy(?:ed)?|delicious|tasty|perfect|awesome|fantastic|nice)\\b|(?:bohat\\s*(?:acha|achha)|zabardast|mazedaar|lazeez|pasand\\s+aya)|(?:بہت\\s*اچھا|زبردست|مزے\\s*دار|لذیذ|پسند\\s*آیا)|(?:ډېر\\s*(?:ښه|خوندور)|خوندور))/iu.test(text);\n\n  let intent = \"normal\";\n  if (feedbackWindowOpen) {\n    if (complaint && !directOrderRequest) intent = explicitFeedback ? \"feedback_complaint\" : \"complaint\";\n    else if (!generalRequest && (explicitFeedback || positiveFeedback)) intent = \"feedback\";\n  }\n\n  return {\n    intent,\n    feedbackWindowOpen,\n    hasExplicitFeedback: explicitFeedback,\n    isComplaint: complaint,\n    text,\n  };\n}\nconst session = $('Upsert Customer and Session').item.json || {};\nconst source = String($('Claim Latest Customer Turn').item.json.combined_text || '');\nconst classification = classifyPendingFeedback(source, {\n  requestedAt: session.awaiting_feedback_requested_at,\n});\nreturn [{ json: {\n  ...$input.first().json,\n  feedback_intent: classification.intent,\n  feedback_window_open: classification.feedbackWindowOpen,\n  feedback_is_complaint: classification.isComplaint,\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        1088
+      ],
+      "id": "4957fc65-d40d-4089-a188-80931a7da880",
+      "name": "Classify Pending Feedback Intent",
+      "notes": "A feedback invitation is non-blocking. Only a clear rating/review is saved; orders, questions, and delivery problems keep their normal paths."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0896cd11-e972-4b6a-a55b-e8bca4242d07",
+              "leftValue": "={{ ['feedback', 'feedback_complaint'].includes($json.feedback_intent) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1360,
+        1088
+      ],
+      "id": "7b21bc8f-73ae-4313-aac9-3c0f8d417e41",
+      "name": "Feedback Submission?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "489f2c70-90d3-4692-a742-20b7de33f6d6",
+              "leftValue": "={{ ['complaint', 'feedback_complaint'].includes($('Classify Pending Feedback Intent').item.json.feedback_intent) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1840,
+        1088
+      ],
+      "id": "8b7b79b9-8be4-441d-a04e-83b1505e514c",
+      "name": "Feedback Complaint?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "540499a1-a36f-47e2-bb61-6917ace49f8b",
+              "leftValue": "={{ $('Classify Pending Feedback Intent').item.json.feedback_intent === 'feedback_complaint' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1840,
+        896
+      ],
+      "id": "c6cb9028-f02a-4c3f-8699-d7fbc194cba3",
+      "name": "Saved Feedback Is Complaint?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH cleared AS (\n  UPDATE conversation_sessions\n  SET awaiting_feedback_order_id = NULL,\n      updated_at = NOW()\n  WHERE customer_id = $1::bigint\n    AND awaiting_feedback_order_id = $2::bigint\n  RETURNING id\n)\nSELECT EXISTS (SELECT 1 FROM cleared) AS feedback_prompt_dismissed;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Upsert Customer and Session').item.json.awaiting_feedback_order_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2080,
+        1184
+      ],
+      "id": "34baf94e-f78c-410d-a571-df70eebd64b5",
+      "name": "Dismiss Pending Feedback Request",
+      "credentials": {
+        "postgres": {
+          "id": "OBp5GZ0YBLylvDDE",
+          "name": "Postgres account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "A normal customer request dismisses the optional feedback prompt so it cannot capture future messages."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH locked_session AS (\n  SELECT cs.customer_id, cs.awaiting_feedback_order_id AS order_id\n  FROM conversation_sessions cs\n  JOIN orders o\n    ON o.id = cs.awaiting_feedback_order_id\n   AND o.customer_id = cs.customer_id\n   AND o.status = 'completed'\n  WHERE cs.customer_id = $1::bigint\n    AND cs.awaiting_feedback_order_id = $2::bigint\n  FOR UPDATE OF cs\n),\nescalated AS (\n  UPDATE conversation_sessions cs\n  SET awaiting_human = TRUE,\n      awaiting_feedback_order_id = NULL,\n      updated_at = NOW()\n  FROM locked_session ls\n  WHERE cs.customer_id = ls.customer_id\n  RETURNING cs.customer_id, ls.order_id\n),\ncreated AS (\n  INSERT INTO admin_requests (customer_id, order_id, request_type, question)\n  SELECT e.customer_id, e.order_id, 'human_handoff',\n         'Post-delivery customer issue for order #' || e.order_id || ': ' ||\n         LEFT(COALESCE(NULLIF(BTRIM($3::text), ''), 'Customer reported a delivery or service issue.'), 1500)\n  FROM escalated e\n  ON CONFLICT (customer_id) WHERE request_type = 'human_handoff' AND status = 'pending' DO NOTHING\n  RETURNING id, customer_id, order_id\n),\nrequest_record AS (\n  SELECT id, customer_id, order_id FROM created\n  UNION ALL\n  SELECT r.id, r.customer_id, r.order_id\n  FROM admin_requests r\n  WHERE r.customer_id = $1::bigint\n    AND r.request_type = 'human_handoff'\n    AND r.status = 'pending'\n  ORDER BY id DESC\n  LIMIT 1\n),\nnotified AS (\n  INSERT INTO admin_notifications (\n    notification_type, title, source_key, request_id, order_id, customer_id, message, created_at\n  )\n  SELECT 'customer_request', 'Post-delivery customer issue #' || rr.id,\n         'human_handoff:' || rr.id, rr.id, rr.order_id, rr.customer_id,\n         LEFT(COALESCE(NULLIF(BTRIM($3::text), ''), 'Customer reported a delivery or service issue.'), 1500), NOW()\n  FROM request_record rr\n  ON CONFLICT (source_key) DO UPDATE\n    SET message = EXCLUDED.message, read_at = NULL\n  RETURNING id\n)\nSELECT EXISTS (SELECT 1 FROM escalated) AS awaiting_human,\n       (SELECT id FROM request_record) AS request_id,\n       EXISTS (SELECT 1 FROM created) AS request_created,\n       EXISTS (SELECT 1 FROM request_record) AS dashboard_request_visible,\n       (SELECT order_id FROM request_record) AS order_id,\n       (SELECT id FROM notified) AS admin_notification_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Upsert Customer and Session').item.json.awaiting_feedback_order_id, $('Claim Latest Customer Turn').item.json.combined_text || '' ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2080,
+        976
+      ],
+      "id": "d6701f97-5ac6-4820-b03b-a02f52080f8d",
+      "name": "Escalate Post-Delivery Complaint",
+      "credentials": {
+        "postgres": {
+          "id": "OBp5GZ0YBLylvDDE",
+          "name": "Postgres account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Creates or reuses a visible staff handoff linked to the completed order, then closes the optional feedback prompt."
+    },
+    {
+      "parameters": {
+        "jsCode": "function detectMessageLanguage(currentMessage, recentMessages = []) {\n  const detectClearLanguage = (value) => {\n    const text = String(value || \"\").trim();\n    if (!text) return null;\n    const lower = text.toLowerCase();\n\n    const pashtoScript = /[ځڅډړږښګڼۍې]/u.test(text);\n    const pashtoWords = /(?:^|\\s)(?:زه|زما|مونږ|موږ|تاسو|ستا|څه|څنګه|غواړم|غواړو|شته|نشته|راکړه|راکړئ|کوم|کړم|کړئ|ډېر|چرګ)(?:\\s|$|[؟?!.,])/u.test(text);\n    if (pashtoScript || pashtoWords) return \"pashto\";\n\n    if (/[\\u0600-\\u06ff]/u.test(text)) return \"urdu\";\n\n    const romanUrdu = /\\b(?:aap|apka|aapka|mera|meri|mujhe|hum|ham|hai|hain|nahi|nahin|haan|han|jee|ji|acha|theek|shukriya|bhai|madad|dikhao|dikhado|bhejo|bhej|sakte|chahiye|chahta|chahti|kitna|kitni|kitne|kitny|ka|ki|ke|wala|wali|karna|karo|kardo|krdo|mein|mai|dair|hogi|hoga|yeh|ye|wo|aur|salam|salaam|aoa|assalam)\\b/i;\n    if (romanUrdu.test(lower)) return \"roman_urdu\";\n\n    if (/\\b(?:yes|no|thanks|thank\\s+you|hello|hi|hey|please|show|want|need|how|what|can|could|would|order|place|cancel|see|give|send|one|the|a|an|is|are|do|me|my|your)\\b/i.test(lower)) {\n      return \"english\";\n    }\n\n    if (/^(?:ok|okay|k|👍|👌|✅|\\d+)$/iu.test(lower)) return null;\n    if (/^[a-z][a-z\\s'’-]*$/i.test(text)) return \"english\";\n    return null;\n  };\n\n  const current = detectClearLanguage(currentMessage);\n  if (current) return current;\n\n  const history = Array.isArray(recentMessages) ? recentMessages : [];\n  for (let index = history.length - 1; index >= 0; index -= 1) {\n    const entry = history[index];\n    if (!entry || entry.role !== \"customer\") continue;\n    const historical = detectClearLanguage(entry.text);\n    if (historical) return historical;\n  }\n\n  return \"english\";\n}\nconst session = $('Upsert Customer and Session').item.json || {};\nconst source = String($('Claim Latest Customer Turn').item.json.latest_text || $('Claim Latest Customer Turn').item.json.combined_text || '');\nconst language = detectMessageLanguage(source, session.recent_messages);\nconst created = $input.first().json || {};\nconst replies = {\n  english: created.dashboard_request_visible\n    ? 'I’m sorry this happened. I’ve shared your issue with our restaurant team. They will review it and contact you directly.'\n    : 'I’m sorry this happened. I could not send your issue to our restaurant team yet. Please try again in a moment.',\n  roman_urdu: created.dashboard_request_visible\n    ? 'Mujhe afsos hai yeh hua. Main ne aap ka masla restaurant team ko bhej diya hai. Woh review karke aap se seedha rabta karegi.'\n    : 'Mujhe afsos hai yeh hua. Main abhi aap ka masla restaurant team ko nahi bhej saka. Barah-e-karam thori dair baad dobara try karein.',\n  urdu: created.dashboard_request_visible\n    ? 'مجھے افسوس ہے کہ یہ ہوا۔ میں نے آپ کا مسئلہ ریسٹورنٹ ٹیم کو بھیج دیا ہے۔ وہ جائزہ لے کر آپ سے براہِ راست رابطہ کرے گی۔'\n    : 'مجھے افسوس ہے کہ یہ ہوا۔ میں ابھی آپ کا مسئلہ ریسٹورنٹ ٹیم کو نہیں بھیج سکا۔ براہِ کرم تھوڑی دیر بعد دوبارہ کوشش کریں۔',\n  pashto: created.dashboard_request_visible\n    ? 'بخښنه غواړم چې دا پېښ شول. ستاسو ستونزه مې د رستورانت ټيم ته ولېږله. هغوی به يې وڅېړي او له تاسو سره به نېغ په نېغه اړيکه ونيسي.'\n    : 'بخښنه غواړم چې دا پېښ شول. زه اوس ستاسو ستونزه د رستورانت ټيم ته نه شم لېږلی. مهرباني وکړئ لږ وروسته بيا هڅه وکړئ.',\n};\nreturn [{ json: { ...created, reply_text: replies[language] || replies.english, response_language: language } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        976
+      ],
+      "id": "a5780967-d159-4569-8385-049d50c4777b",
+      "name": "Build Post-Delivery Complaint Reply"
     }
   ],
   "pinData": {},
@@ -2044,7 +2227,7 @@
       "main": [
         [
           {
-            "node": "Parse Feedback Response",
+            "node": "Classify Pending Feedback Intent",
             "type": "main",
             "index": 0
           }
@@ -2073,7 +2256,7 @@
       "main": [
         [
           {
-            "node": "Build Feedback Thank You",
+            "node": "Saved Feedback Is Complaint?",
             "type": "main",
             "index": 0
           }
@@ -2186,6 +2369,104 @@
           }
         ]
       ]
+    },
+    "Classify Pending Feedback Intent": {
+      "main": [
+        [
+          {
+            "node": "Feedback Submission?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feedback Submission?": {
+      "main": [
+        [
+          {
+            "node": "Parse Feedback Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Feedback Complaint?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feedback Complaint?": {
+      "main": [
+        [
+          {
+            "node": "Escalate Post-Delivery Complaint",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dismiss Pending Feedback Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved Feedback Is Complaint?": {
+      "main": [
+        [
+          {
+            "node": "Escalate Post-Delivery Complaint",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Feedback Thank You",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dismiss Pending Feedback Request": {
+      "main": [
+        [
+          {
+            "node": "Route Simple Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate Post-Delivery Complaint": {
+      "main": [
+        [
+          {
+            "node": "Build Post-Delivery Complaint Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Post-Delivery Complaint Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -2193,7 +2474,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "8a2f2aaa-37f0-4883-877f-21f26ba85eb5",
+  "versionId": "a8419774-8ea9-4b3b-8d68-abcc0e39e4c1",
   "meta": {
     "instanceId": "6998a274d9a8cd3fce2ab752d130672ae6124f7b05aecf297ee5a82201ba7afa"
   },

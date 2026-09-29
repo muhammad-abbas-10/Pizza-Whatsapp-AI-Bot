@@ -2,9 +2,10 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { parseFeedback } = require("../src/feedback-parser");
+const { FEEDBACK_WINDOW_MS, classifyPendingFeedback, hasRecentFeedbackRequest } = require("../src/feedback-intent");
 const { detectMessageLanguage } = require("../src/message-language");
 
-const workflowPath = path.resolve(__dirname, "../../final-pizza.json");
+const workflowPath = path.resolve(__dirname, "../../workflow.json");
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 
 function find(name) {
@@ -45,6 +46,18 @@ if (!upsertSession.parameters.query.includes("session.awaiting_feedback_order_id
     );
 }
 
+if (!upsertSession.parameters.query.includes("awaiting_feedback_requested_at")) {
+  upsertSession.parameters.query = upsertSession.parameters.query
+    .replace(
+      "  session.awaiting_feedback_order_id,\n  active_order.status AS active_order_status,",
+      "  session.awaiting_feedback_order_id,\n  feedback_order.feedback_requested_at AS awaiting_feedback_requested_at,\n  active_order.status AS active_order_status,"
+    )
+    .replace(
+      "LEFT JOIN orders active_order ON active_order.id = session.active_order_id;",
+      "LEFT JOIN orders active_order ON active_order.id = session.active_order_id\nLEFT JOIN orders feedback_order ON feedback_order.id = session.awaiting_feedback_order_id;"
+    );
+}
+
 upsert({
   parameters: {
     conditions: {
@@ -64,6 +77,95 @@ upsert({
   position: [880, 1024],
   id: crypto.randomUUID(),
   name: "Awaiting Feedback Response?",
+});
+
+upsert({
+  parameters: {
+    jsCode: `const FEEDBACK_WINDOW_MS = ${FEEDBACK_WINDOW_MS};
+${hasRecentFeedbackRequest.toString()}
+${parseFeedback.toString()}
+${classifyPendingFeedback.toString()}
+const session = $('Upsert Customer and Session').item.json || {};
+const source = String($('Claim Latest Customer Turn').item.json.combined_text || '');
+const classification = classifyPendingFeedback(source, {
+  requestedAt: session.awaiting_feedback_requested_at,
+});
+return [{ json: {
+  ...$input.first().json,
+  feedback_intent: classification.intent,
+  feedback_window_open: classification.feedbackWindowOpen,
+  feedback_is_complaint: classification.isComplaint,
+} }];`,
+  },
+  type: "n8n-nodes-base.code",
+  typeVersion: 2,
+  position: [1120, 1088],
+  id: crypto.randomUUID(),
+  name: "Classify Pending Feedback Intent",
+  notes: "A feedback invitation is non-blocking. Only a clear rating/review is saved; orders, questions, and delivery problems keep their normal paths.",
+});
+
+upsert({
+  parameters: {
+    conditions: {
+      options: { caseSensitive: true, leftValue: "", typeValidation: "strict", version: 3 },
+      conditions: [{
+        id: crypto.randomUUID(),
+        leftValue: "={{ ['feedback', 'feedback_complaint'].includes($json.feedback_intent) }}",
+        rightValue: "",
+        operator: { type: "boolean", operation: "true", singleValue: true },
+      }],
+      combinator: "and",
+    },
+    options: {},
+  },
+  type: "n8n-nodes-base.if",
+  typeVersion: 2.3,
+  position: [1360, 1088],
+  id: crypto.randomUUID(),
+  name: "Feedback Submission?",
+});
+
+upsert({
+  parameters: {
+    conditions: {
+      options: { caseSensitive: true, leftValue: "", typeValidation: "strict", version: 3 },
+      conditions: [{
+        id: crypto.randomUUID(),
+        leftValue: "={{ ['complaint', 'feedback_complaint'].includes($('Classify Pending Feedback Intent').item.json.feedback_intent) }}",
+        rightValue: "",
+        operator: { type: "boolean", operation: "true", singleValue: true },
+      }],
+      combinator: "and",
+    },
+    options: {},
+  },
+  type: "n8n-nodes-base.if",
+  typeVersion: 2.3,
+  position: [1840, 1088],
+  id: crypto.randomUUID(),
+  name: "Feedback Complaint?",
+});
+
+upsert({
+  parameters: {
+    conditions: {
+      options: { caseSensitive: true, leftValue: "", typeValidation: "strict", version: 3 },
+      conditions: [{
+        id: crypto.randomUUID(),
+        leftValue: "={{ $('Classify Pending Feedback Intent').item.json.feedback_intent === 'feedback_complaint' }}",
+        rightValue: "",
+        operator: { type: "boolean", operation: "true", singleValue: true },
+      }],
+      combinator: "and",
+    },
+    options: {},
+  },
+  type: "n8n-nodes-base.if",
+  typeVersion: 2.3,
+  position: [1840, 896],
+  id: crypto.randomUUID(),
+  name: "Saved Feedback Is Complaint?",
 });
 
 upsert({
@@ -116,6 +218,141 @@ SELECT *, TRUE AS feedback_saved FROM saved;`,
   maxTries: 3,
   waitBetweenTries: 1000,
   notes: "Parameterized, idempotent upsert against the existing feedback table. A database failure stops the branch before any thank-you is sent.",
+});
+
+upsert({
+  parameters: {
+    operation: "executeQuery",
+    query: `WITH cleared AS (
+  UPDATE conversation_sessions
+  SET awaiting_feedback_order_id = NULL,
+      updated_at = NOW()
+  WHERE customer_id = $1::bigint
+    AND awaiting_feedback_order_id = $2::bigint
+  RETURNING id
+)
+SELECT EXISTS (SELECT 1 FROM cleared) AS feedback_prompt_dismissed;`,
+    options: {
+      queryReplacement: "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Upsert Customer and Session').item.json.awaiting_feedback_order_id ] }}",
+    },
+  },
+  type: "n8n-nodes-base.postgres",
+  typeVersion: 2.7,
+  position: [2080, 1184],
+  id: crypto.randomUUID(),
+  name: "Dismiss Pending Feedback Request",
+  credentials: postgresCredentials,
+  retryOnFail: true,
+  maxTries: 3,
+  waitBetweenTries: 1000,
+  notes: "A normal customer request dismisses the optional feedback prompt so it cannot capture future messages.",
+});
+
+upsert({
+  parameters: {
+    operation: "executeQuery",
+    query: `WITH locked_session AS (
+  SELECT cs.customer_id, cs.awaiting_feedback_order_id AS order_id
+  FROM conversation_sessions cs
+  JOIN orders o
+    ON o.id = cs.awaiting_feedback_order_id
+   AND o.customer_id = cs.customer_id
+   AND o.status = 'completed'
+  WHERE cs.customer_id = $1::bigint
+    AND cs.awaiting_feedback_order_id = $2::bigint
+  FOR UPDATE OF cs
+),
+escalated AS (
+  UPDATE conversation_sessions cs
+  SET awaiting_human = TRUE,
+      awaiting_feedback_order_id = NULL,
+      updated_at = NOW()
+  FROM locked_session ls
+  WHERE cs.customer_id = ls.customer_id
+  RETURNING cs.customer_id, ls.order_id
+),
+created AS (
+  INSERT INTO admin_requests (customer_id, order_id, request_type, question)
+  SELECT e.customer_id, e.order_id, 'human_handoff',
+         'Post-delivery customer issue for order #' || e.order_id || ': ' ||
+         LEFT(COALESCE(NULLIF(BTRIM($3::text), ''), 'Customer reported a delivery or service issue.'), 1500)
+  FROM escalated e
+  ON CONFLICT (customer_id) WHERE request_type = 'human_handoff' AND status = 'pending' DO NOTHING
+  RETURNING id, customer_id, order_id
+),
+request_record AS (
+  SELECT id, customer_id, order_id FROM created
+  UNION ALL
+  SELECT r.id, r.customer_id, r.order_id
+  FROM admin_requests r
+  WHERE r.customer_id = $1::bigint
+    AND r.request_type = 'human_handoff'
+    AND r.status = 'pending'
+  ORDER BY id DESC
+  LIMIT 1
+),
+notified AS (
+  INSERT INTO admin_notifications (
+    notification_type, title, source_key, request_id, order_id, customer_id, message, created_at
+  )
+  SELECT 'customer_request', 'Post-delivery customer issue #' || rr.id,
+         'human_handoff:' || rr.id, rr.id, rr.order_id, rr.customer_id,
+         LEFT(COALESCE(NULLIF(BTRIM($3::text), ''), 'Customer reported a delivery or service issue.'), 1500), NOW()
+  FROM request_record rr
+  ON CONFLICT (source_key) DO UPDATE
+    SET message = EXCLUDED.message, read_at = NULL
+  RETURNING id
+)
+SELECT EXISTS (SELECT 1 FROM escalated) AS awaiting_human,
+       (SELECT id FROM request_record) AS request_id,
+       EXISTS (SELECT 1 FROM created) AS request_created,
+       EXISTS (SELECT 1 FROM request_record) AS dashboard_request_visible,
+       (SELECT order_id FROM request_record) AS order_id,
+       (SELECT id FROM notified) AS admin_notification_id;`,
+    options: {
+      queryReplacement: "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Upsert Customer and Session').item.json.awaiting_feedback_order_id, $('Claim Latest Customer Turn').item.json.combined_text || '' ] }}",
+    },
+  },
+  type: "n8n-nodes-base.postgres",
+  typeVersion: 2.7,
+  position: [2080, 976],
+  id: crypto.randomUUID(),
+  name: "Escalate Post-Delivery Complaint",
+  credentials: postgresCredentials,
+  retryOnFail: true,
+  maxTries: 3,
+  waitBetweenTries: 1000,
+  notes: "Creates or reuses a visible staff handoff linked to the completed order, then closes the optional feedback prompt.",
+});
+
+upsert({
+  parameters: {
+    jsCode: `${detectMessageLanguage.toString()}
+const session = $('Upsert Customer and Session').item.json || {};
+const source = String($('Claim Latest Customer Turn').item.json.latest_text || $('Claim Latest Customer Turn').item.json.combined_text || '');
+const language = detectMessageLanguage(source, session.recent_messages);
+const created = $input.first().json || {};
+const replies = {
+  english: created.dashboard_request_visible
+    ? 'I’m sorry this happened. I’ve shared your issue with our restaurant team. They will review it and contact you directly.'
+    : 'I’m sorry this happened. I could not send your issue to our restaurant team yet. Please try again in a moment.',
+  roman_urdu: created.dashboard_request_visible
+    ? 'Mujhe afsos hai yeh hua. Main ne aap ka masla restaurant team ko bhej diya hai. Woh review karke aap se seedha rabta karegi.'
+    : 'Mujhe afsos hai yeh hua. Main abhi aap ka masla restaurant team ko nahi bhej saka. Barah-e-karam thori dair baad dobara try karein.',
+  urdu: created.dashboard_request_visible
+    ? 'مجھے افسوس ہے کہ یہ ہوا۔ میں نے آپ کا مسئلہ ریسٹورنٹ ٹیم کو بھیج دیا ہے۔ وہ جائزہ لے کر آپ سے براہِ راست رابطہ کرے گی۔'
+    : 'مجھے افسوس ہے کہ یہ ہوا۔ میں ابھی آپ کا مسئلہ ریسٹورنٹ ٹیم کو نہیں بھیج سکا۔ براہِ کرم تھوڑی دیر بعد دوبارہ کوشش کریں۔',
+  pashto: created.dashboard_request_visible
+    ? 'بخښنه غواړم چې دا پېښ شول. ستاسو ستونزه مې د رستورانت ټيم ته ولېږله. هغوی به يې وڅېړي او له تاسو سره به نېغ په نېغه اړيکه ونيسي.'
+    : 'بخښنه غواړم چې دا پېښ شول. زه اوس ستاسو ستونزه د رستورانت ټيم ته نه شم لېږلی. مهرباني وکړئ لږ وروسته بيا هڅه وکړئ.',
+};
+return [{ json: { ...created, reply_text: replies[language] || replies.english, response_language: language } }];`,
+  },
+  type: "n8n-nodes-base.code",
+  typeVersion: 2,
+  position: [2320, 976],
+  id: crypto.randomUUID(),
+  name: "Build Post-Delivery Complaint Reply",
 });
 
 upsert({
@@ -240,10 +477,23 @@ if (!finalizeTurn.parameters.query.includes("awaiting_feedback_order_id = CASE")
 
 workflow.connections["Recover Reply Before Routing"].main[1] = [edge("Awaiting Feedback Response?")];
 workflow.connections["Awaiting Feedback Response?"] = {
-  main: [[edge("Parse Feedback Response")], [edge("Route Simple Messages")]],
+  main: [[edge("Classify Pending Feedback Intent")], [edge("Route Simple Messages")]],
+};
+workflow.connections["Classify Pending Feedback Intent"] = { main: [[edge("Feedback Submission?")]] };
+workflow.connections["Feedback Submission?"] = {
+  main: [[edge("Parse Feedback Response")], [edge("Feedback Complaint?")]],
 };
 workflow.connections["Parse Feedback Response"] = { main: [[edge("Save Customer Feedback")]] };
-workflow.connections["Save Customer Feedback"] = { main: [[edge("Build Feedback Thank You")]] };
+workflow.connections["Save Customer Feedback"] = { main: [[edge("Saved Feedback Is Complaint?")]] };
+workflow.connections["Feedback Complaint?"] = {
+  main: [[edge("Escalate Post-Delivery Complaint")], [edge("Dismiss Pending Feedback Request")]],
+};
+workflow.connections["Saved Feedback Is Complaint?"] = {
+  main: [[edge("Escalate Post-Delivery Complaint")], [edge("Build Feedback Thank You")]],
+};
+workflow.connections["Dismiss Pending Feedback Request"] = { main: [[edge("Route Simple Messages")]] };
+workflow.connections["Escalate Post-Delivery Complaint"] = { main: [[edge("Build Post-Delivery Complaint Reply")]] };
+workflow.connections["Build Post-Delivery Complaint Reply"] = { main: [[edge("Reply Text")]] };
 workflow.connections["Build Feedback Thank You"] = { main: [[edge("Reply Text")]] };
 
 workflow.versionId = crypto.randomUUID();
