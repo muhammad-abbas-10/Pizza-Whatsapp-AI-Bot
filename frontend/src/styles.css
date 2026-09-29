@@ -1905,10 +1905,26 @@ body {
 .menu-page .menu-image-delete .ui-icon { width: 12px; height: 12px; }
 .menu-page .menu-images-empty { padding: 50px 15px; color: #8b949e; text-align: center; font-size: 11px; }
 
-.menu-image-preview-modal { width: min(960px, calc(100vw - 32px)); background: #090b0e; }
-.menu-image-preview-modal .modal-head { background: #13161c; }
-.menu-image-preview-modal .modal-body { display: grid; place-items: center; max-height: calc(100vh - 150px); padding: 0; overflow: auto; background: #090b0e; }
-.menu-image-preview-modal img { width: auto; max-width: 100%; max-height: calc(100vh - 150px); object-fit: contain; }
+.menu-image-preview-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 32px));
+  height: min(820px, calc(100vh - 40px));
+  overflow: hidden;
+  background: #090b0e;
+}
+.menu-image-preview-modal .modal-head { flex: 0 0 auto; background: #13161c; }
+.menu-image-preview-modal .modal-body {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  background: #090b0e;
+}
+.menu-image-preview-modal img { display: block; width: 100%; max-width: none; height: auto; max-height: none; object-fit: contain; }
 
 .menu-upload-input { height: auto; padding: 8px; }
 .destructive-confirmation {
