@@ -1,5 +1,5 @@
 {
-  "name": "voice note",
+  "name": "looking forward",
   "nodes": [
     {
       "parameters": {
@@ -8,10 +8,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -864,
-        1296
+        -624,
+        1088
       ],
-      "id": "f54d94ff-2a41-496a-b655-7e6d589bf611",
+      "id": "7698e7db-5d43-4a83-909a-91f3e602b0b6",
       "name": "Normalize Incoming Message",
       "notesInFlow": true,
       "notes": "Normalizes Evolution API v2.3.7 messages.upsert payloads. Rejects outgoing, group, broadcast, non-message, malformed, and non-text events before they reach the assistant."
@@ -27,10 +27,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        1040,
-        1152
+        848,
+        896
       ],
-      "id": "33c2e9b0-f075-4da6-9c1e-4ce6aae39c55",
+      "id": "cdd1681c-685a-476d-ab18-97079b1601a3",
       "name": "Upsert Customer and Session",
       "credentials": {
         "postgres": {
@@ -50,10 +50,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2080,
-        1840
+        1888,
+        1584
       ],
-      "id": "f2d8257a-9dac-4700-a5db-b7959bdcdfd5",
+      "id": "a39a2061-adb1-415d-8ef2-f26d7418d9c4",
       "name": "Load Active Menu",
       "credentials": {
         "postgres": {
@@ -71,10 +71,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        1104,
-        1024
+        912,
+        768
       ],
-      "id": "c897ea60-2fcc-4d81-8750-c6439a861d2f",
+      "id": "b375835a-acdb-4efc-963e-cd3e33709ae7",
       "name": "Get Restaurant Settings",
       "credentials": {
         "postgres": {
@@ -96,10 +96,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        1904,
-        880
+        1728,
+        608
       ],
-      "id": "5b8eee0e-89a4-4fff-8aab-80fa7dafa06c",
+      "id": "f1f3c821-9817-4bbb-b058-b1faf33f1f00",
       "name": "Update Cart",
       "credentials": {
         "postgres": {
@@ -119,10 +119,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        3488,
-        896
+        3648,
+        640
       ],
-      "id": "79d887c7-8ff1-48c5-8bf1-0c7158f82352",
+      "id": "bbeb636a-6034-4af0-ae74-8f590f136fa3",
       "name": "Set Order Type",
       "credentials": {
         "postgres": {
@@ -142,10 +142,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2272,
-        880
+        2080,
+        624
       ],
-      "id": "eb62a5ac-9862-4390-9c62-6b0258827a27",
+      "id": "42233fdb-41f9-4889-aaa0-17d12cb9f29d",
       "name": "Set Delivery Info",
       "credentials": {
         "postgres": {
@@ -165,10 +165,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2448,
-        896
+        2256,
+        640
       ],
-      "id": "e250858c-2df1-4038-97e2-2fa5e02ace00",
+      "id": "6922ee87-5631-494f-9c88-56a55df4d199",
       "name": "Place Order",
       "credentials": {
         "postgres": {
@@ -188,10 +188,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2608,
-        896
+        2416,
+        640
       ],
-      "id": "900b818d-96cc-4598-aff3-b5afe194153b",
+      "id": "a4b96ac7-405c-4564-93ad-02e5151e430f",
       "name": "Cancel Order",
       "credentials": {
         "postgres": {
@@ -211,10 +211,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        3312,
-        896
+        3440,
+        640
       ],
-      "id": "9a17ee52-c75b-4932-8865-6c1ba0ab4593",
+      "id": "949bfa64-69aa-4c6d-b7c5-f3667d577ed0",
       "name": "Escalate To Human",
       "credentials": {
         "postgres": {
@@ -227,7 +227,7 @@
       "parameters": {
         "toolDescription": "Send menu image page 1 to the current WhatsApp customer. Use this only when the customer asks to see the menu image.",
         "method": "POST",
-        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendMedia/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendMedia/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'cs-cst-evolution-api-e2330e89') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -238,10 +238,10 @@
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.3,
       "position": [
-        3680,
-        896
+        3856,
+        640
       ],
-      "id": "8f6fd5cc-4d44-402e-bcf3-bb57a81bb137",
+      "id": "362e92d7-dc33-4fd2-9175-ff808ca27471",
       "name": "Send Menu Image 1",
       "retryOnFail": true,
       "maxTries": 3,
@@ -259,7 +259,7 @@
       "parameters": {
         "toolDescription": "Send menu image page 2 to the current WhatsApp customer. Use this only when the customer asks to see the menu image.",
         "method": "POST",
-        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendMedia/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendMedia/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'cs-cst-evolution-api-e2330e89') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -270,10 +270,10 @@
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.3,
       "position": [
-        3904,
-        896
+        4080,
+        640
       ],
-      "id": "6b1a92d4-31ed-44e2-bce1-ee1e3f71cc52",
+      "id": "ac67d7fa-018d-4af7-8398-aac35b3b2682",
       "name": "Send Menu Image 2",
       "retryOnFail": true,
       "maxTries": 3,
@@ -300,10 +300,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.9,
       "position": [
-        1712,
-        448
+        1520,
+        192
       ],
-      "id": "47ad8603-b736-4023-9d11-1b39445ad4e5",
+      "id": "7b8710c0-5206-4a15-a9fa-fe0a4ce65086",
       "name": "Pizza Ordering Agent",
       "continueOnFail": true
     },
@@ -324,16 +324,16 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1664,
-        1040
+        1472,
+        784
       ],
-      "id": "713011d2-08ed-469d-9fbf-7565f8d54f21",
+      "id": "5ab7435d-cae3-47d6-ab8d-68491eafb5c6",
       "name": "Reply Text"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'cs-cst-evolution-api-e2330e89') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -344,10 +344,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        2064,
-        1072
+        1872,
+        816
       ],
-      "id": "059057e1-d3f2-4f6c-bf81-f207d2368a23",
+      "id": "a389099d-2801-4687-a774-3282ceac1b29",
       "name": "Evolution API Send Message",
       "retryOnFail": true,
       "maxTries": 3,
@@ -372,10 +372,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        3024,
-        1312
+        2832,
+        1056
       ],
-      "id": "490b6c2d-fea1-4101-b23c-e3a6b292d75f",
+      "id": "209e280d-d3a9-41c8-b83b-530b081a3220",
       "name": "Finalize Customer Turn",
       "credentials": {
         "postgres": {
@@ -395,10 +395,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        96,
-        1376
+        -80,
+        1072
       ],
-      "id": "5cd030e8-ca81-416b-b580-fe68e2862ebf",
+      "id": "b4f19ad0-fcb0-4ab2-bf73-a7f8f23c7610",
       "name": "Insert Message to Buffer",
       "credentials": {
         "postgres": {
@@ -414,10 +414,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        432,
-        1328
+        240,
+        1072
       ],
-      "id": "19285316-de0c-48e5-b94e-ea09634b04c0",
+      "id": "b3b160e3-bc4c-450c-8fb2-8dfdfb7c6cda",
       "name": "Debounce Customer Messages",
       "webhookId": "45527a8b-bd1a-43a0-972b-7b1b9476c476"
     },
@@ -434,10 +434,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2096,
-        864
+        1904,
+        608
       ],
-      "id": "8fe7d222-b648-49c4-b590-bcbee6232b0a",
+      "id": "7c3ef260-0d0c-4f59-a5e4-6b8ba2846ca3",
       "name": "Request Cancellation Approval",
       "credentials": {
         "postgres": {
@@ -457,10 +457,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        624,
-        1328
+        432,
+        1072
       ],
-      "id": "0a1efb15-b6b5-4571-816f-fc1eeaf047cf",
+      "id": "aa827f44-56f8-4cde-b997-866802f9b976",
       "name": "Claim Latest Customer Turn",
       "credentials": {
         "postgres": {
@@ -497,10 +497,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        832,
-        1440
+        640,
+        1184
       ],
-      "id": "318445b7-bc3c-4eb8-8899-0b298f5675ba",
+      "id": "212e01b6-1c23-4425-9dc2-3b688d50bc01",
       "name": "Customer Turn Ready"
     },
     {
@@ -531,10 +531,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        304,
-        1328
+        112,
+        1072
       ],
-      "id": "7d5603bf-3f72-43a3-acda-3a3d2ba6b799",
+      "id": "3493e6b2-9526-4e43-abd1-98d2f083c0fe",
       "name": "Customer Message Accepted"
     },
     {
@@ -565,10 +565,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1040,
-        1584
+        848,
+        1328
       ],
-      "id": "5c59e9d1-8ef3-4237-898f-f6c08ab50b6d",
+      "id": "3e63581a-c80f-4a70-8df8-bbc90a1d2399",
       "name": "Customer Turn Busy"
     },
     {
@@ -578,10 +578,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1232,
-        1776
+        1040,
+        1520
       ],
-      "id": "a178ae84-ef2b-4308-a592-ec14e69130cb",
+      "id": "9169f6b6-1177-426c-ad17-8816b0ceaff2",
       "name": "Wait For Active Customer Turn",
       "webhookId": "68ed6f0c-bc8c-433f-9405-66dc994a56f8"
     },
@@ -602,10 +602,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1472,
-        1168
+        1280,
+        912
       ],
-      "id": "9a6e39f4-e0b8-46b5-ab0d-f075f922bf0f",
+      "id": "c6991dcd-12b5-4f23-8ea5-a2efdaa1229d",
       "name": "Restore Stored Reply"
     },
     {
@@ -619,10 +619,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        2496,
-        1088
+        2304,
+        832
       ],
-      "id": "959d8b8c-6a55-4903-b117-4526b9a921c4",
+      "id": "d742c0e3-3a33-499a-b773-b939285135e3",
       "name": "Record Reply Sent",
       "credentials": {
         "postgres": {
@@ -644,10 +644,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2784,
-        896
+        2592,
+        640
       ],
-      "id": "33e151ea-cf1d-4a8f-ba17-eba32be42e05",
+      "id": "ccb10ac0-246d-4f73-9d6b-191365f6631b",
       "name": "Update Placed Order Delivery Info",
       "credentials": {
         "postgres": {
@@ -684,10 +684,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1248,
-        1184
+        1056,
+        928
       ],
-      "id": "fbeb32e3-164d-4d10-af76-855b4a8effef",
+      "id": "a7f742f0-bcbd-4ff7-9990-630a41454e2b",
       "name": "Reply Already Sent For This Batch"
     },
     {
@@ -697,10 +697,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1312,
-        1456
+        1120,
+        1200
       ],
-      "id": "f55c946a-8d05-40cc-934d-6c9e01803e8e",
+      "id": "1cdc2017-a0a3-4e2e-9df0-c58fe42f2347",
       "name": "Route Simple Messages"
     },
     {
@@ -731,10 +731,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        2160,
-        1440
+        1968,
+        1184
       ],
-      "id": "00414791-e8f9-4157-a04e-40192cb9b604",
+      "id": "6d97b21e-78a4-4aac-a17a-668cc7f6c9ff",
       "name": "Use Simple Reply"
     },
     {
@@ -750,10 +750,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        3152,
-        896
+        2960,
+        640
       ],
-      "id": "2b67ff66-98db-4ba5-bd4f-cd6afd7fe7d3",
+      "id": "d98ef85f-0348-4b03-b959-5bebc6eff343",
       "name": "Menu Lookup",
       "credentials": {
         "postgres": {
@@ -775,10 +775,10 @@
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        2992,
-        896
+        2800,
+        640
       ],
-      "id": "f44fb322-362f-4c6a-8bde-aef44b6dc8e6",
+      "id": "29a38d38-db74-45b3-8ff7-2b9745d9ba47",
       "name": "Update Menu Item Cart",
       "credentials": {
         "postgres": {
@@ -815,16 +815,16 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        752,
-        1072
+        560,
+        816
       ],
-      "id": "bb3563a1-4772-4aad-bf5b-58045fb3262c",
+      "id": "b7a57d7b-8b8e-4934-b97f-ad191598bf3b",
       "name": "Recover Reply Before Routing"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'Assistance') }}",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/' + encodeURIComponent($('Normalize Incoming Message').item.json.instance || 'cs-cst-evolution-api-e2330e89') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -835,10 +835,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        2640,
-        1504
+        2448,
+        1248
       ],
-      "id": "defe2e73-b644-4287-8e31-a7714818d085",
+      "id": "8a427884-4d84-4a9d-ac76-f014e3e45861",
       "name": "Evolution API Send Simple Reply",
       "retryOnFail": true,
       "maxTries": 3,
@@ -862,10 +862,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        3056,
-        1488
+        2864,
+        1232
       ],
-      "id": "d01f80cf-3e26-416e-abb4-e9b28077688f",
+      "id": "f6b24fc5-46da-46af-a636-754728309bab",
       "name": "Finalize Simple Reply",
       "credentials": {
         "postgres": {
@@ -884,10 +884,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -928,
-        448
+        -1872,
+        -48
       ],
-      "id": "812f5a31-2832-4f9c-b2cb-f2a9f228eedc",
+      "id": "6cdc998f-2baa-40b2-9f5b-ad7144f0ee83",
       "name": "Admin Order Status Webhook",
       "webhookId": "6184a7ac-f35d-4b5d-857c-41798246b79b",
       "notesInFlow": true,
@@ -900,10 +900,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -704,
-        448
+        -1600,
+        -48
       ],
-      "id": "658f3bf9-9b12-4f1a-8ca7-2d776d1426d9",
+      "id": "7490ed94-f06b-4b01-a610-6d76fc137d69",
       "name": "Validate Admin Status Payload"
     },
     {
@@ -934,10 +934,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -480,
-        448
+        -1280,
+        -48
       ],
-      "id": "ac9bbfba-f4b8-42c5-9987-96ead291c5b8",
+      "id": "dc7aeb08-8764-4026-9326-8a250d805241",
       "name": "Admin Status Payload Valid"
     },
     {
@@ -951,10 +951,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        -256,
-        592
+        -992,
+        256
       ],
-      "id": "28ed577e-ed1b-4ca9-a522-3b41c6ac74ff",
+      "id": "1438f103-55d2-4de4-9a94-fa52c3df36f4",
       "name": "Reject Invalid Admin Status Payload"
     },
     {
@@ -968,10 +968,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        -256,
-        368
+        -944,
+        -64
       ],
-      "id": "c4ab268d-6612-45ec-b67f-8f879d27a1ca",
+      "id": "a365ad50-c8d2-414c-bcd8-7b53375e73bc",
       "name": "Claim Admin Customer Event",
       "credentials": {
         "postgres": {
@@ -1008,10 +1008,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -32,
-        368
+        -496,
+        -64
       ],
-      "id": "d332273a-6658-4b83-ba11-8be5314a2a2a",
+      "id": "95e7eafe-3860-49d2-ac9b-ff2fb6a07225",
       "name": "Admin Event Claimed"
     },
     {
@@ -1025,10 +1025,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        96,
-        624
+        -272,
+        256
       ],
-      "id": "f051b514-d6ca-4faf-8bc8-e427c0b8a657",
+      "id": "d0d7c2cd-257c-4aee-bda5-2effa4911243",
       "name": "Respond Admin Event Not Claimed"
     },
     {
@@ -1043,30 +1043,30 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.9,
       "position": [
-        192,
-        256
+        -176,
+        -80
       ],
-      "id": "731e31cd-c99a-46ed-9d52-51ff2caad523",
+      "id": "bc2d77a4-3fad-46bf-b959-91fdb8495029",
       "name": "Admin Customer Message Agent",
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const event = $('Claim Admin Customer Event').item.json;\nconst raw = String($input.first().json.output || '').trim();\nconst orderId = String(event.order_id);\nconst history = JSON.stringify(event.recent_messages || []);\nconst preferred = String(event.preferred_language || '').toLowerCase();\nconst pashtoScript = /[ځڅډړږښګڼۍې]/u.test(history);\nconst urduScript = /[\\u0600-\\u06ff]/.test(history);\nconst romanUrdu = /\\b(aap|apka|aapka|mera|meri|hai|hain|nahi|shukriya|order kahan)\\b/i.test(history);\nconst language = preferred.includes('pashto') || preferred === 'ps' || pashtoScript\n  ? 'pashto'\n  : preferred.includes('urdu') || preferred === 'ur' || urduScript\n    ? (urduScript ? 'urdu' : 'roman_urdu')\n    : (romanUrdu ? 'roman_urdu' : 'english');\n\nconst english = {\n  received: 'Your Order #' + orderId + ' has been received and placed successfully. 🍕',\n  preparing: 'Good news! Your Order #' + orderId + ' is now being prepared. 🍕',\n  oven: 'Your Order #' + orderId + ' is now in the oven. 🔥🍕',\n  out_for_delivery: 'Your Order #' + orderId + ' is out for delivery. 🛵🍕',\n  completed: 'Your Order #' + orderId + ' has been delivered. Enjoy! 🍕',\n  cancelled: 'Your Order #' + orderId + ' has been cancelled.',\n  cancellation_denied: 'Sorry, the cancellation for Order #' + orderId + ' was not approved. Your order remains active.',\n  admin_address_clarification: 'Could you please provide a clearer delivery address for Order #' + orderId + '? A nearby landmark, street, house number, or other location detail would help.',\n};\nconst roman = {\n  received: 'Aap ka Order #' + orderId + ' receive ho gaya hai. 🍕',\n  preparing: 'Aap ka Order #' + orderId + ' ab tayyar ho raha hai. 🍕',\n  oven: 'Aap ka Order #' + orderId + ' ab oven mein hai. 🔥🍕',\n  out_for_delivery: 'Aap ka Order #' + orderId + ' delivery ke liye nikal gaya hai. 🛵🍕',\n  completed: 'Aap ka Order #' + orderId + ' deliver ho gaya hai. Mazay se khaiye! 🍕',\n  cancelled: 'Aap ka Order #' + orderId + ' cancel kar diya gaya hai.',\n  cancellation_denied: 'Maazrat, Order #' + orderId + ' ki cancellation approve nahi hui. Aap ka order active hai.',\n  admin_address_clarification: 'Meharbani karke Order #' + orderId + ' ka delivery address thora clear share kar dein. Qareebi landmark, street ya house number bhi bata dein.',\n};\nconst urdu = {\n  received: 'آپ کا آرڈر #' + orderId + ' موصول ہو گیا ہے۔ 🍕',\n  preparing: 'آپ کا آرڈر #' + orderId + ' اب تیار ہو رہا ہے۔ 🍕',\n  oven: 'آپ کا آرڈر #' + orderId + ' اب اوون میں ہے۔ 🔥🍕',\n  out_for_delivery: 'آپ کا آرڈر #' + orderId + ' ڈیلیوری کے لیے روانہ ہو گیا ہے۔ 🛵🍕',\n  completed: 'آپ کا آرڈر #' + orderId + ' ڈیلیور ہو گیا ہے۔ 🍕',\n  cancelled: 'آپ کا آرڈر #' + orderId + ' منسوخ کر دیا گیا ہے۔',\n  cancellation_denied: 'معذرت، آرڈر #' + orderId + ' کی منسوخی منظور نہیں ہوئی۔ آپ کا آرڈر فعال ہے۔',\n  admin_address_clarification: 'براہ کرم آرڈر #' + orderId + ' کے لیے ڈیلیوری کا پتہ مزید واضح بتا دیں۔ قریبی نشانی، گلی یا گھر کا نمبر بھی شامل کر دیں۔',\n};\nconst pashto = {\n  received: 'ستاسو آرډر #' + orderId + ' ترلاسه او ثبت شو. 🍕',\n  preparing: 'ستاسو آرډر #' + orderId + ' اوس چمتو کېږي. 🍕',\n  oven: 'ستاسو آرډر #' + orderId + ' اوس په اوون کې دی. 🔥🍕',\n  out_for_delivery: 'ستاسو آرډر #' + orderId + ' د ډیليورۍ لپاره روان شو. 🛵🍕',\n  completed: 'ستاسو آرډر #' + orderId + ' ډیليور شو. 🍕',\n  cancelled: 'ستاسو آرډر #' + orderId + ' لغوه شو.',\n  cancellation_denied: 'بخښنه، د آرډر #' + orderId + ' د لغوه کولو غوښتنه ونه منل شوه. آرډر فعال دی.',\n  admin_address_clarification: 'مهرباني وکړئ د آرډر #' + orderId + ' لپاره د ډیليورۍ پته لږه روښانه کړئ. نږدې نښه، کوڅه یا د کور شمېره هم ولیکئ.',\n};\nconst meaning = event.event_type === 'cancellation_denied' || event.event_type === 'admin_address_clarification'\n  ? event.event_type\n  : event.order_status;\nconst messages = language === 'pashto' ? pashto : language === 'urdu' ? urdu : language === 'roman_urdu' ? roman : english;\nconst fallback = messages[meaning] || english[meaning];\nconst feedbackRequests = {\n  english: '⭐ Rate your experience out of 5, and if you like, tell us what you enjoyed or how we can improve. You can send a rating, feedback, or both.',\n  roman_urdu: '⭐ Apna experience 5 mein se rate karein. Agar chahein to batayein kya acha laga ya hum kya behtar kar sakte hain. Rating, feedback, ya dono bhej sakte hain.',\n  urdu: '⭐ اپنے تجربے کو 5 میں سے ریٹ کریں۔ اگر چاہیں تو بتائیں کیا اچھا لگا یا ہم کیا بہتر کر سکتے ہیں۔ آپ ریٹنگ، رائے، یا دونوں بھیج سکتے ہیں۔',\n  pashto: '⭐ خپله تجربه له 5 څخه درجه کړئ. که وغواړئ، راته ووایئ څه مو خوښ شول یا موږ څه ښه کولی شو. درجه، نظر، یا دواړه رالېږلی شئ.',\n};\nconst forbidden = {\n  received: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  preparing: /oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  oven: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  out_for_delivery: /prepar|tayyar|تیار|oven|اوون|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  completed: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|cancel|منسوخ/i,\n  cancelled: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور/i,\n  cancellation_denied: /has been cancelled|kar diya gaya|منسوخ کر دیا/i,\n  admin_address_clarification: /has been (?:received|cancelled|delivered)|is now (?:being prepared|in the oven|out for delivery)/i,\n};\nconst requiredMeaning = {\n  received: /received|receive ho|موصول|ترلاسه/i,\n  preparing: /prepar|tayyar|تیار|چمتو/i,\n  oven: /oven|اوون/i,\n  out_for_delivery: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|ډیليورۍ لپاره روان/i,\n  completed: /delivered|deliver ho|ڈیلیور|ډیليور شو/i,\n  cancelled: /cancelled|cancel kar|منسوخ|لغوه/i,\n  cancellation_denied: /not approved|approve nahi|منظور نہیں|ونه منل/i,\n  admin_address_clarification: /address|location|pin|landmark|street|house number|pata|thora clear|پتہ|نشانی|گلی|لوکیشن|مقام|پته|نښه|کوڅه/i,\n};\nconst mentionsOrder = raw.includes('#' + orderId) || new RegExp('\\\\b' + orderId + '\\\\b').test(raw);\nconst leaksInternals = /database|webhook|event[_ ]?id|prompt|admin|dashboard|internal tool|workflow|system|\\bAI\\b/i.test(raw);\nconst safe = Boolean(fallback) && raw.length > 0 && raw.length <= 700 && mentionsOrder && !leaksInternals\n  && requiredMeaning[meaning]?.test(raw) && !(forbidden[meaning]?.test(raw));\nconst statusMessage = safe ? raw : fallback;\nconst customerMessage = meaning === 'completed'\n  ? statusMessage + '\\n\\n' + feedbackRequests[language]\n  : statusMessage;\nreturn [{ json: { ...event, customer_message: customerMessage, ai_fallback_used: !safe } }];"
+        "jsCode": "const event = $('Claim Admin Customer Event').item.json;\nconst raw = String($input.first().json.output || '').trim();\nconst orderId = String(event.order_id);\nconst history = JSON.stringify(event.recent_messages || []);\nconst preferred = String(event.preferred_language || '').toLowerCase();\nconst pashtoScript = /[ځڅډړږښګڼۍې]/u.test(history);\nconst urduScript = /[\\u0600-\\u06ff]/.test(history);\nconst romanUrdu = /\\b(aap|apka|aapka|mera|meri|hai|hain|nahi|shukriya|order kahan)\\b/i.test(history);\nconst language = preferred.includes('pashto') || preferred === 'ps' || pashtoScript\n  ? 'pashto'\n  : preferred.includes('urdu') || preferred === 'ur' || urduScript\n    ? (urduScript ? 'urdu' : 'roman_urdu')\n    : (romanUrdu ? 'roman_urdu' : 'english');\n\nconst english = {\n  received: 'Your Order #' + orderId + ' has been received and placed successfully. 🍕',\n  preparing: 'Good news! Your Order #' + orderId + ' is now being prepared. 🍕',\n  oven: 'Your Order #' + orderId + ' is now in the oven. 🔥🍕',\n  out_for_delivery: 'Your Order #' + orderId + ' is out for delivery. 🛵🍕',\n  completed: 'Your Order #' + orderId + ' has been delivered. Enjoy! 🍕',\n  cancelled: 'Your Order #' + orderId + ' has been cancelled.',\n  cancellation_denied: 'Sorry, the cancellation for Order #' + orderId + ' was not approved. Your order remains active.',\n  admin_address_clarification: 'Could you please provide a clearer delivery address for Order #' + orderId + '? A nearby landmark, street, house number, or other location detail would help.',\n};\nconst roman = {\n  received: 'Aap ka Order #' + orderId + ' receive ho gaya hai. 🍕',\n  preparing: 'Aap ka Order #' + orderId + ' ab tayyar ho raha hai. 🍕',\n  oven: 'Aap ka Order #' + orderId + ' ab oven mein hai. 🔥🍕',\n  out_for_delivery: 'Aap ka Order #' + orderId + ' delivery ke liye nikal gaya hai. 🛵🍕',\n  completed: 'Aap ka Order #' + orderId + ' deliver ho gaya hai. Mazay se khaiye! 🍕',\n  cancelled: 'Aap ka Order #' + orderId + ' cancel kar diya gaya hai.',\n  cancellation_denied: 'Maazrat, Order #' + orderId + ' ki cancellation approve nahi hui. Aap ka order active hai.',\n  admin_address_clarification: 'Meharbani karke Order #' + orderId + ' ka delivery address thora clear share kar dein. Qareebi landmark, street ya house number bhi bata dein.',\n};\nconst urdu = {\n  received: 'آپ کا آرڈر #' + orderId + ' موصول ہو گیا ہے۔ 🍕',\n  preparing: 'آپ کا آرڈر #' + orderId + ' اب تیار ہو رہا ہے۔ 🍕',\n  oven: 'آپ کا آرڈر #' + orderId + ' اب اوون میں ہے۔ 🔥🍕',\n  out_for_delivery: 'آپ کا آرڈر #' + orderId + ' ڈیلیوری کے لیے روانہ ہو گیا ہے۔ 🛵🍕',\n  completed: 'آپ کا آرڈر #' + orderId + ' ڈیلیور ہو گیا ہے۔ 🍕',\n  cancelled: 'آپ کا آرڈر #' + orderId + ' منسوخ کر دیا گیا ہے۔',\n  cancellation_denied: 'معذرت، آرڈر #' + orderId + ' کی منسوخی منظور نہیں ہوئی۔ آپ کا آرڈر فعال ہے۔',\n  admin_address_clarification: 'براہ کرم آرڈر #' + orderId + ' کے لیے ڈیلیوری کا پتہ مزید واضح بتا دیں۔ قریبی نشانی، گلی یا گھر کا نمبر بھی شامل کر دیں۔',\n};\nconst pashto = {\n  received: 'ستاسو آرډر #' + orderId + ' ترلاسه او ثبت شو. 🍕',\n  preparing: 'ستاسو آرډر #' + orderId + ' اوس چمتو کېږي. 🍕',\n  oven: 'ستاسو آرډر #' + orderId + ' اوس په اوون کې دی. 🔥🍕',\n  out_for_delivery: 'ستاسو آرډر #' + orderId + ' د ډیليورۍ لپاره روان شو. 🛵🍕',\n  completed: 'ستاسو آرډر #' + orderId + ' ډیليور شو. 🍕',\n  cancelled: 'ستاسو آرډر #' + orderId + ' لغوه شو.',\n  cancellation_denied: 'بخښنه، د آرډر #' + orderId + ' د لغوه کولو غوښتنه ونه منل شوه. آرډر فعال دی.',\n  admin_address_clarification: 'مهرباني وکړئ د آرډر #' + orderId + ' لپاره د ډیليورۍ پته لږه روښانه کړئ. نږدې نښه، کوڅه یا د کور شمېره هم ولیکئ.',\n};\nconst meaning = event.event_type === 'cancellation_denied' || event.event_type === 'admin_address_clarification'\n  ? event.event_type\n  : event.order_status;\nconst messages = language === 'pashto' ? pashto : language === 'urdu' ? urdu : language === 'roman_urdu' ? roman : english;\nconst fallback = messages[meaning] || english[meaning];\nconst feedbackRequests = {\n  english: '? Rate your experience out of 5, and if you like, tell us what you enjoyed or how we can improve. You can send a rating, feedback, or both.',\n  roman_urdu: '? Apna experience 5 mein se rate karein. Agar chahein to batayein kya acha laga ya hum kya behtar kar sakte hain. Rating, feedback, ya dono bhej sakte hain.',\n  urdu: '? Apna tajurba 5 mein se rate karein. Agar chahein to batayein kya acha laga ya hum kya behtar kar sakte hain. Rating, rai, ya dono bhej sakte hain.',\n  pashto: '? Khpala tajurba la 5 tsakha darja krai. Ka ghwarai, rata wayai tsa mo khwak shwal ya mung tsa behtar kawalay sho. Darja, nazar, ya dwaara rawalegai shai.',\n};\nconst forbidden = {\n  received: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  preparing: /oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  oven: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  out_for_delivery: /prepar|tayyar|تیار|oven|اوون|deliver(?:ed)?|deliver ho|ڈیلیور|cancel|منسوخ/i,\n  completed: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|cancel|منسوخ/i,\n  cancelled: /prepar|tayyar|تیار|oven|اوون|out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|deliver(?:ed)?|deliver ho|ڈیلیور/i,\n  cancellation_denied: /has been cancelled|kar diya gaya|منسوخ کر دیا/i,\n  admin_address_clarification: /has been (?:received|cancelled|delivered)|is now (?:being prepared|in the oven|out for delivery)/i,\n};\nconst requiredMeaning = {\n  received: /received|receive ho|موصول|ترلاسه/i,\n  preparing: /prepar|tayyar|تیار|چمتو/i,\n  oven: /oven|اوون/i,\n  out_for_delivery: /out for delivery|delivery ke liye nikal|ڈیلیوری کے لیے روانہ|ډیليورۍ لپاره روان/i,\n  completed: /delivered|deliver ho|ڈیلیور|ډیليور شو/i,\n  cancelled: /cancelled|cancel kar|منسوخ|لغوه/i,\n  cancellation_denied: /not approved|approve nahi|منظور نہیں|ونه منل/i,\n  admin_address_clarification: /address|location|pin|landmark|street|house number|pata|thora clear|پتہ|نشانی|گلی|لوکیشن|مقام|پته|نښه|کوڅه/i,\n};\nconst mentionsOrder = raw.includes('#' + orderId) || new RegExp('\\\\b' + orderId + '\\\\b').test(raw);\nconst leaksInternals = /database|webhook|event[_ ]?id|prompt|admin|dashboard|internal tool|workflow|system|\\bAI\\b/i.test(raw);\nconst safe = Boolean(fallback) && raw.length > 0 && raw.length <= 700 && mentionsOrder && !leaksInternals\n  && requiredMeaning[meaning]?.test(raw) && !(forbidden[meaning]?.test(raw));\nconst statusMessage = safe ? raw : fallback;\nconst customerMessage = meaning === 'completed'\n  ? statusMessage + '\\n\\n' + feedbackRequests[language]\n  : statusMessage;\nreturn [{ json: { ...event, customer_message: customerMessage, ai_fallback_used: !safe } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        416,
-        256
+        240,
+        -80
       ],
-      "id": "ac214ad2-aa41-427b-9125-b100ce50e5b5",
+      "id": "3c83d9c4-970e-4551-a15e-585bef8a8eaf",
       "name": "Build Safe Admin Customer Message"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/Assistance",
+        "url": "https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/cs-cst-evolution-api-e2330e89",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -1077,10 +1077,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        640,
-        256
+        512,
+        -80
       ],
-      "id": "bc716482-6c60-425e-ac2d-f45d637cc944",
+      "id": "67843be0-1048-4fa1-887b-9230351df459",
       "name": "Evolution API Send Admin Status",
       "retryOnFail": true,
       "maxTries": 3,
@@ -1106,10 +1106,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        864,
-        256
+        784,
+        -80
       ],
-      "id": "1e725f1e-1fce-4312-a057-3e702de98bea",
+      "id": "d8c12319-e28b-434a-a84c-953fc095783c",
       "name": "Record Admin Event Result",
       "credentials": {
         "postgres": {
@@ -1130,9 +1130,9 @@
       "typeVersion": 1.4,
       "position": [
         1088,
-        256
+        -80
       ],
-      "id": "21439b5c-7ddd-4ef7-b77d-74032751e0a7",
+      "id": "dbe777f6-8996-46dc-be8c-3539dd83245f",
       "name": "Respond Admin Event Processed"
     },
     {
@@ -1142,10 +1142,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1664,
-        800
+        1472,
+        544
       ],
-      "id": "14876ef2-9d12-4453-8c84-1032e95cf5fe",
+      "id": "de6f7231-6cfc-4712-b08d-0e6c12020a16",
       "name": "Guard Cancellation Reply"
     },
     {
@@ -1157,10 +1157,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -1488,
-        1312
+        -1904,
+        1056
       ],
-      "id": "9dbe6ac8-cc37-49d6-abe5-39518c005789",
+      "id": "cc0511a8-2d1c-41a4-bf1f-33ddf3be50bd",
       "name": "Evolution API Webhook",
       "webhookId": "54936811-25aa-4992-9cb2-ff9575584730",
       "notesInFlow": true,
@@ -1194,10 +1194,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -576,
-        1296
+        -368,
+        1088
       ],
-      "id": "ef784fb2-16a1-49f7-a177-a81f60db6b60",
+      "id": "53eada5f-4ee4-46ee-8788-177da3155dcb",
       "name": "Process Incoming Text?",
       "notesInFlow": true,
       "notes": "Only the true output reaches the customer-message workflow. The Webhook already acknowledges ignored events with HTTP 200."
@@ -1233,7 +1233,7 @@
         880,
         1024
       ],
-      "id": "5fc7be95-37a2-4085-b0cb-10df7158bd55",
+      "id": "d2a6c6b7-9f79-4640-aec9-06e124879c12",
       "name": "Awaiting Feedback Response?"
     },
     {
@@ -1246,7 +1246,7 @@
         1120,
         976
       ],
-      "id": "3b152058-cf8b-40f2-bd26-c4f7961dcf9f",
+      "id": "d544acd7-87c4-499d-91d9-b86ae7d28a14",
       "name": "Parse Feedback Response"
     },
     {
@@ -1263,7 +1263,7 @@
         1360,
         976
       ],
-      "id": "398b71ae-f1a7-4897-a34a-3bd75db95852",
+      "id": "28760ba8-fa0d-4fed-bd09-23c708935ba2",
       "name": "Save Customer Feedback",
       "credentials": {
         "postgres": {
@@ -1278,7 +1278,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function detectMessageLanguage(currentMessage, recentMessages = []) {\n  const detectClearLanguage = (value) => {\n    const text = String(value || \"\").trim();\n    if (!text) return null;\n    const lower = text.toLowerCase();\n\n    const pashtoScript = /[ځڅډړږښګڼۍې]/u.test(text);\n    const pashtoWords = /(?:^|\\s)(?:زه|زما|مونږ|موږ|تاسو|ستا|څه|څنګه|غواړم|غواړو|شته|نشته|راکړه|راکړئ|کوم|کړم|کړئ|ډېر|چرګ)(?:\\s|$|[؟?!.,])/u.test(text);\n    if (pashtoScript || pashtoWords) return \"pashto\";\n\n    if (/[\\u0600-\\u06ff]/u.test(text)) return \"urdu\";\n\n    const romanUrdu = /\\b(?:aap|apka|aapka|mera|meri|mujhe|hum|ham|hai|hain|nahi|nahin|haan|han|jee|ji|acha|theek|shukriya|bhai|madad|dikhao|dikhado|bhejo|bhej|sakte|chahiye|chahta|chahti|kitna|kitni|kitne|kitny|ka|ki|ke|wala|wali|karna|karo|kardo|krdo|mein|mai|dair|hogi|hoga|yeh|ye|wo|aur|salam|salaam|aoa|assalam)\\b/i;\n    if (romanUrdu.test(lower)) return \"roman_urdu\";\n\n    if (/\\b(?:yes|no|thanks|thank\\s+you|hello|hi|hey|please|show|want|need|how|what|can|could|would|order|place|cancel|see|give|send|one|the|a|an|is|are|do|me|my|your)\\b/i.test(lower)) {\n      return \"english\";\n    }\n\n    if (/^(?:ok|okay|k|👍|👌|✅|\\d+)$/iu.test(lower)) return null;\n    if (/^[a-z][a-z\\s'’-]*$/i.test(text)) return \"english\";\n    return null;\n  };\n\n  const current = detectClearLanguage(currentMessage);\n  if (current) return current;\n\n  const history = Array.isArray(recentMessages) ? recentMessages : [];\n  for (let index = history.length - 1; index >= 0; index -= 1) {\n    const entry = history[index];\n    if (!entry || entry.role !== \"customer\") continue;\n    const historical = detectClearLanguage(entry.text);\n    if (historical) return historical;\n  }\n\n  return \"english\";\n}\nconst session = $('Upsert Customer and Session').item.json || {};\nconst source = String($('Claim Latest Customer Turn').item.json.latest_text || $('Claim Latest Customer Turn').item.json.combined_text || '');\nconst language = detectMessageLanguage(source, session.recent_messages);\nconst replies = {\n  english: 'Thank you for your feedback! ❤️🍕 We really appreciate it.',\n  roman_urdu: 'Aap ke feedback ka bohat shukriya! ❤️🍕 Hum iski bohat qadar karte hain.',\n  urdu: 'آپ کی رائے کا بہت شکریہ! ❤️🍕 ہم واقعی اس کی قدر کرتے ہیں۔',\n  pashto: 'ستاسو د نظر څخه مننه! ❤️🍕 موږ یې ډېر قدر کوو.',\n};\nreturn [{ json: { ...$input.first().json, reply_text: replies[language] || replies.english, response_language: language } }];"
+        "jsCode": "function detectMessageLanguage(currentMessage, recentMessages = []) {\n  const detectClearLanguage = (value) => {\n    const text = String(value || \"\").trim();\n    if (!text) return null;\n    const lower = text.toLowerCase();\n\n    const pashtoScript = /[ځڅډړږښګڼۍې]/u.test(text);\n    const pashtoWords = /(?:^|\\s)(?:زه|زما|مونږ|موږ|تاسو|ستا|څه|څنګه|غواړم|غواړو|شته|نشته|راکړه|راکړئ|کوم|کړم|کړئ|ډېر|چرګ)(?:\\s|$|[؟?!.,])/u.test(text);\n    if (pashtoScript || pashtoWords) return \"pashto\";\n\n    if (/[\\u0600-\\u06ff]/u.test(text)) return \"urdu\";\n\n    const romanUrdu = /\\b(?:aap|apka|aapka|mera|meri|mujhe|hum|ham|hai|hain|nahi|nahin|haan|han|jee|ji|acha|theek|shukriya|bhai|madad|dikhao|dikhado|bhejo|bhej|sakte|chahiye|chahta|chahti|kitna|kitni|kitne|kitny|ka|ki|ke|wala|wali|karna|karo|kardo|krdo|mein|mai|dair|hogi|hoga|yeh|ye|wo|aur|salam|salaam|aoa|assalam)\\b/i;\n    if (romanUrdu.test(lower)) return \"roman_urdu\";\n\n    if (/\\b(?:yes|no|thanks|thank\\s+you|hello|hi|hey|please|show|want|need|how|what|can|could|would|order|place|cancel|see|give|send|one|the|a|an|is|are|do|me|my|your)\\b/i.test(lower)) {\n      return \"english\";\n    }\n\n    if (/^(?:ok|okay|k|👍|👌|✅|\\d+)$/iu.test(lower)) return null;\n    if (/^[a-z][a-z\\s'’-]*$/i.test(text)) return \"english\";\n    return null;\n  };\n\n  const current = detectClearLanguage(currentMessage);\n  if (current) return current;\n\n  const history = Array.isArray(recentMessages) ? recentMessages : [];\n  for (let index = history.length - 1; index >= 0; index -= 1) {\n    const entry = history[index];\n    if (!entry || entry.role !== \"customer\") continue;\n    const historical = detectClearLanguage(entry.text);\n    if (historical) return historical;\n  }\n\n  return \"english\";\n}\nconst session = $('Upsert Customer and Session').item.json || {};\nconst source = String($('Claim Latest Customer Turn').item.json.latest_text || $('Claim Latest Customer Turn').item.json.combined_text || '');\nconst language = detectMessageLanguage(source, session.recent_messages);\nconst replies = {\n  english: 'Thank you for your feedback! ???? We really appreciate it.',\n  roman_urdu: 'Aap ke feedback ka bohat shukriya! ???? Hum iski bohat qadar karte hain.',\n  urdu: 'Aap ki rai ka bohat shukriya! ???? Hum waqai iski qadar karte hain.',\n  pashto: 'Sta da nazar na manana! ???? Mung ye dera qadar kawo.',\n};\nreturn [{ json: { ...$input.first().json, reply_text: replies[language] || replies.english, response_language: language } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1286,7 +1286,7 @@
         1600,
         976
       ],
-      "id": "b2f182ce-b2f1-4dd4-b194-b53b370bfa6b",
+      "id": "24575a14-c618-493a-823f-eb2a4a25b8bc",
       "name": "Build Feedback Thank You"
     },
     {
@@ -1302,10 +1302,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        992,
-        624
+        800,
+        368
       ],
-      "id": "d57eeffd-7f6a-47e0-918f-313c4b526e82",
+      "id": "393d3dfe-a850-45c7-a730-3430f018aba2",
       "name": "OpenAI Chat Model",
       "credentials": {
         "openAiApi": {
@@ -1324,13 +1324,13 @@
           "queryReplacement": "={{ [ $fromAI('items_json', 'JSON array containing the entire intended replacement cart. Include record_type, menu_item_id and variant_id for menu items, or deal_id and selected_components for deals; include positive quantity for every item.', 'string'), $('Upsert Customer and Session').item.json.customer_id ] }}"
         }
       },
-      "id": "4db534d3-d0fc-4a26-ace1-3da05f1c4de7",
+      "id": "22420ac8-89fb-4754-b7a4-03b848e1a299",
       "name": "Replace Draft Cart",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.7,
       "position": [
-        3232,
-        976
+        3200,
+        640
       ],
       "credentials": {
         "postgres": {
@@ -1342,7 +1342,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/chat/getBase64FromMediaMessage/' + encodeURIComponent($json.body.instance || 'Assistance') }}",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/chat/getBase64FromMediaMessage/' + encodeURIComponent($json.body.instance || 'cs-cst-evolution-api-e2330e89') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -1353,10 +1353,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        -1360,
-        624
+        -1568,
+        800
       ],
-      "id": "d45392bd-7606-4ef6-a0eb-57e779b34d3b",
+      "id": "c2e20040-d75c-40f8-a252-989ec4556e88",
       "name": "Get voice note audio",
       "credentials": {
         "httpHeaderAuth": {
@@ -1394,10 +1394,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -1248,
-        1296
+        -1680,
+        1056
       ],
-      "id": "dcb2b363-98c0-4e66-ba91-2029a043d1eb",
+      "id": "3b2d8b16-4995-4b36-a9cb-80e542d4fdc8",
       "name": "is voice note?"
     },
     {
@@ -1414,10 +1414,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        -1232,
-        896
+        -1344,
+        800
       ],
-      "id": "6d97f221-80de-4103-8edf-2204bbbe2cb0",
+      "id": "09fc44df-614b-41a5-8d26-9c6a2c2f3724",
       "name": "transcribe voice note",
       "credentials": {
         "httpHeaderAuth": {
@@ -1455,16 +1455,16 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -800,
-        912
+        -912,
+        800
       ],
-      "id": "c40899cb-fa06-425e-bcf7-b1079541c665",
+      "id": "7f8b8097-5d2e-456b-9750-0d6bbab358f3",
       "name": "transcript ok?"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/' + encodeURIComponent($json.body.instance || 'Assistance') }}",
+        "url": "={{ 'https://cst-evolution-api-e2330e89-b9dfe59c.cloud-station.app/message/sendText/' + encodeURIComponent($json.body.instance || 'cs-cst-evolution-api-e2330e89') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -1475,10 +1475,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        -432,
-        928
+        -544,
+        816
       ],
-      "id": "22e16a74-ce42-4108-b1ab-66632445f43a",
+      "id": "e5f2f3dd-1a78-4c4a-a7cb-1556b8783040",
       "name": "voice note fallback",
       "credentials": {
         "httpHeaderAuth": {
@@ -1494,10 +1494,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -976,
-        912
+        -1120,
+        800
       ],
-      "id": "7b3069d8-6a65-46df-9182-e81a9b73b007",
+      "id": "4b07660c-7c83-4b47-8d8c-4b1d898fa5dc",
       "name": "inject transcript"
     },
     {
@@ -1510,7 +1510,7 @@
         1120,
         1088
       ],
-      "id": "4957fc65-d40d-4089-a188-80931a7da880",
+      "id": "437a9e76-87c3-4fc1-817d-fb80ea20b3b1",
       "name": "Classify Pending Feedback Intent",
       "notes": "A feedback invitation is non-blocking. Only a clear rating/review is saved; orders, questions, and delivery problems keep their normal paths."
     },
@@ -1525,7 +1525,7 @@
           },
           "conditions": [
             {
-              "id": "0896cd11-e972-4b6a-a55b-e8bca4242d07",
+              "id": "1907119d-a24b-4e5c-8cfd-4eee7670d40e",
               "leftValue": "={{ ['feedback', 'feedback_complaint'].includes($json.feedback_intent) }}",
               "rightValue": "",
               "operator": {
@@ -1545,7 +1545,7 @@
         1360,
         1088
       ],
-      "id": "7b21bc8f-73ae-4313-aac9-3c0f8d417e41",
+      "id": "244a5961-f97e-43fd-8efb-eb87b38db7f5",
       "name": "Feedback Submission?"
     },
     {
@@ -1559,7 +1559,7 @@
           },
           "conditions": [
             {
-              "id": "489f2c70-90d3-4692-a742-20b7de33f6d6",
+              "id": "25ac061d-48e4-405b-b78c-e2931dede161",
               "leftValue": "={{ ['complaint', 'feedback_complaint'].includes($('Classify Pending Feedback Intent').item.json.feedback_intent) }}",
               "rightValue": "",
               "operator": {
@@ -1579,7 +1579,7 @@
         1840,
         1088
       ],
-      "id": "8b7b79b9-8be4-441d-a04e-83b1505e514c",
+      "id": "fdf3ee35-c57b-4f28-8351-fea8455f2b7d",
       "name": "Feedback Complaint?"
     },
     {
@@ -1593,7 +1593,7 @@
           },
           "conditions": [
             {
-              "id": "540499a1-a36f-47e2-bb61-6917ace49f8b",
+              "id": "5126f458-94fb-4978-8d22-5e45a9a3cb0b",
               "leftValue": "={{ $('Classify Pending Feedback Intent').item.json.feedback_intent === 'feedback_complaint' }}",
               "rightValue": "",
               "operator": {
@@ -1613,7 +1613,7 @@
         1840,
         896
       ],
-      "id": "c6cb9028-f02a-4c3f-8699-d7fbc194cba3",
+      "id": "e59d349c-d3e0-4d2c-b63c-993af6a4a289",
       "name": "Saved Feedback Is Complaint?"
     },
     {
@@ -1630,7 +1630,7 @@
         2080,
         1184
       ],
-      "id": "34baf94e-f78c-410d-a571-df70eebd64b5",
+      "id": "36116ec3-4810-4368-9bdb-62724a91c900",
       "name": "Dismiss Pending Feedback Request",
       "credentials": {
         "postgres": {
@@ -1657,7 +1657,7 @@
         2080,
         976
       ],
-      "id": "d6701f97-5ac6-4820-b03b-a02f52080f8d",
+      "id": "b7f78840-88c8-46db-8d96-99d2eaa54fd1",
       "name": "Escalate Post-Delivery Complaint",
       "credentials": {
         "postgres": {
@@ -1672,7 +1672,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function detectMessageLanguage(currentMessage, recentMessages = []) {\n  const detectClearLanguage = (value) => {\n    const text = String(value || \"\").trim();\n    if (!text) return null;\n    const lower = text.toLowerCase();\n\n    const pashtoScript = /[ځڅډړږښګڼۍې]/u.test(text);\n    const pashtoWords = /(?:^|\\s)(?:زه|زما|مونږ|موږ|تاسو|ستا|څه|څنګه|غواړم|غواړو|شته|نشته|راکړه|راکړئ|کوم|کړم|کړئ|ډېر|چرګ)(?:\\s|$|[؟?!.,])/u.test(text);\n    if (pashtoScript || pashtoWords) return \"pashto\";\n\n    if (/[\\u0600-\\u06ff]/u.test(text)) return \"urdu\";\n\n    const romanUrdu = /\\b(?:aap|apka|aapka|mera|meri|mujhe|hum|ham|hai|hain|nahi|nahin|haan|han|jee|ji|acha|theek|shukriya|bhai|madad|dikhao|dikhado|bhejo|bhej|sakte|chahiye|chahta|chahti|kitna|kitni|kitne|kitny|ka|ki|ke|wala|wali|karna|karo|kardo|krdo|mein|mai|dair|hogi|hoga|yeh|ye|wo|aur|salam|salaam|aoa|assalam)\\b/i;\n    if (romanUrdu.test(lower)) return \"roman_urdu\";\n\n    if (/\\b(?:yes|no|thanks|thank\\s+you|hello|hi|hey|please|show|want|need|how|what|can|could|would|order|place|cancel|see|give|send|one|the|a|an|is|are|do|me|my|your)\\b/i.test(lower)) {\n      return \"english\";\n    }\n\n    if (/^(?:ok|okay|k|👍|👌|✅|\\d+)$/iu.test(lower)) return null;\n    if (/^[a-z][a-z\\s'’-]*$/i.test(text)) return \"english\";\n    return null;\n  };\n\n  const current = detectClearLanguage(currentMessage);\n  if (current) return current;\n\n  const history = Array.isArray(recentMessages) ? recentMessages : [];\n  for (let index = history.length - 1; index >= 0; index -= 1) {\n    const entry = history[index];\n    if (!entry || entry.role !== \"customer\") continue;\n    const historical = detectClearLanguage(entry.text);\n    if (historical) return historical;\n  }\n\n  return \"english\";\n}\nconst session = $('Upsert Customer and Session').item.json || {};\nconst source = String($('Claim Latest Customer Turn').item.json.latest_text || $('Claim Latest Customer Turn').item.json.combined_text || '');\nconst language = detectMessageLanguage(source, session.recent_messages);\nconst created = $input.first().json || {};\nconst replies = {\n  english: created.dashboard_request_visible\n    ? 'I’m sorry this happened. I’ve shared your issue with our restaurant team. They will review it and contact you directly.'\n    : 'I’m sorry this happened. I could not send your issue to our restaurant team yet. Please try again in a moment.',\n  roman_urdu: created.dashboard_request_visible\n    ? 'Mujhe afsos hai yeh hua. Main ne aap ka masla restaurant team ko bhej diya hai. Woh review karke aap se seedha rabta karegi.'\n    : 'Mujhe afsos hai yeh hua. Main abhi aap ka masla restaurant team ko nahi bhej saka. Barah-e-karam thori dair baad dobara try karein.',\n  urdu: created.dashboard_request_visible\n    ? 'مجھے افسوس ہے کہ یہ ہوا۔ میں نے آپ کا مسئلہ ریسٹورنٹ ٹیم کو بھیج دیا ہے۔ وہ جائزہ لے کر آپ سے براہِ راست رابطہ کرے گی۔'\n    : 'مجھے افسوس ہے کہ یہ ہوا۔ میں ابھی آپ کا مسئلہ ریسٹورنٹ ٹیم کو نہیں بھیج سکا۔ براہِ کرم تھوڑی دیر بعد دوبارہ کوشش کریں۔',\n  pashto: created.dashboard_request_visible\n    ? 'بخښنه غواړم چې دا پېښ شول. ستاسو ستونزه مې د رستورانت ټيم ته ولېږله. هغوی به يې وڅېړي او له تاسو سره به نېغ په نېغه اړيکه ونيسي.'\n    : 'بخښنه غواړم چې دا پېښ شول. زه اوس ستاسو ستونزه د رستورانت ټيم ته نه شم لېږلی. مهرباني وکړئ لږ وروسته بيا هڅه وکړئ.',\n};\nreturn [{ json: { ...created, reply_text: replies[language] || replies.english, response_language: language } }];"
+        "jsCode": "function detectMessageLanguage(currentMessage, recentMessages = []) {\n  const detectClearLanguage = (value) => {\n    const text = String(value || \"\").trim();\n    if (!text) return null;\n    const lower = text.toLowerCase();\n\n    const pashtoScript = /[ځڅډړږښګڼۍې]/u.test(text);\n    const pashtoWords = /(?:^|\\s)(?:زه|زما|مونږ|موږ|تاسو|ستا|څه|څنګه|غواړم|غواړو|شته|نشته|راکړه|راکړئ|کوم|کړم|کړئ|ډېر|چرګ)(?:\\s|$|[؟?!.,])/u.test(text);\n    if (pashtoScript || pashtoWords) return \"pashto\";\n\n    if (/[\\u0600-\\u06ff]/u.test(text)) return \"urdu\";\n\n    const romanUrdu = /\\b(?:aap|apka|aapka|mera|meri|mujhe|hum|ham|hai|hain|nahi|nahin|haan|han|jee|ji|acha|theek|shukriya|bhai|madad|dikhao|dikhado|bhejo|bhej|sakte|chahiye|chahta|chahti|kitna|kitni|kitne|kitny|ka|ki|ke|wala|wali|karna|karo|kardo|krdo|mein|mai|dair|hogi|hoga|yeh|ye|wo|aur|salam|salaam|aoa|assalam)\\b/i;\n    if (romanUrdu.test(lower)) return \"roman_urdu\";\n\n    if (/\\b(?:yes|no|thanks|thank\\s+you|hello|hi|hey|please|show|want|need|how|what|can|could|would|order|place|cancel|see|give|send|one|the|a|an|is|are|do|me|my|your)\\b/i.test(lower)) {\n      return \"english\";\n    }\n\n    if (/^(?:ok|okay|k|👍|👌|✅|\\d+)$/iu.test(lower)) return null;\n    if (/^[a-z][a-z\\s'’-]*$/i.test(text)) return \"english\";\n    return null;\n  };\n\n  const current = detectClearLanguage(currentMessage);\n  if (current) return current;\n\n  const history = Array.isArray(recentMessages) ? recentMessages : [];\n  for (let index = history.length - 1; index >= 0; index -= 1) {\n    const entry = history[index];\n    if (!entry || entry.role !== \"customer\") continue;\n    const historical = detectClearLanguage(entry.text);\n    if (historical) return historical;\n  }\n\n  return \"english\";\n}\nconst session = $('Upsert Customer and Session').item.json || {};\nconst source = String($('Claim Latest Customer Turn').item.json.latest_text || $('Claim Latest Customer Turn').item.json.combined_text || '');\nconst language = detectMessageLanguage(source, session.recent_messages);\nconst created = $input.first().json || {};\nconst replies = {\n  english: created.dashboard_request_visible\n    ? \"I'm sorry this happened. I've shared your issue with our restaurant team for review. They will contact you directly.\"\n    : \"I'm sorry this happened. I could not send your issue to our restaurant team yet. Please try again in a moment.\",\n  roman_urdu: created.dashboard_request_visible\n    ? 'Mujhe afsos hai yeh hua. Main ne aap ka masla restaurant team ko review ke liye bhej diya hai. Woh aap se seedha rabta karegi.'\n    : 'Mujhe afsos hai yeh hua. Main abhi aap ka masla restaurant team ko nahi bhej saka. Barah-e-karam thori dair baad dobara try karein.',\n  urdu: created.dashboard_request_visible\n    ? 'Mujhe afsos hai yeh hua. Main ne aap ka masla restaurant team ko review ke liye bhej diya hai. Woh aap se seedha rabta karegi.'\n    : 'Mujhe afsos hai yeh hua. Main abhi aap ka masla restaurant team ko nahi bhej saka. Barah-e-karam thori dair baad dobara try karein.',\n  pashto: created.dashboard_request_visible\n    ? 'Bakhena ghwaram che da pesh sho. Sta stonza me da restaurant team ta da review la para legale da. Haghoi ba sta sara seedha rabta wakri.'\n    : 'Bakhena ghwaram che da pesh sho. Za os sta stonza da restaurant team ta na sham legalay. Mehrabani wakra, lag rosta bia koshish wakra.',\n};\nreturn [{ json: { ...created, reply_text: replies[language] || replies.english, response_language: language } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1680,7 +1680,7 @@
         2320,
         976
       ],
-      "id": "a5780967-d159-4569-8385-049d50c4777b",
+      "id": "038eb36c-3bce-4ca8-926a-89fec9c32474",
       "name": "Build Post-Delivery Complaint Reply"
     }
   ],
@@ -2469,16 +2469,16 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "a8419774-8ea9-4b3b-8d68-abcc0e39e4c1",
+  "versionId": "49d32eb9-c1cb-4206-9a43-c31dca266ece",
   "meta": {
     "instanceId": "6998a274d9a8cd3fce2ab752d130672ae6124f7b05aecf297ee5a82201ba7afa"
   },
   "nodeGroups": [],
-  "id": "SkirT14GNnHcny35",
+  "id": "izXTX1fGGz5PVB8f",
   "tags": []
 }
