@@ -1926,6 +1926,29 @@ body {
 }
 .menu-image-preview-modal img { display: block; width: 100%; max-width: none; height: auto; max-height: none; object-fit: contain; }
 
+.order-notification-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 5px 0 0 2px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.order-notification-spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(242, 106, 46, .25);
+  border-top-color: var(--orange);
+  border-radius: 50%;
+  animation: order-notification-spin .75s linear infinite;
+}
+@keyframes order-notification-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .order-notification-spinner { animation: none; }
+}
+
 .menu-upload-input { height: auto; padding: 8px; }
 .destructive-confirmation {
   display: grid;

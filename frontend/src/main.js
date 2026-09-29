@@ -50,6 +50,9 @@ let activitySnapshot = null;
 let appEntryId = 0;
 let dashboardDetailLoadId = 0;
 let loadingPresentation = null;
+const customerNotificationTrackers = new Map();
+const customerNotificationTimers = new Map();
+const CUSTOMER_NOTIFICATION_POLL_MS = 3000;
 
 const PAGE_CACHE_TTL = {
   dashboard: 45000,
@@ -107,6 +110,101 @@ function pizzaMark() {
 function badge(status) {
   const safe = String(status || "neutral").replace(/[^a-z_]/g, "");
   return `<span class="badge badge-${safe || "neutral"}">${escapeHtml(statusLabel(status))}</span>`;
+}
+
+function isCustomerNotificationInFlight(status) {
+  return ["pending", "processing"].includes(status);
+}
+
+function isCustomerNotificationTerminal(status) {
+  return ["sent", "failed", "superseded"].includes(status);
+}
+
+function orderStatusBadge(order) {
+  const tracker = customerNotificationTrackers.get(String(order?.id));
+  const sending = tracker && String(tracker.orderStatus) === String(order?.status) && isCustomerNotificationInFlight(tracker.deliveryStatus);
+  return `${badge(order?.status)}${sending ? '<span class="order-notification-pending" role="status"><span class="order-notification-spinner" aria-hidden="true"></span><span>Sending update</span></span>' : ""}`;
+}
+
+function refreshOrderStatusIndicator(orderId) {
+  const id = String(orderId);
+  app.querySelectorAll("[data-order-row]").forEach((row) => {
+    if (String(row.dataset.orderRow) !== id) return;
+    const statusCell = row.querySelector("[data-order-status-cell]");
+    if (statusCell) statusCell.innerHTML = orderStatusBadge({ id, status: row.dataset.orderStatus });
+  });
+  modalRoot.querySelectorAll("[data-order-modal-status]").forEach((statusCell) => {
+    if (String(statusCell.dataset.orderId) === id) {
+      statusCell.innerHTML = orderStatusBadge({ id, status: statusCell.dataset.orderStatus });
+    }
+  });
+}
+
+function clearCustomerNotificationTracker(orderId) {
+  const id = String(orderId);
+  clearTimeout(customerNotificationTimers.get(id));
+  customerNotificationTimers.delete(id);
+  customerNotificationTrackers.delete(id);
+  refreshOrderStatusIndicator(id);
+}
+
+function stopCustomerNotificationTracking() {
+  customerNotificationTimers.forEach((timer) => clearTimeout(timer));
+  customerNotificationTimers.clear();
+  customerNotificationTrackers.clear();
+}
+
+function scheduleCustomerNotificationCheck(orderId, requestId) {
+  const id = String(orderId);
+  clearTimeout(customerNotificationTimers.get(id));
+  customerNotificationTimers.set(id, setTimeout(async () => {
+    const tracker = customerNotificationTrackers.get(id);
+    if (!tracker || tracker.requestId !== requestId || !getAuthToken()) return;
+    try {
+      const data = await api(`/admin/orders/${encodeURIComponent(id)}`, { forceRefresh: true, timeoutMs: 10000 });
+      const notification = (data.notifications || []).find((entry) => entry.request_id === requestId) || null;
+      if (notification) updateCustomerNotificationTracking(id, requestId, notification, { announce: true });
+      else scheduleCustomerNotificationCheck(id, requestId);
+    } catch (error) {
+      if (!isAbortError(error)) scheduleCustomerNotificationCheck(id, requestId);
+    }
+  }, CUSTOMER_NOTIFICATION_POLL_MS));
+}
+
+function updateCustomerNotificationTracking(orderId, requestId, notification = {}, { announce = false } = {}) {
+  const id = String(orderId);
+  const tracker = customerNotificationTrackers.get(id);
+  if (!tracker || tracker.requestId !== requestId) return;
+  const deliveryStatus = notification.delivery_status || "pending";
+  if (!isCustomerNotificationTerminal(deliveryStatus)) {
+    customerNotificationTrackers.set(id, { ...tracker, eventId: notification.id || tracker.eventId, deliveryStatus });
+    refreshOrderStatusIndicator(id);
+    scheduleCustomerNotificationCheck(id, requestId);
+    return;
+  }
+
+  clearCustomerNotificationTracker(id);
+  if (announce) {
+    if (deliveryStatus === "sent") toast("Customer notified.");
+    else if (deliveryStatus === "failed") toast(`Customer notification failed${notification.last_error ? `: ${notification.last_error}` : "."}`, "error");
+    else toast("A newer order status superseded this notification.");
+  }
+  if (["dashboard", "orders", "history"].includes(state.route)) {
+    loadCurrentPage({ background: true, forceRefresh: true });
+  }
+}
+
+function startCustomerNotificationTracking(orderId, orderStatus, requestId, notification) {
+  const id = String(orderId);
+  clearTimeout(customerNotificationTimers.get(id));
+  customerNotificationTrackers.set(id, {
+    requestId,
+    orderStatus,
+    eventId: notification?.id || null,
+    deliveryStatus: notification?.delivery_status || "pending",
+  });
+  refreshOrderStatusIndicator(id);
+  updateCustomerNotificationTracking(id, requestId, notification || {});
 }
 
 function toast(message, type = "success") {
@@ -259,6 +357,7 @@ function pagination(meta, route) {
 
 function renderLogin(message = "") {
   stopPolling();
+  stopCustomerNotificationTracking();
   pageController?.abort();
   if (loadingPresentation?.timer) clearTimeout(loadingPresentation.timer);
   loadingPresentation = null;
@@ -630,7 +729,7 @@ async function openDashboardDetail(type) {
 
 function renderCompactOrders(orders, currency) {
   if (!orders.length) return emptyState("No orders yet", "Confirmed WhatsApp orders will appear here.", "▤");
-  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>${orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell">#${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer_name || order.customer_phone)}</td><td class="muted">${escapeHtml(itemSummary(order.items))}</td><td class="mono">${escapeHtml(money(order.total, currency))}</td><td data-order-status-cell>${badge(order.status)}</td><td><button class="btn btn-sm" data-view-order="${escapeHtml(order.id)}">View</button></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>${orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell">#${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer_name || order.customer_phone)}</td><td class="muted">${escapeHtml(itemSummary(order.items))}</td><td class="mono">${escapeHtml(money(order.total, currency))}</td><td data-order-status-cell>${orderStatusBadge(order)}</td><td><button class="btn btn-sm" data-view-order="${escapeHtml(order.id)}">View</button></td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function supersedeStaleOrderLoads() {
@@ -677,11 +776,14 @@ function applyOrderStatusToView(order, fallbackPreviousStatus, { enforceScope = 
   matchingRows.forEach((row) => {
     row.dataset.orderStatus = order.status;
     const statusCell = row.querySelector("[data-order-status-cell]");
-    if (statusCell) statusCell.innerHTML = badge(order.status);
+    if (statusCell) statusCell.innerHTML = orderStatusBadge(order);
     if (enforceScope && !orderBelongsOnCurrentPage(order.status)) row.remove();
   });
   const modalStatus = modalRoot.querySelector("[data-order-modal-status]");
-  if (modalStatus) modalStatus.innerHTML = badge(order.status);
+  if (modalStatus && String(modalStatus.dataset.orderId) === String(order.id)) {
+    modalStatus.dataset.orderStatus = order.status;
+    modalStatus.innerHTML = orderStatusBadge(order);
+  }
   updateDashboardStatusCounts(renderedPreviousStatus, order.status);
 }
 
@@ -697,7 +799,7 @@ async function loadOrders(route, requestOptions = {}) {
   if (state.route !== route || requestOptions.loadId !== pageLoadId) return;
   const history = route === "history";
   const currency = state.session?.restaurant?.currency || "PKR";
-  const markup = `<section class="panel orders-table-panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table orders-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th class="action-heading">Action</th></tr></thead><tbody>${data.orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell order-id">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted items-cell">${escapeHtml(itemSummary(order.items))}</td><td class="mono order-total">${escapeHtml(money(order.total, currency))}</td><td class="type-cell">${escapeHtml(statusLabel(order.order_type))}</td><td data-order-status-cell>${badge(order.status)}</td><td class="order-date">${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm order-view-button" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section>`;
+  const markup = `<section class="panel orders-table-panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table orders-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th class="action-heading">Action</th></tr></thead><tbody>${data.orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell order-id">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted items-cell">${escapeHtml(itemSummary(order.items))}</td><td class="mono order-total">${escapeHtml(money(order.total, currency))}</td><td class="type-cell">${escapeHtml(statusLabel(order.order_type))}</td><td data-order-status-cell>${orderStatusBadge(order)}</td><td class="order-date">${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm order-view-button" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section>`;
   if (!await commitPageData(requestOptions, markup)) return;
   bindCommonActions();
 }
@@ -820,66 +922,55 @@ async function openOrder(orderId) {
         <div class="detail-block"><div class="fact-label">Fulfilment</div><div class="fact-value">${escapeHtml(statusLabel(order.order_type))}<div class="delivery-address-row"><span>${escapeHtml(order.delivery_address || "Pickup")}</span>${addressClarificationAvailable ? `<button class="btn btn-sm address-clarification-button" type="button" data-address-not-clear ${addressRequestInFlight ? "disabled" : ""}>${icon("alert")}<span>${addressRequestInFlight ? "Request in progress" : "Address Not Clear"}</span></button>` : ""}</div>${addressClarificationStatus ? `<div class="address-clarification-status ${latestAddressClarification.delivery_status === "failed" ? "failed" : ""}"><span>${escapeHtml(addressClarificationStatus)}</span>${latestAddressClarification.delivery_status === "failed" ? `<button class="btn btn-sm" data-retry-order-event="${escapeHtml(latestAddressClarification.id)}" data-order-id="${escapeHtml(order.id)}">Retry</button>` : ""}</div>` : ""}</div></div>
         <div class="detail-block wide"><div class="fact-label">Items</div><div class="line-items" style="margin-top:10px">${(order.items || []).map((item) => `<div class="line-item"><div><strong>${escapeHtml(item.quantity || 1)}× ${escapeHtml(item.item_name || item.name || "Item")}</strong><div class="secondary-cell">${escapeHtml(item.size || item.variant || "Standard")}${Array.isArray(item.extras) && item.extras.length ? ` · ${escapeHtml(item.extras.join(", "))}` : ""}</div></div><span>${escapeHtml(money(item.line_total || Number(item.price || 0) * Number(item.quantity || 1), currency))}</span></div>`).join("")}</div></div>
         <div class="detail-block"><div class="fact-label">Totals</div><div class="fact-value">Subtotal ${escapeHtml(money(order.subtotal, currency))}<br>Delivery ${escapeHtml(money(order.delivery_charge, currency))}<br><strong>Total ${escapeHtml(money(order.total, currency))}</strong></div></div>
-        <div class="detail-block"><div class="fact-label">Status</div><div class="fact-value"><span data-order-modal-status>${badge(order.status)}</span><br><span class="subtle">${escapeHtml(dateTime(order.created_at))}</span></div></div>
+        <div class="detail-block"><div class="fact-label">Status</div><div class="fact-value"><span data-order-modal-status data-order-id="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}">${orderStatusBadge(order)}</span><br><span class="subtle">${escapeHtml(dateTime(order.created_at))}</span></div></div>
         <div class="detail-block wide"><div class="fact-label">Customer notification</div><div class="fact-value">${escapeHtml(notificationCopy)}</div>${latestNotification?.delivery_status === "failed" ? `<button class="btn btn-sm" style="margin-top:10px" data-retry-order-event="${escapeHtml(latestNotification.id)}" data-order-id="${escapeHtml(order.id)}">Retry notification</button>` : ""}</div>
         <div class="detail-block wide"><div class="fact-label">Timeline</div><div class="timeline" style="margin-top:12px">${data.history.map((event) => `<div class="timeline-item"><span class="timeline-dot"></span><div><div class="primary-cell">${escapeHtml(statusLabel(event.status))}</div><div class="secondary-cell">${escapeHtml(dateTime(event.created_at))}</div></div></div>`).join("")}</div></div>
       </div></div>
       <div class="modal-foot">${transitions.length ? transitions.map(([status, label]) => `<button class="btn ${status === "cancelled" ? "btn-danger" : "btn-primary"}" data-order-status="${status}" data-order-id="${escapeHtml(order.id)}">${escapeHtml(label)}</button>`).join("") : '<span class="muted">No further actions</span>'}</div>`, { label: `Order ${order.id}` });
     modalRoot.querySelectorAll("[data-order-status]").forEach((button) => button.addEventListener("click", async () => {
-      const original = button.textContent;
       const previousStatus = order.status;
       const requestedStatus = button.dataset.orderStatus;
+      const orderId = button.dataset.orderId;
+      const requestId = crypto.randomUUID();
       const actionButtons = [...modalRoot.querySelectorAll("[data-order-status]")];
       actionButtons.forEach((actionButton) => { actionButton.disabled = true; });
       supersedeStaleOrderLoads();
-      applyOrderStatusToView({ id: order.id, status: requestedStatus }, previousStatus);
-      button.textContent = "Updating…";
+      startCustomerNotificationTracking(orderId, requestedStatus, requestId);
+      applyOrderStatusToView({ id: orderId, status: requestedStatus }, previousStatus);
+      closeModal();
+      toast(`Order #${orderId} marked ${statusLabel(requestedStatus)}. Sending customer update…`);
       try {
-        const result = await api(`/admin/orders/${button.dataset.orderId}/status`, {
+        const result = await api(`/admin/orders/${orderId}/status`, {
           method: "PATCH",
           timeoutMs: 30000,
-          body: JSON.stringify({ status: requestedStatus, expected_status: previousStatus, request_id: crypto.randomUUID() }),
+          body: JSON.stringify({ status: requestedStatus, expected_status: previousStatus, request_id: requestId }),
         });
         const canonicalOrder = result.order || { ...order, status: requestedStatus };
-        applyOrderStatusToView(canonicalOrder, requestedStatus, { enforceScope: true });
-        const deliveryStatus = result.notification?.delivery_status;
-        const notificationMessage = deliveryStatus === "sent"
-          ? "Customer notified."
-          : deliveryStatus === "superseded"
-            ? "A newer status superseded this notification."
-          : deliveryStatus === "failed"
-            ? "Customer notification failed — open the order to retry."
-            : "Customer notification queued.";
-        toast(`Order #${button.dataset.orderId} marked ${statusLabel(canonicalOrder.status)}. ${notificationMessage}`, deliveryStatus === "failed" ? "error" : "success");
-        closeModal();
-        if (["dashboard", "orders", "history"].includes(state.route)) {
-          loadCurrentPage({ background: true, forceRefresh: true });
-        }
+        applyOrderStatusToView(canonicalOrder, requestedStatus);
+        updateCustomerNotificationTracking(orderId, requestId, result.notification, { announce: true });
         refreshActivity().catch(() => {});
       } catch (error) {
-        let canonicalOrder = null;
+        let reconciled = null;
         try {
-          canonicalOrder = (await api(`/admin/orders/${button.dataset.orderId}`, {
+          reconciled = await api(`/admin/orders/${orderId}`, {
             forceRefresh: true,
             timeoutMs: 10000,
-          })).order;
+          });
         } catch {
           // If reconciliation also fails, the last confirmed pre-mutation state is safest.
         }
+        const canonicalOrder = reconciled?.order || null;
         const confirmedStatusChanged = canonicalOrder && canonicalOrder.status !== previousStatus;
         applyOrderStatusToView(canonicalOrder || { ...order, status: previousStatus }, requestedStatus, {
-          enforceScope: Boolean(confirmedStatusChanged),
+          enforceScope: false,
         });
         if (confirmedStatusChanged) {
-          closeModal();
-          toast(`Order #${button.dataset.orderId} is ${statusLabel(canonicalOrder.status)}. ${error.message}`, "error");
-          if (["dashboard", "orders", "history"].includes(state.route)) {
-            loadCurrentPage({ background: true, forceRefresh: true });
-          }
+          const notification = (reconciled.notifications || []).find((entry) => entry.request_id === requestId) || null;
+          updateCustomerNotificationTracking(orderId, requestId, notification, { announce: true });
+          toast(`Order #${orderId} is ${statusLabel(canonicalOrder.status)}. Checking customer notification status…`);
         } else {
+          clearCustomerNotificationTracker(orderId);
           toast(error.message, "error");
-          actionButtons.forEach((actionButton) => { actionButton.disabled = false; });
-          button.textContent = original;
         }
       }
     }));
