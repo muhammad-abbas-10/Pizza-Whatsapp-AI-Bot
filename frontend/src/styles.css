@@ -255,6 +255,42 @@ img { display: block; max-width: 100%; }
 .skeleton { height: 62px; border-radius: 11px; background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%); background-size: 200% 100%; animation: shimmer 1.3s infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
+/* Data loading stays inside each route's persistent page frame. */
+.page-data { min-width: 0; }
+.page-data.page-data-visible { animation: page-data-in .16s ease-out both; }
+@keyframes page-data-in { from { opacity: 0; } to { opacity: 1; } }
+.content-skeleton { min-width: 0; }
+.content-skeleton .skeleton { display: block; height: auto; min-height: 10px; border-radius: 6px; }
+.skeleton-line { width: 100%; height: 10px; }
+.skeleton-line.short { width: 36%; }
+.skeleton-line.medium { width: 58%; }
+.skeleton-line.title { width: 66%; height: 17px; margin-top: 18px; }
+.skeleton-value { width: 52%; height: 28px; margin-top: 20px; }
+.skeleton-paragraph { width: 100%; height: 56px; margin-top: 14px; }
+.skeleton-button { width: 92px; height: 31px; margin-top: auto; }
+.skeleton-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
+.request-loading-card { min-height: 296px; pointer-events: none; }
+.loading-table-panel { overflow: hidden; }
+.loading-table { min-width: 100%; }
+.loading-table .skeleton-line { height: 10px; }
+.loading-table tbody tr { height: 60px; }
+.skeleton-chart { min-height: 226px; background: repeating-linear-gradient(to bottom, transparent 0, transparent 50px, rgba(75,85,99,.2) 51px); }
+.skeleton-list { min-height: 226px; display: grid; align-content: start; gap: 16px; padding: 2px 0; background: repeating-linear-gradient(to bottom, transparent 0, transparent 38px, var(--surface-2) 39px, transparent 40px); }
+.skeleton-tabs { pointer-events: none; }
+.skeleton-tab { width: 86px; height: 31px; flex: 0 0 auto; }
+.notification-skeleton { min-height: 408px; }
+.settings-skeleton .panel { min-height: 210px; padding: 20px; }
+.settings-skeleton .skeleton-paragraph { height: 46px; }
+.dashboard-page .page-data[data-loading="true"] { min-height: 734px; }
+.pending-requests-page .page-data[data-loading="true"] { min-height: 640px; }
+.orders-page .page-data[data-loading="true"], .history-page .page-data[data-loading="true"], .customers-page .page-data[data-loading="true"] { min-height: 548px; }
+.menu-page .page-data[data-loading="true"] { min-height: 520px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-data.page-data-visible { animation: none; }
+  .skeleton { animation: none; }
+}
+
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.68); backdrop-filter: blur(5px); }
 .modal { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 17px; box-shadow: var(--shadow); }
 .modal-head, .modal-foot { padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }

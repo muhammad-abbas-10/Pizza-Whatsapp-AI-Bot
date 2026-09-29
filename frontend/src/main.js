@@ -49,18 +49,22 @@ let pageLoadInFlight = false;
 let activitySnapshot = null;
 let appEntryId = 0;
 let dashboardDetailLoadId = 0;
+let loadingPresentation = null;
 
 const PAGE_CACHE_TTL = {
-  dashboard: 10000,
-  orders: 10000,
-  requests: 10000,
-  history: 15000,
-  customers: 30000,
-  feedback: 30000,
+  dashboard: 45000,
+  orders: 45000,
+  requests: 45000,
+  history: 45000,
+  customers: 45000,
+  feedback: 45000,
   menu: 10 * 60 * 1000,
-  notifications: 5000,
+  notifications: 45000,
   settings: 10 * 60 * 1000,
 };
+
+const SKELETON_DELAY_MS = 180;
+const SKELETON_MIN_VISIBLE_MS = 300;
 
 const DEFAULT_ADDRESS_CLARIFICATION_MESSAGE = "Please provide a clearer delivery address, including a nearby landmark, street, house number, or any other helpful location details.";
 
@@ -133,10 +137,6 @@ function modalLoading(label = "Loading details") {
   showModal(`<div class="loading-state"><div><div class="state-icon">◌</div><div class="state-title">${escapeHtml(label)}</div></div></div>`, { label });
 }
 
-function pageLoading() {
-  return `<div class="loading-state"><div class="skeleton-wrap">${Array.from({ length: 5 }, () => '<div class="skeleton"></div>').join("")}</div></div>`;
-}
-
 function emptyState(title, copy, icon = "◇") {
   return `<div class="empty-state"><div><div class="state-icon">${icon}</div><div class="state-title">${escapeHtml(title)}</div><div class="state-copy">${escapeHtml(copy)}</div></div></div>`;
 }
@@ -149,6 +149,107 @@ function pageHeading(title, copy, actions = "") {
   return `<header class="page-heading"><div><div class="eyebrow-live"><span></span> LIVE · PAKISTAN TIME</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(copy)}</p></div>${actions ? `<div class="cluster">${actions}</div>` : ""}</header>`;
 }
 
+function ordersToolbar(route) {
+  const filters = state.filters[route];
+  const history = route === "history";
+  return `<div class="toolbar orders-toolbar"><input class="input mobile-page-search" data-local-search="${route}" type="search" value="${escapeHtml(filters.search)}" placeholder="Search order, customer or phoneâ€¦">
+    <div class="filter-control"><label class="sr-only" for="${route}-status">Filter by status</label><select class="select" id="${route}-status" data-filter="status"><option value="">All statuses</option>${(history ? ["completed", "cancelled"] : ["received", "preparing", "oven", "out_for_delivery"]).map((status) => `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(statusLabel(status))}</option>`).join("")}</select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+    <div class="filter-control"><label class="sr-only" for="${route}-type">Filter by fulfilment type</label><select class="select" id="${route}-type" data-filter="order_type"><option value="">Delivery & pickup</option><option value="delivery" ${filters.order_type === "delivery" ? "selected" : ""}>Delivery</option><option value="pickup" ${filters.order_type === "pickup" ? "selected" : ""}>Pickup</option></select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+    <div class="filter-control date-control"><input class="input date-field" data-filter="date_from" type="date" value="${escapeHtml(filters.date_from)}" aria-label="From date"><span class="filter-control-icon">${icon("calendar")}</span></div>
+    <div class="filter-control date-control"><input class="input date-field" data-filter="date_to" type="date" value="${escapeHtml(filters.date_to)}" aria-label="To date"><span class="filter-control-icon">${icon("calendar")}</span></div>
+  </div>`;
+}
+
+function requestsToolbar() {
+  const filters = state.filters.requests;
+  return `<div class="toolbar requests-toolbar"><input class="input mobile-page-search" data-local-search="requests" type="search" value="${escapeHtml(filters.search)}" placeholder="Search customer or requestâ€¦">
+    <div class="filter-control"><label class="sr-only" for="requests-status">Filter by status</label><select class="select" id="requests-status" data-filter="status"><option value="">All statuses</option>${["pending", "approved", "denied"].map((value) => `<option value="${value}" ${filters.status === value ? "selected" : ""}>${escapeHtml(statusLabel(value))}</option>`).join("")}</select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+    <div class="filter-control"><label class="sr-only" for="requests-type">Filter by request type</label><select class="select" id="requests-type" data-filter="type"><option value="">All request types</option><option value="cancel_order" ${filters.type === "cancel_order" ? "selected" : ""}>Cancellation request</option><option value="modification" ${filters.type === "modification" ? "selected" : ""}>Order modification</option><option value="delivery" ${filters.type === "delivery" ? "selected" : ""}>Delivery issue</option><option value="other" ${filters.type === "other" ? "selected" : ""}>Other</option></select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
+  </div>`;
+}
+
+function pageFrame(route) {
+  const dataArea = '<div class="page-data" data-page-data aria-live="polite" aria-busy="true"></div>';
+  if (route === "dashboard") return `<div class="dashboard-page">${pageHeading("Restaurant overview", "Live view of Pizza Bar performance and status.")}${dataArea}</div>`;
+  if (route === "orders" || route === "history") {
+    const history = route === "history";
+    const actions = history ? `<button class="btn history-export" data-action="export-history">${icon("download")}<span>Export CSV</span></button>` : "";
+    return `<div class="${history ? "history-page" : "orders-page"}">${pageHeading(history ? "Order history" : "Orders", history ? "Search completed and cancelled orders." : "Manage orders currently moving through the kitchen.", actions)}${ordersToolbar(route)}${dataArea}</div>`;
+  }
+  if (route === "requests") return `<div class="pending-requests-page">${pageHeading("Pending requests", "Review and respond to requests from WhatsApp customers.")}${requestsToolbar()}${dataArea}</div>`;
+  if (route === "customers") return `<div class="customers-page">${pageHeading("Customers", "Real customer profiles aggregated from WhatsApp orders.")}<div class="toolbar customers-toolbar"><input class="input mobile-page-search" data-local-search="customers" type="search" value="${escapeHtml(state.filters.customers.search)}" placeholder="Search name or phoneâ€¦"></div>${dataArea}</div>`;
+  if (route === "feedback") return `${pageHeading("Feedback", "Customer ratings collected through the Pizza Bar backend.")}<div class="toolbar"><select class="select" data-filter="rating"><option value="">All ratings</option>${[5,4,3,2,1,0].map((rating) => `<option value="${rating}" ${String(state.filters.feedback.rating) === String(rating) ? "selected" : ""}>${rating} stars</option>`).join("")}</select></div>${dataArea}`;
+  if (route === "menu") {
+    const actions = `<button class="btn btn-danger menu-delete-all-button" data-action="delete-entire-menu">${icon("trash")}<span>Delete Entire Menu</span></button><button class="btn btn-primary menu-add-button" data-action="add-menu-item">${icon("plus")}<span>Add item</span></button>`;
+    return `<div class="menu-page">${pageHeading("Menu management", "Live products, variants, deals and images from Neon.", actions)}<div class="toolbar menu-toolbar"><input class="input mobile-page-search" data-local-search="menu" type="search" value="${escapeHtml(state.filters.menu.search)}" placeholder="Search menuâ€¦"></div>${dataArea}</div>`;
+  }
+  if (route === "notifications") {
+    const filters = state.filters.notifications;
+    return `${pageHeading("Notifications", "Database-backed order, request and delivery events.", '<button class="btn" data-action="read-all">Mark all read</button>')}<div class="toolbar"><select class="select" data-filter="unread"><option value="">All notifications</option><option value="true" ${filters.unread === "true" ? "selected" : ""}>Unread only</option></select><select class="select" data-filter="type"><option value="">All types</option><option value="new_order" ${filters.type === "new_order" ? "selected" : ""}>New orders</option><option value="customer_request" ${filters.type === "customer_request" ? "selected" : ""}>Customer requests</option><option value="notification_failure" ${filters.type === "notification_failure" ? "selected" : ""}>Failures</option><option value="system" ${filters.type === "system" ? "selected" : ""}>System</option></select></div>${dataArea}`;
+  }
+  return `<div class="settings-page">${pageHeading("Settings", "Public restaurant configuration and integration health. Secrets stay on the backend.")}${dataArea}</div>`;
+}
+
+function tableSkeleton(columnCount, rowCount = 8) {
+  return `<div class="table-wrap"><table class="data-table loading-table"><thead><tr>${Array.from({ length: columnCount }, () => '<th><span class="skeleton skeleton-line"></span></th>').join("")}</tr></thead><tbody>${Array.from({ length: rowCount }, () => `<tr>${Array.from({ length: columnCount }, () => '<td><span class="skeleton skeleton-line"></span></td>').join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+
+function pageDataSkeleton(route) {
+  const panel = (content, className = "") => `<section class="panel loading-panel ${className}">${content}</section>`;
+  if (route === "dashboard") return `<div class="content-skeleton dashboard-skeleton"><section class="stats-grid">${Array.from({ length: 4 }, () => '<article class="stat-card"><span class="skeleton skeleton-line short"></span><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-line medium"></span></article>').join("")}</section><section class="dashboard-grid">${panel('<div class="panel-head"><span class="skeleton skeleton-line medium"></span></div><div class="panel-body skeleton-chart"></div>')}${panel('<div class="panel-head"><span class="skeleton skeleton-line medium"></span></div><div class="panel-body skeleton-list"></div>')}</section><section class="dashboard-grid">${panel('<div class="panel-head"><span class="skeleton skeleton-line medium"></span></div><div class="panel-body skeleton-list"></div>')}${panel('<div class="panel-head"><span class="skeleton skeleton-line medium"></span></div><div class="panel-body skeleton-list"></div>')}</section></div>`;
+  if (route === "requests") return `<div class="content-skeleton request-grid request-grid-skeleton">${Array.from({ length: 4 }, () => '<article class="request-card request-loading-card"><span class="skeleton skeleton-line short"></span><span class="skeleton skeleton-line title"></span><span class="skeleton skeleton-paragraph"></span><div class="skeleton-facts"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line"></span></div><span class="skeleton skeleton-button"></span></article>').join("")}</div>`;
+  if (route === "orders" || route === "history") return `<div class="content-skeleton">${panel(tableSkeleton(8), "orders-table-panel loading-table-panel")}</div>`;
+  if (route === "customers") return `<div class="content-skeleton">${panel(tableSkeleton(7), "customers-table-panel loading-table-panel")}</div>`;
+  if (route === "feedback") return `<div class="content-skeleton"><section class="feedback-summary">${Array.from({ length: 3 }, () => '<article class="stat-card"><span class="skeleton skeleton-line short"></span><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-line medium"></span></article>').join("")}</section>${panel('<div class="skeleton-list"></div>')}</div>`;
+  if (route === "menu") return `<div class="content-skeleton"><div class="category-tabs skeleton-tabs"><span class="skeleton skeleton-tab"></span><span class="skeleton skeleton-tab"></span><span class="skeleton skeleton-tab"></span></div><div class="menu-layout"><section class="menu-products"><div class="menu-grid">${Array.from({ length: 4 }, () => '<article class="menu-card"><span class="skeleton skeleton-line short"></span><span class="skeleton skeleton-line title"></span><span class="skeleton skeleton-paragraph"></span><span class="skeleton skeleton-line"></span></article>').join("")}</div></section>${panel('<div class="panel-head"><span class="skeleton skeleton-line medium"></span></div><div class="panel-body skeleton-list"></div>', "menu-gallery")}</div></div>`;
+  if (route === "notifications") return `<div class="content-skeleton">${panel('<div class="skeleton-list notification-skeleton"></div>')}</div>`;
+  return `<div class="content-skeleton settings-skeleton"><div class="settings-grid">${Array.from({ length: 4 }, () => panel('<div class="skeleton skeleton-line title"></div><div class="skeleton skeleton-paragraph"></div><div class="skeleton skeleton-paragraph"></div>')).join("")}</div></div>`;
+}
+
+function pageDataArea() {
+  return app.querySelector("#page-content [data-page-data]");
+}
+
+function beginLoadingPresentation(loadId, route) {
+  if (loadingPresentation?.timer) clearTimeout(loadingPresentation.timer);
+  const presentation = { loadId, route, shownAt: 0, timer: null };
+  loadingPresentation = presentation;
+  presentation.timer = setTimeout(() => {
+    if (loadingPresentation !== presentation || pageLoadId !== loadId || state.route !== route) return;
+    const area = pageDataArea();
+    if (!area || area.childElementCount) return;
+    area.innerHTML = pageDataSkeleton(route);
+    area.dataset.loading = "true";
+    presentation.shownAt = performance.now();
+  }, SKELETON_DELAY_MS);
+}
+
+async function finishLoadingPresentation(loadId) {
+  const presentation = loadingPresentation;
+  if (!presentation || presentation.loadId !== loadId) return;
+  clearTimeout(presentation.timer);
+  presentation.timer = null;
+  if (presentation.shownAt) {
+    const remaining = SKELETON_MIN_VISIBLE_MS - (performance.now() - presentation.shownAt);
+    if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
+  if (loadingPresentation === presentation) loadingPresentation = null;
+}
+
+async function commitPageData(requestOptions, html) {
+  await finishLoadingPresentation(requestOptions.loadId);
+  if (requestOptions.loadId !== pageLoadId || state.route !== requestOptions.route) return false;
+  const area = pageDataArea();
+  if (!area) return false;
+  const replacesPreviousData = area.dataset.loading !== "true" && area.childElementCount > 0;
+  if (!replacesPreviousData) area.classList.remove("page-data-visible");
+  area.innerHTML = html;
+  area.dataset.loading = "false";
+  area.setAttribute("aria-busy", "false");
+  if (!replacesPreviousData) requestAnimationFrame(() => area.classList.add("page-data-visible"));
+  return true;
+}
+
 function pagination(meta, route) {
   if (!meta || meta.pages <= 1) return "";
   const first = (meta.page - 1) * meta.limit + 1;
@@ -159,6 +260,8 @@ function pagination(meta, route) {
 function renderLogin(message = "") {
   stopPolling();
   pageController?.abort();
+  if (loadingPresentation?.timer) clearTimeout(loadingPresentation.timer);
+  loadingPresentation = null;
   app.innerHTML = `<main class="login-page"><section class="login-card">
     <div class="brand"><div class="brand-mark">${pizzaMark()}</div><div><div class="brand-name">Pizza Bar</div><div class="brand-tag">ADMIN DASHBOARD</div></div></div>
     <h1>Welcome back</h1><p>Sign in to manage the Pizza Bar admin dashboard.</p>
@@ -221,6 +324,11 @@ function applySessionToShell() {
 
 function bindShellEvents() {
   app.querySelectorAll("[data-route]").forEach((element) => element.addEventListener("click", () => navigate(element.dataset.route)));
+  app.querySelectorAll(".nav-link").forEach((element) => {
+    const prefetch = () => prefetchRoute(element.dataset.route);
+    element.addEventListener("pointerenter", prefetch, { passive: true });
+    element.addEventListener("focus", prefetch);
+  });
   app.querySelector("[data-action='toggle-sidebar']").addEventListener("click", () => setSidebar(!state.sidebarOpen));
   app.querySelector("#sidebar-scrim").addEventListener("click", () => setSidebar(false));
   app.querySelector("[data-action='logout']").addEventListener("click", async () => {
@@ -282,6 +390,71 @@ function navigateFromHash() {
   loadCurrentPage();
 }
 
+function pageDataPath(route) {
+  if (route === "dashboard") return `/admin/dashboard?days=${state.dashboardDays}`;
+  if (route === "orders" || route === "history") {
+    const filters = state.filters[route];
+    return `/admin/orders${queryString({ ...filters, page: state.pages[route], limit: 20, scope: route === "history" ? "history" : "active" })}`;
+  }
+  if (route === "requests") return `/admin/requests${queryString({ ...state.filters.requests, page: state.pages.requests, limit: 20 })}`;
+  if (route === "customers") return `/admin/customers${queryString({ search: state.filters.customers.search, page: state.pages.customers, limit: 20 })}`;
+  if (route === "feedback") return `/admin/feedback${queryString({ rating: state.filters.feedback.rating, page: state.pages.feedback, limit: 20 })}`;
+  if (route === "menu") return "/admin/menu";
+  if (route === "notifications") return `/admin/notifications${queryString({ ...state.filters.notifications, page: state.pages.notifications, limit: 30 })}`;
+  return "/admin/settings";
+}
+
+function prefetchRoute(route) {
+  if (!routes[route] || !getAuthToken()) return Promise.resolve();
+  // This is a single Vite entry bundle, so route code is already loaded; warm the route's data instead.
+  return api(pageDataPath(route), { cacheTtlMs: PAGE_CACHE_TTL[route] || 45000, staleWhileRevalidate: true }).catch(() => {});
+}
+
+function prefetchInitialRoutes() {
+  void Promise.allSettled(["dashboard", "orders", "requests", "history", "customers"].map(prefetchRoute));
+}
+
+function bindPageFrame(route) {
+  if (route === "orders" || route === "history") {
+    bindFilterControls(route);
+    bindLocalSearch(route);
+    app.querySelector("[data-action='export-history']")?.addEventListener("click", async () => {
+      try {
+        const filters = state.filters.history;
+        await download(`/admin/order-history/export.csv${queryString({ date_from: filters.date_from, date_to: filters.date_to })}`, `pizza-bar-order-history-${new Date().toISOString().slice(0,10)}.csv`);
+        toast("Order history exported.");
+      } catch (error) { toast(error.message, "error"); }
+    });
+    return;
+  }
+  if (route === "requests") { bindFilterControls(route); bindLocalSearch(route); return; }
+  if (route === "customers") { bindLocalSearch(route); return; }
+  if (route === "feedback") { bindFilterControls(route); return; }
+  if (route === "menu") {
+    bindLocalSearch(route);
+    app.querySelector("[data-action='add-menu-item']")?.addEventListener("click", openAddMenuItem);
+    app.querySelector("[data-action='delete-entire-menu']")?.addEventListener("click", openDeleteEntireMenu);
+    return;
+  }
+  if (route === "notifications") {
+    bindFilterControls(route);
+    app.querySelector("[data-action='read-all']")?.addEventListener("click", async () => {
+      try { await api("/admin/notifications/read-all", { method: "POST" }); toast("All notifications marked read."); updateUnread(0); loadCurrentPage(); } catch (error) { toast(error.message, "error"); }
+    });
+  }
+}
+
+async function renderPageLoadError(requestOptions, message) {
+  await finishLoadingPresentation(requestOptions.loadId);
+  if (requestOptions.loadId !== pageLoadId || state.route !== requestOptions.route) return;
+  const area = pageDataArea();
+  if (!area) return;
+  area.innerHTML = errorState(message);
+  area.dataset.loading = "false";
+  area.setAttribute("aria-busy", "false");
+  area.querySelector("[data-action='retry-page']")?.addEventListener("click", loadCurrentPage);
+}
+
 async function loadCurrentPage({ background = false, forceRefresh = false } = {}) {
   const content = app.querySelector("#page-content");
   if (!content) return;
@@ -290,12 +463,27 @@ async function loadCurrentPage({ background = false, forceRefresh = false } = {}
   pageController?.abort();
   pageController = new AbortController();
   pageLoadInFlight = true;
-  if (!background && content.dataset.loadedRoute !== routeAtStart) content.innerHTML = pageLoading();
+
+  const routeChanged = content.dataset.route !== routeAtStart;
+  if (routeChanged) {
+    content.innerHTML = pageFrame(routeAtStart);
+    content.dataset.route = routeAtStart;
+    delete content.dataset.loadedRoute;
+    bindPageFrame(routeAtStart);
+  }
+  const area = pageDataArea();
+  const hasPreviousData = Boolean(area?.childElementCount);
+  if (!background && !hasPreviousData) beginLoadingPresentation(loadId, routeAtStart);
+  else if (area?.dataset.loading === "true") {
+    if (loadingPresentation?.timer) clearTimeout(loadingPresentation.timer);
+    loadingPresentation = { loadId, route: routeAtStart, shownAt: loadingPresentation?.shownAt || performance.now(), timer: null };
+  }
 
   const requestOptions = {
     signal: pageController.signal,
     loadId,
-    cacheTtlMs: PAGE_CACHE_TTL[routeAtStart] || 10000,
+    route: routeAtStart,
+    cacheTtlMs: PAGE_CACHE_TTL[routeAtStart] || 45000,
     staleWhileRevalidate: !forceRefresh,
     forceRefresh,
     onRevalidate: () => {
@@ -317,12 +505,12 @@ async function loadCurrentPage({ background = false, forceRefresh = false } = {}
     performance.mark?.(`pizza-page-${routeAtStart}-visible`);
   } catch (error) {
     if (isAbortError(error) || loadId !== pageLoadId || state.route !== routeAtStart) return;
-    if (background && content.dataset.loadedRoute === routeAtStart) {
+    const hasPreviousData = pageDataArea()?.dataset.loading !== "true" && pageDataArea()?.childElementCount;
+    if ((background || hasPreviousData) && content.dataset.loadedRoute === routeAtStart) {
       toast(error.message, "error");
       return;
     }
-    content.innerHTML = errorState(error.message);
-    content.querySelector("[data-action='retry-page']")?.addEventListener("click", loadCurrentPage);
+    await renderPageLoadError(requestOptions, error.message);
   } finally {
     if (loadId === pageLoadId) pageLoadInFlight = false;
   }
@@ -339,8 +527,7 @@ async function loadDashboard(requestOptions = {}) {
   const totalStatuses = Math.max(1, Object.values(statusMap).reduce((sum, count) => sum + count, 0));
   const statuses = ["received", "preparing", "oven", "out_for_delivery", "completed", "cancelled"];
 
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Restaurant overview", "Live view of Pizza Bar performance and status.")}
-    <section class="stats-grid">
+  const markup = `<section class="stats-grid">
       ${statCard("Today's orders", data.stats.today_orders, "orders", orderTrend, "vs yesterday", "#FF6B00", "orders")}
       ${statCard("Pending requests", data.stats.pending_requests, "requests", null, "requires attention", "#F59E0B", "requests")}
       ${statCard("Today's revenue", money(data.stats.today_revenue, currency), "revenue", revenueTrend, "vs yesterday", "#10B981", "revenue")}
@@ -355,6 +542,7 @@ async function loadDashboard(requestOptions = {}) {
       <article class="panel"><div class="panel-head"><div><div class="panel-title">Pending requests</div><div class="panel-subtitle">Waiting for a staff decision</div></div><button class="btn btn-sm" data-route-jump="requests">View all</button></div>${renderDashboardRequests(data.pending_requests)}</article>
     </section>
     <section class="panel" style="margin-top:16px"><div class="panel-head"><div><div class="panel-title">Recent feedback</div><div class="panel-subtitle">Latest customer ratings</div></div><button class="btn btn-sm" data-route-jump="feedback">View all</button></div>${renderFeedbackList(data.recent_feedback)}</section>`;
+  if (!await commitPageData(requestOptions, markup)) return;
   app.querySelectorAll("[data-dashboard-days]").forEach((button) => button.addEventListener("click", () => { state.dashboardDays = Number(button.dataset.dashboardDays); loadCurrentPage(); }));
   app.querySelectorAll("[data-dashboard-detail]").forEach((button) => button.addEventListener("click", () => openDashboardDetail(button.dataset.dashboardDetail)));
   bindCommonActions();
@@ -509,25 +697,9 @@ async function loadOrders(route, requestOptions = {}) {
   if (state.route !== route || requestOptions.loadId !== pageLoadId) return;
   const history = route === "history";
   const currency = state.session?.restaurant?.currency || "PKR";
-  const actions = history ? `<button class="btn history-export" data-action="export-history">${icon("download")}<span>Export CSV</span></button>` : "";
-  const pageClass = history ? "history-page" : "orders-page";
-  app.querySelector("#page-content").innerHTML = `<div class="${pageClass}">${pageHeading(history ? "Order history" : "Orders", history ? "Search completed and cancelled orders." : "Manage orders currently moving through the kitchen.", actions)}
-    <div class="toolbar orders-toolbar"><input class="input mobile-page-search" data-local-search="${route}" type="search" value="${escapeHtml(filters.search)}" placeholder="Search order, customer or phone…">
-      <div class="filter-control"><label class="sr-only" for="${route}-status">Filter by status</label><select class="select" id="${route}-status" data-filter="status"><option value="">All statuses</option>${(history ? ["completed", "cancelled"] : ["received", "preparing", "oven", "out_for_delivery"]).map((status) => `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(statusLabel(status))}</option>`).join("")}</select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
-      <div class="filter-control"><label class="sr-only" for="${route}-type">Filter by fulfilment type</label><select class="select" id="${route}-type" data-filter="order_type"><option value="">Delivery & pickup</option><option value="delivery" ${filters.order_type === "delivery" ? "selected" : ""}>Delivery</option><option value="pickup" ${filters.order_type === "pickup" ? "selected" : ""}>Pickup</option></select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
-      <div class="filter-control date-control"><input class="input date-field" data-filter="date_from" type="date" value="${escapeHtml(filters.date_from)}" aria-label="From date"><span class="filter-control-icon">${icon("calendar")}</span></div>
-      <div class="filter-control date-control"><input class="input date-field" data-filter="date_to" type="date" value="${escapeHtml(filters.date_to)}" aria-label="To date"><span class="filter-control-icon">${icon("calendar")}</span></div>
-    </div>
-    <section class="panel orders-table-panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table orders-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th class="action-heading">Action</th></tr></thead><tbody>${data.orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell order-id">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted items-cell">${escapeHtml(itemSummary(order.items))}</td><td class="mono order-total">${escapeHtml(money(order.total, currency))}</td><td class="type-cell">${escapeHtml(statusLabel(order.order_type))}</td><td data-order-status-cell>${badge(order.status)}</td><td class="order-date">${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm order-view-button" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section></div>`;
-  bindFilterControls(route);
-  bindLocalSearch(route);
+  const markup = `<section class="panel orders-table-panel">${data.orders.length ? `<div class="table-wrap"><table class="data-table orders-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th><th class="action-heading">Action</th></tr></thead><tbody>${data.orders.map((order) => `<tr data-order-row="${escapeHtml(order.id)}" data-order-status="${escapeHtml(order.status)}"><td class="primary-cell order-id">#${escapeHtml(order.id)}</td><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(order.customer_name))}</div><div><div class="primary-cell">${escapeHtml(order.customer_name || "Unnamed customer")}</div><div class="secondary-cell">${escapeHtml(order.customer_phone)}</div></div></div></td><td class="muted items-cell">${escapeHtml(itemSummary(order.items))}</td><td class="mono order-total">${escapeHtml(money(order.total, currency))}</td><td class="type-cell">${escapeHtml(statusLabel(order.order_type))}</td><td data-order-status-cell>${badge(order.status)}</td><td class="order-date">${escapeHtml(dateTime(order.created_at))}</td><td><div class="row-actions"><button class="btn btn-sm order-view-button" data-view-order="${escapeHtml(order.id)}">View</button></div></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, route)}` : emptyState(history ? "No historical orders found" : "No active orders found", "Try changing your search or filters.", "▤")}</section>`;
+  if (!await commitPageData(requestOptions, markup)) return;
   bindCommonActions();
-  app.querySelector("[data-action='export-history']")?.addEventListener("click", async () => {
-    try {
-      await download(`/admin/order-history/export.csv${queryString({ date_from: filters.date_from, date_to: filters.date_to })}`, `pizza-bar-order-history-${new Date().toISOString().slice(0,10)}.csv`);
-      toast("Order history exported.");
-    } catch (error) { toast(error.message, "error"); }
-  });
 }
 
 function bindFilterControls(route) {
@@ -738,14 +910,8 @@ async function loadRequests(requestOptions = {}) {
   const data = await api(`/admin/requests${queryString({ ...filters, page: state.pages.requests, limit: 20 })}`, requestOptions);
   if (state.route !== "requests" || requestOptions.loadId !== pageLoadId) return;
   const currency = state.session?.restaurant?.currency || "PKR";
-  app.querySelector("#page-content").innerHTML = `<div class="pending-requests-page">${pageHeading("Pending requests", "Review and respond to requests from WhatsApp customers.")}
-    <div class="toolbar requests-toolbar"><input class="input mobile-page-search" data-local-search="requests" type="search" value="${escapeHtml(filters.search)}" placeholder="Search customer or request…">
-      <div class="filter-control"><label class="sr-only" for="requests-status">Filter by status</label><select class="select" id="requests-status" data-filter="status"><option value="">All statuses</option>${["pending","approved","denied"].map((value) => `<option value="${value}" ${filters.status === value ? "selected" : ""}>${escapeHtml(statusLabel(value))}</option>`).join("")}</select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
-      <div class="filter-control"><label class="sr-only" for="requests-type">Filter by request type</label><select class="select" id="requests-type" data-filter="type"><option value="">All request types</option><option value="cancel_order" ${filters.type === "cancel_order" ? "selected" : ""}>Cancellation request</option><option value="modification" ${filters.type === "modification" ? "selected" : ""}>Order modification</option><option value="delivery" ${filters.type === "delivery" ? "selected" : ""}>Delivery issue</option><option value="other" ${filters.type === "other" ? "selected" : ""}>Other</option></select><span class="filter-control-icon">${icon("chevronDown")}</span></div>
-    </div>
-    ${data.requests.length ? `<div class="request-grid">${data.requests.map((request) => renderRequestCard(request, currency)).join("")}</div>${pagination(data.pagination, "requests")}` : `<section class="panel requests-empty-panel">${emptyState("No requests found", "New customer requests from WhatsApp will appear here.", "✓")}</section>`}</div>`;
-  bindFilterControls("requests");
-  bindLocalSearch("requests");
+  const markup = `${data.requests.length ? `<div class="request-grid">${data.requests.map((request) => renderRequestCard(request, currency)).join("")}</div>${pagination(data.pagination, "requests")}` : `<section class="panel requests-empty-panel">${emptyState("No requests found", "New customer requests from WhatsApp will appear here.", "✓")}</section>`}`;
+  if (!await commitPageData(requestOptions, markup)) return;
   bindCommonActions();
   app.querySelectorAll("[data-resolve-request]").forEach((button) => button.addEventListener("click", () => confirmRequest(button.dataset.requestId, button.dataset.resolveRequest, button.dataset.resolveLabel)));
   app.querySelectorAll("[data-retry-request]").forEach((button) => button.addEventListener("click", () => retryNotification(button)));
@@ -814,10 +980,8 @@ async function loadCustomers(requestOptions = {}) {
   const data = await api(`/admin/customers${queryString({ search: state.filters.customers.search, page: state.pages.customers, limit: 20 })}`, requestOptions);
   if (state.route !== "customers" || requestOptions.loadId !== pageLoadId) return;
   const currency = state.session?.restaurant?.currency || "PKR";
-  app.querySelector("#page-content").innerHTML = `<div class="customers-page">${pageHeading("Customers", "Real customer profiles aggregated from WhatsApp orders.")}
-    <div class="toolbar customers-toolbar"><input class="input mobile-page-search" data-local-search="customers" type="search" value="${escapeHtml(state.filters.customers.search)}" placeholder="Search name or phone…"></div>
-    <section class="panel customers-table-panel">${data.customers.length ? `<div class="table-wrap"><table class="data-table customers-table"><thead><tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Total spending</th><th>Last order</th><th>Status</th><th class="customer-action-heading"><span class="sr-only">Actions</span></th></tr></thead><tbody>${data.customers.map((customer) => `<tr><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(customer.name))}</div><div class="primary-cell customer-name">${escapeHtml(customer.name || "Unnamed customer")}</div></div></td><td class="mono customer-phone">${escapeHtml(customer.whatsapp_phone)}</td><td class="customer-orders">${customer.total_orders}</td><td class="mono customer-spending">${escapeHtml(money(customer.total_spending, currency))}</td><td class="customer-last-order">${escapeHtml(customer.last_order ? relativeTime(customer.last_order) : "No orders")}</td><td>${badge(customer.status)}</td><td><button class="btn btn-sm customer-view-button" data-view-customer="${escapeHtml(customer.id)}">View</button></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, "customers")}` : emptyState("No customers found", "Customers are created by the WhatsApp ordering flow.", "♙")}</section></div>`;
-  bindLocalSearch("customers");
+  const markup = `<section class="panel customers-table-panel">${data.customers.length ? `<div class="table-wrap"><table class="data-table customers-table"><thead><tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Total spending</th><th>Last order</th><th>Status</th><th class="customer-action-heading"><span class="sr-only">Actions</span></th></tr></thead><tbody>${data.customers.map((customer) => `<tr><td><div class="customer-cell"><div class="avatar">${escapeHtml(initials(customer.name))}</div><div class="primary-cell customer-name">${escapeHtml(customer.name || "Unnamed customer")}</div></div></td><td class="mono customer-phone">${escapeHtml(customer.whatsapp_phone)}</td><td class="customer-orders">${customer.total_orders}</td><td class="mono customer-spending">${escapeHtml(money(customer.total_spending, currency))}</td><td class="customer-last-order">${escapeHtml(customer.last_order ? relativeTime(customer.last_order) : "No orders")}</td><td>${badge(customer.status)}</td><td><button class="btn btn-sm customer-view-button" data-view-customer="${escapeHtml(customer.id)}">View</button></td></tr>`).join("")}</tbody></table></div>${pagination(data.pagination, "customers")}` : emptyState("No customers found", "Customers are created by the WhatsApp ordering flow.", "♙")}</section>`;
+  if (!await commitPageData(requestOptions, markup)) return;
   bindCommonActions();
 }
 
@@ -836,11 +1000,8 @@ async function loadFeedback(requestOptions = {}) {
   const filters = state.filters.feedback;
   const data = await api(`/admin/feedback${queryString({ rating: filters.rating, page: state.pages.feedback, limit: 20 })}`, requestOptions);
   if (state.route !== "feedback" || requestOptions.loadId !== pageLoadId) return;
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Feedback", "Customer ratings collected through the Pizza Bar backend.")}
-    <section class="feedback-summary">${statCard("Average rating", `${Number(data.summary.average_rating).toFixed(1)} / 5`, "★", null, "all reviews", "#e6a83c")}${statCard("Total reviews", data.summary.total, "☆", null, "submitted feedback", "#5d8ee2")}${statCard("Five-star reviews", `${data.summary.five_star_percentage}%`, "✦", null, "of rated reviews", "#47b978")}</section>
-    <div class="toolbar"><select class="select" data-filter="rating"><option value="">All ratings</option>${[5,4,3,2,1,0].map((rating) => `<option value="${rating}" ${String(filters.rating) === String(rating) ? "selected" : ""}>${rating} stars</option>`).join("")}</select></div>
-    <section class="panel">${data.feedback.length ? `${renderFeedbackList(data.feedback)}${pagination(data.pagination, "feedback")}` : emptyState("No feedback yet", "Ratings submitted through WhatsApp will appear here once the feedback workflow stores them.", "☆")}</section>`;
-  bindFilterControls("feedback");
+  const markup = `<section class="feedback-summary">${statCard("Average rating", `${Number(data.summary.average_rating).toFixed(1)} / 5`, "★", null, "all reviews", "#e6a83c")}${statCard("Total reviews", data.summary.total, "☆", null, "submitted feedback", "#5d8ee2")}${statCard("Five-star reviews", `${data.summary.five_star_percentage}%`, "✦", null, "of rated reviews", "#47b978")}</section><section class="panel">${data.feedback.length ? `${renderFeedbackList(data.feedback)}${pagination(data.pagination, "feedback")}` : emptyState("No feedback yet", "Ratings submitted through WhatsApp will appear here once the feedback workflow stores them.", "☆")}</section>`;
+  if (!await commitPageData(requestOptions, markup)) return;
   bindCommonActions();
 }
 
@@ -864,16 +1025,10 @@ async function loadMenu(requestOptions = {}) {
   if (!categories.includes(state.filters.menu.category)) state.filters.menu.category = "All";
   const records = allRecords.filter((record) => (state.filters.menu.category === "All" || record.category === state.filters.menu.category) && (!search || `${record.name} ${record.description || ""}`.toLowerCase().includes(search)));
   const currency = state.session?.restaurant?.currency || "PKR";
-  const pageActions = `<button class="btn btn-danger menu-delete-all-button" data-action="delete-entire-menu">${icon("trash")}<span>Delete Entire Menu</span></button><button class="btn btn-primary menu-add-button" data-action="add-menu-item">${icon("plus")}<span>Add item</span></button>`;
-  app.querySelector("#page-content").innerHTML = `<div class="menu-page">${pageHeading("Menu management", "Live products, variants, deals and images from Neon.", pageActions)}
-    <div class="toolbar menu-toolbar"><input class="input mobile-page-search" data-local-search="menu" type="search" value="${escapeHtml(state.filters.menu.search)}" placeholder="Search menu…"></div>
-    <div class="category-tabs">${categories.map((category) => `<button class="category-tab ${state.filters.menu.category === category ? "active" : ""}" data-menu-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div>
-    <div class="menu-layout"><section class="menu-products">${records.length ? `<div class="menu-grid">${records.map((record) => renderMenuCard(record, currency)).join("")}</div>` : `<div class="panel menu-empty-panel">${emptyState("No menu items found", "Try a different category or search term.", "♨")}</div>`}</section><aside class="panel menu-gallery"><div class="panel-head"><div><div class="panel-title">Menu images</div><div class="panel-subtitle">Stored in Neon BYTEA</div></div><div class="menu-image-head-actions"><span class="menu-image-count">${data.images.length} ${data.images.length === 1 ? "file" : "files"}</span><button class="btn btn-sm" data-action="add-menu-image">${icon("upload")}<span>Add image</span></button></div></div><div class="panel-body">${data.images.length ? data.images.map(renderMenuImageCard).join("") : `<div class="menu-images-empty">No active images.</div>`}</div></aside></div></div>`;
+  const markup = `<div class="category-tabs">${categories.map((category) => `<button class="category-tab ${state.filters.menu.category === category ? "active" : ""}" data-menu-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div><div class="menu-layout"><section class="menu-products">${records.length ? `<div class="menu-grid">${records.map((record) => renderMenuCard(record, currency)).join("")}</div>` : `<div class="panel menu-empty-panel">${emptyState("No menu items found", "Try a different category or search term.", "♨")}</div>`}</section><aside class="panel menu-gallery"><div class="panel-head"><div><div class="panel-title">Menu images</div><div class="panel-subtitle">Stored in Neon BYTEA</div></div><div class="menu-image-head-actions"><span class="menu-image-count">${data.images.length} ${data.images.length === 1 ? "file" : "files"}</span><button class="btn btn-sm" data-action="add-menu-image">${icon("upload")}<span>Add image</span></button></div></div><div class="panel-body">${data.images.length ? data.images.map(renderMenuImageCard).join("") : `<div class="menu-images-empty">No active images.</div>`}</div></aside></div>`;
+  if (!await commitPageData(requestOptions, markup)) return;
   app.querySelectorAll("[data-menu-category]").forEach((button) => button.addEventListener("click", () => { state.filters.menu.category = button.dataset.menuCategory; loadCurrentPage(); }));
-  bindLocalSearch("menu");
-  app.querySelector("[data-action='add-menu-item']").addEventListener("click", openAddMenuItem);
   app.querySelector("[data-action='add-menu-image']").addEventListener("click", openAddMenuImage);
-  app.querySelector("[data-action='delete-entire-menu']").addEventListener("click", openDeleteEntireMenu);
   app.querySelectorAll("[data-delete-menu-image]").forEach((button) => button.addEventListener("click", () => openDeleteMenuImage(button.dataset.deleteMenuImage, button.dataset.imageName)));
   app.querySelectorAll("[data-toggle-menu]").forEach((button) => button.addEventListener("click", () => toggleMenuRecord(button)));
   app.querySelectorAll("[data-edit-price]").forEach((button) => button.addEventListener("click", () => editMenuPrice(button)));
@@ -998,14 +1153,9 @@ async function loadNotifications(requestOptions = {}) {
   const filters = state.filters.notifications;
   const data = await api(`/admin/notifications${queryString({ ...filters, page: state.pages.notifications, limit: 30 })}`, requestOptions);
   if (state.route !== "notifications" || requestOptions.loadId !== pageLoadId) return;
-  app.querySelector("#page-content").innerHTML = `${pageHeading("Notifications", "Database-backed order, request and delivery events.", '<button class="btn" data-action="read-all">Mark all read</button>')}
-    <div class="toolbar"><select class="select" data-filter="unread"><option value="">All notifications</option><option value="true" ${filters.unread === "true" ? "selected" : ""}>Unread only</option></select><select class="select" data-filter="type"><option value="">All types</option><option value="new_order" ${filters.type === "new_order" ? "selected" : ""}>New orders</option><option value="customer_request" ${filters.type === "customer_request" ? "selected" : ""}>Customer requests</option><option value="notification_failure" ${filters.type === "notification_failure" ? "selected" : ""}>Failures</option><option value="system" ${filters.type === "system" ? "selected" : ""}>System</option></select></div>
-    <section class="panel">${data.notifications.length ? `<div class="notification-list">${data.notifications.map(renderNotification).join("")}</div>${pagination(data.pagination, "notifications")}` : emptyState("No notifications", "Operational events will appear here automatically.", "♢")}</section>`;
-  bindFilterControls("notifications");
+  const markup = `<section class="panel">${data.notifications.length ? `<div class="notification-list">${data.notifications.map(renderNotification).join("")}</div>${pagination(data.pagination, "notifications")}` : emptyState("No notifications", "Operational events will appear here automatically.", "♢")}</section>`;
+  if (!await commitPageData(requestOptions, markup)) return;
   bindCommonActions();
-  app.querySelector("[data-action='read-all']").addEventListener("click", async () => {
-    try { await api("/admin/notifications/read-all", { method: "POST" }); toast("All notifications marked read."); updateUnread(0); loadCurrentPage(); } catch (error) { toast(error.message, "error"); }
-  });
   app.querySelectorAll("[data-notification-id]").forEach((item) => item.addEventListener("click", async () => {
     if (!item.dataset.readAt) {
       try {
@@ -1031,8 +1181,7 @@ async function loadSettings(requestOptions = {}) {
   if (state.route !== "settings" || requestOptions.loadId !== pageLoadId) return;
   const restaurant = data.restaurant || {};
   const admin = data.admin || {};
-  app.querySelector("#page-content").innerHTML = `<div class="settings-page">${pageHeading("Settings", "Public restaurant configuration and integration health. Secrets stay on the backend.")}
-    <div class="settings-grid">
+  const markup = `<div class="settings-grid">
       <form id="settings-form" class="settings-form-contents">
         <section class="panel settings-section"><div class="settings-card-head"><h3>Restaurant information</h3><p>Used by the bot and admin dashboard.</p></div><div class="stack"><div class="field"><label for="restaurant-name">Restaurant name</label><input class="input" id="restaurant-name" name="restaurant_name" value="${escapeHtml(restaurant.restaurant_name)}" required></div><div class="detail-grid"><div class="field"><label for="currency">Currency</label><input class="input" id="currency" name="currency" value="${escapeHtml(restaurant.currency)}" maxlength="3" required></div><div class="field"><label for="delivery-charge">Delivery charge</label><input class="input" id="delivery-charge" name="delivery_charge" type="number" min="0" step="0.01" value="${escapeHtml(restaurant.delivery_charge)}" required></div></div><div class="field"><label for="opening-hours">Opening hours (JSON)</label><textarea class="textarea settings-json" id="opening-hours" name="opening_hours" spellcheck="false">${escapeHtml(JSON.stringify(restaurant.opening_hours || {}, null, 2))}</textarea></div></div></section>
         <section class="panel settings-section"><div class="settings-card-head"><h3>Admin account</h3><p>Profile information displayed throughout the dashboard.</p></div><div class="field"><label for="display-name">Display name</label><input class="input" id="display-name" name="display_name" value="${escapeHtml(admin.display_name)}" required></div><div class="integration-row"><div><div class="primary-cell">Authentication</div><div class="secondary-cell">Username, password, and secure session</div></div>${badge("active")}</div></section>
@@ -1046,7 +1195,8 @@ async function loadSettings(requestOptions = {}) {
           <form id="change-password-form" class="stack"><div class="field"><label for="current-password">Current password</label><input class="input" id="current-password" name="current_password" type="password" autocomplete="current-password" required></div><div class="field"><label for="new-password">New password</label><input class="input" id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="8" required></div><div class="field"><label for="confirm-password">Confirm new password</label><input class="input" id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required></div><button class="btn btn-primary" type="submit">Change Password</button></form>
         </div>
       </section>
-    </div></div>`;
+    </div>`;
+  if (!await commitPageData(requestOptions, markup)) return;
   app.querySelector("#settings-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
@@ -1174,6 +1324,7 @@ async function enterAuthenticatedApp() {
   const entryId = ++appEntryId;
   state.session = state.session || {};
   renderShell();
+  prefetchInitialRoutes();
   navigateFromHash();
   try {
     const session = await api("/admin/session", { cacheTtlMs: 10 * 60 * 1000, staleWhileRevalidate: true });
