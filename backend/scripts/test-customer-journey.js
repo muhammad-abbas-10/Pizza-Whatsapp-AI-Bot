@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { performance } = require("perf_hooks");
 const { Pool } = require("pg");
-const workflow = require("../../admin request.json");
+const workflow = require("../../workflow.json");
 const migration = fs.readFileSync(
   path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql"),
   "utf8"
@@ -35,8 +35,9 @@ async function main() {
   assert.equal(workflow.nodes.find((node) => node.name === "Wait For Active Customer Turn").parameters.amount, 2);
   assert.equal(workflow.connections["Customer Turn Ready"].main[0][0].node, "Upsert Customer and Session");
   assert.equal(workflow.connections["Upsert Customer and Session"].main[0][0].node, "Recover Reply Before Routing");
-  assert.equal(workflow.connections["Recover Reply Before Routing"].main[1][0].node, "Route Simple Messages");
-  assert.equal(workflow.connections["Use Simple Reply"].main[0][0].node, "Send Simple Reply");
+  assert.equal(workflow.connections["Recover Reply Before Routing"].main[1][0].node, "Awaiting Feedback Response?");
+  assert.equal(workflow.connections["Awaiting Feedback Response?"].main[1][0].node, "Route Simple Messages");
+  assert.equal(workflow.connections["Use Simple Reply"].main[0][0].node, "Evolution API Send Simple Reply");
   assert.equal(workflow.connections["Use Simple Reply"].main[1][0].node, "Load Active Menu");
   assert.equal(workflow.connections["Load Active Menu"].main[0][0].node, "Get Restaurant Settings");
   assert.equal(workflow.connections["Get Restaurant Settings"].main[0][0].node, "Pizza Ordering Agent");

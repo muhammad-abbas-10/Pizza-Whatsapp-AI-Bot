@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "../..");
-const workflow = JSON.parse(fs.readFileSync(path.join(root, "pizza-bar-whatsapp-ai-bot.json"), "utf8"));
+const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
 const backend = fs.readFileSync(path.join(root, "backend/src/admin-routes.js"), "utf8");
 const frontend = fs.readFileSync(path.join(root, "frontend/src/main.js"), "utf8");
 const migration = fs.readFileSync(path.join(root, "database/migration/019_admin_address_clarification.sql"), "utf8");
@@ -27,8 +27,8 @@ assert(adminPrompt.parameters.options.systemMessage.includes("ADMIN-INITIATED AD
 assert.equal((adminPrompt.parameters.options.systemMessage.match(/admin_address_clarification →/g) || []).length, 1);
 assert.equal((adminPrompt.parameters.options.systemMessage.match(/ADMIN-INITIATED ADDRESS CLARIFICATION/g) || []).length, 1);
 const customerPrompt = find("Pizza Ordering Agent").parameters.options.systemMessage;
-assert(customerPrompt.includes("after the restaurant requested clarification"));
-assert(customerPrompt.includes("Do not create a new order"));
+assert(customerPrompt.includes("staff request for a clearer address"));
+assert(customerPrompt.includes("Never create a new order"));
 
 const safeCode = find("Build Safe Admin Customer Message").parameters.jsCode;
 const build = new Function("$", "$input", safeCode);

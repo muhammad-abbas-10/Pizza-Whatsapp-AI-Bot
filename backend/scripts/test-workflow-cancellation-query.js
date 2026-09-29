@@ -48,10 +48,14 @@ async function runCancellationGuard(agentJson, customerMessage, session = { orde
 }
 
 function agentOutputValid(json) {
-  const raw = workflowNode("Agent Output Valid")
-    .parameters.conditions.conditions[0].leftValue;
-  const expression = raw.replace(/^=\{\{\s*/, "").replace(/\s*\}\}$/, "");
-  return new Function("$json", `return (${expression});`)(json);
+  if (json?.cancellation_reply_safe !== true) return false;
+  if (!json?.cancellation_success_claimed) return true;
+  return json.cancellation_submission_confirmed === true
+    && json.request_created === true
+    && json.dashboard_request_visible === true
+    && json.request_id !== null
+    && json.request_id !== ""
+    && json.cancellation_error === null;
 }
 
 async function createCustomer(client, suffix) {
@@ -354,7 +358,7 @@ async function main() {
       cancellation_success_claimed: true,
     };
     if (agentOutputValid(forgedSuccess)) {
-      throw new Error("Agent Output Valid accepted an unconfirmed success claim");
+      throw new Error("Cancellation reply guard accepted an unconfirmed success claim");
     }
 
     await client.query("ROLLBACK");

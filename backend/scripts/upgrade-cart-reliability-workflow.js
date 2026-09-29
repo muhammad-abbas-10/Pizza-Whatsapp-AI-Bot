@@ -5,7 +5,7 @@ const path = require("path");
 const workflowPath = path.resolve(
   __dirname,
   "../..",
-  process.argv[2] || "workflow-ai-bot.json"
+  process.argv[2] || "workflow.json"
 );
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 
@@ -437,8 +437,8 @@ if (!placementStep && handoffStep) {
 }
 
 const outputText = String(output || '');
-const containsOrderSuccessClaim = /(?:order\s*#\s*\d+|order\s+(?:has\s+been\s+)?(?:placed|confirmed)|placed\s+successfully|successfully\s+placed)/i.test(outputText)
-  && !/\b(?:not|hasn't|has not|wasn't|was not)\b.{0,30}\b(?:placed|confirmed)\b/i.test(outputText);
+const containsOrderSuccessClaim = /(?:order\\s*#\\s*\\d+|order\\s+(?:has\\s+been\\s+)?(?:placed|confirmed)|placed\\s+successfully|successfully\\s+placed)/i.test(outputText)
+  && !/\\b(?:not|hasn't|has not|wasn't|was not)\\b.{0,30}\\b(?:placed|confirmed)\\b/i.test(outputText);
 if (!placementStep && !handoffStep && session.order_status === 'draft' && containsOrderSuccessClaim) {
   if (session.order_type === 'delivery' && !session.delivery_address) {
     output = choose(
@@ -467,8 +467,8 @@ if (!guard.parameters.jsCode.includes("const findToolResult")) {
 const noToolOrderGuard = `
 
 const outputText = String(output || '');
-const containsOrderSuccessClaim = /(?:order\s*#\s*\d+|order\s+(?:has\s+been\s+)?(?:placed|confirmed)|placed\s+successfully|successfully\s+placed)/i.test(outputText)
-  && !/\b(?:not|hasn't|has not|wasn't|was not)\b.{0,30}\b(?:placed|confirmed)\b/i.test(outputText);
+const containsOrderSuccessClaim = /(?:order\\s*#\\s*\\d+|order\\s+(?:has\\s+been\\s+)?(?:placed|confirmed)|placed\\s+successfully|successfully\\s+placed)/i.test(outputText)
+  && !/\\b(?:not|hasn't|has not|wasn't|was not)\\b.{0,30}\\b(?:placed|confirmed)\\b/i.test(outputText);
 if (!placementStep && !handoffStep && session.order_status === 'draft' && containsOrderSuccessClaim) {
   if (session.order_type === 'delivery' && !session.delivery_address) {
     output = choose(

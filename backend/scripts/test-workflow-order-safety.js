@@ -4,7 +4,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
-const workflow = require("../../admin request.json");
+const workflow = require("../../workflow.json");
 const migration = fs.readFileSync(
   path.resolve(__dirname, "../../database/migration/016_dashboard_customer_status_events.sql"),
   "utf8"
@@ -73,7 +73,7 @@ async function main() {
     const firstEscalation = (await client.query(query("Escalate To Human"), [customerId, "Wrong delivered item"])).rows[0];
     const secondEscalation = (await client.query(query("Escalate To Human"), [customerId, "Customer requested a person"])).rows[0];
     assert(firstEscalation.admin_notification_id && secondEscalation.admin_notification_id);
-    assert.notEqual(firstEscalation.admin_notification_id, secondEscalation.admin_notification_id);
+    assert.equal(firstEscalation.admin_notification_id, secondEscalation.admin_notification_id, "An open staff-handoff request must reuse its notification");
 
     await client.query("ROLLBACK");
     console.log("Order revalidation, active status, placed-order edit guard, and escalation persistence: PASS");
