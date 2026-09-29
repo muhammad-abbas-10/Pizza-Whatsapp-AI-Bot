@@ -1859,7 +1859,17 @@ body {
   border: 1px solid #242933;
   border-radius: 12px;
 }
-.menu-page .menu-image-frame { aspect-ratio: 4 / 5; overflow: hidden; background: #090b0e; }
+.menu-page .menu-image-frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  padding: 0;
+  overflow: hidden;
+  background: #090b0e;
+  border: 0;
+  cursor: zoom-in;
+}
+.menu-page .menu-image-frame:focus-visible { outline: 2px solid #ff8a60; outline-offset: -2px; }
 .menu-page .menu-image {
   width: 100%;
   height: 100%;
@@ -1894,6 +1904,11 @@ body {
 }
 .menu-page .menu-image-delete .ui-icon { width: 12px; height: 12px; }
 .menu-page .menu-images-empty { padding: 50px 15px; color: #8b949e; text-align: center; font-size: 11px; }
+
+.menu-image-preview-modal { width: min(960px, calc(100vw - 32px)); background: #090b0e; }
+.menu-image-preview-modal .modal-head { background: #13161c; }
+.menu-image-preview-modal .modal-body { display: grid; place-items: center; max-height: calc(100vh - 150px); padding: 0; overflow: auto; background: #090b0e; }
+.menu-image-preview-modal img { width: auto; max-width: 100%; max-height: calc(100vh - 150px); object-fit: contain; }
 
 .menu-upload-input { height: auto; padding: 8px; }
 .destructive-confirmation {

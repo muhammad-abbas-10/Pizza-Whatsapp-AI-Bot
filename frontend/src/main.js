@@ -1029,13 +1029,20 @@ async function loadMenu(requestOptions = {}) {
   if (!await commitPageData(requestOptions, markup)) return;
   app.querySelectorAll("[data-menu-category]").forEach((button) => button.addEventListener("click", () => { state.filters.menu.category = button.dataset.menuCategory; loadCurrentPage(); }));
   app.querySelector("[data-action='add-menu-image']").addEventListener("click", openAddMenuImage);
+  app.querySelectorAll("[data-view-menu-image]").forEach((button) => button.addEventListener("click", () => openMenuImage(button.dataset.menuImageUrl, button.dataset.menuImageName)));
   app.querySelectorAll("[data-delete-menu-image]").forEach((button) => button.addEventListener("click", () => openDeleteMenuImage(button.dataset.deleteMenuImage, button.dataset.imageName)));
   app.querySelectorAll("[data-toggle-menu]").forEach((button) => button.addEventListener("click", () => toggleMenuRecord(button)));
   app.querySelectorAll("[data-edit-price]").forEach((button) => button.addEventListener("click", () => editMenuPrice(button)));
 }
 
 function renderMenuImageCard(image) {
-  return `<figure class="menu-image-card"><div class="menu-image-frame"><img class="menu-image" src="${escapeHtml(`${API_BASE}${image.url}`)}" alt="${escapeHtml(image.name)}" loading="lazy"></div><figcaption><span title="${escapeHtml(image.name)}">${escapeHtml(image.name)}</span><button class="btn btn-sm btn-danger menu-image-delete" type="button" data-delete-menu-image="${escapeHtml(image.id)}" data-image-name="${escapeHtml(image.name)}" aria-label="Delete ${escapeHtml(image.name)}">${icon("trash")}<span>Delete</span></button></figcaption></figure>`;
+  const imageUrl = `${API_BASE}${image.url}`;
+  return `<figure class="menu-image-card"><button class="menu-image-frame" type="button" data-view-menu-image data-menu-image-url="${escapeHtml(imageUrl)}" data-menu-image-name="${escapeHtml(image.name)}" aria-label="View ${escapeHtml(image.name)}"><img class="menu-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(image.name)}" loading="lazy"></button><figcaption><span title="${escapeHtml(image.name)}">${escapeHtml(image.name)}</span><button class="btn btn-sm btn-danger menu-image-delete" type="button" data-delete-menu-image="${escapeHtml(image.id)}" data-image-name="${escapeHtml(image.name)}" aria-label="Delete ${escapeHtml(image.name)}">${icon("trash")}<span>Delete</span></button></figcaption></figure>`;
+}
+
+function openMenuImage(imageUrl, imageName) {
+  if (!imageUrl) return;
+  showModal(`<div class="menu-image-preview"><div class="modal-head"><div><div class="request-number">MENU IMAGE</div><h2>${escapeHtml(imageName || "Menu image")}</h2></div><button class="btn icon-btn" type="button" data-close-modal aria-label="Close">×</button></div><div class="modal-body"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageName || "Menu image")}"></div></div>`, { label: imageName || "Menu image", className: "menu-image-preview-modal" });
 }
 
 function openAddMenuImage() {
