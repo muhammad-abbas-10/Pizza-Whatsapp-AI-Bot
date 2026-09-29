@@ -1133,24 +1133,48 @@ function renderMenuImageCard(image) {
 
 function openMenuImage(imageUrl, imageName) {
   if (!imageUrl) return;
-  showModal(`<div class="menu-image-preview"><div class="modal-head"><div><div class="request-number">MENU IMAGE</div><h2>${escapeHtml(imageName || "Menu image")}</h2></div><div class="menu-image-preview-actions"><button class="btn icon-btn menu-image-zoom-button" type="button" data-menu-image-zoom-out aria-label="Zoom out">−</button><output class="menu-image-zoom-level" data-menu-image-zoom-level aria-live="polite">100%</output><button class="btn icon-btn menu-image-zoom-button" type="button" data-menu-image-zoom-in aria-label="Zoom in">+</button><button class="btn btn-sm menu-image-zoom-reset" type="button" data-menu-image-zoom-reset>Reset</button><button class="btn icon-btn" type="button" data-close-modal aria-label="Close">×</button></div></div><div class="modal-body" data-menu-image-preview-body><img data-menu-image-preview src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageName || "Menu image")}"></div></div>`, { label: imageName || "Menu image", className: "menu-image-preview-modal" });
+  showModal(`<div class="menu-image-preview"><div class="modal-head"><div><div class="request-number">MENU IMAGE</div><h2>${escapeHtml(imageName || "Menu image")}</h2></div><button class="btn icon-btn" type="button" data-close-modal aria-label="Close">×</button></div><div class="modal-body" data-menu-image-preview-body aria-label="Image preview. Use the mouse wheel to zoom and drag to pan."><img data-menu-image-preview src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageName || "Menu image")}" draggable="false"></div></div>`, { label: imageName || "Menu image", className: "menu-image-preview-modal" });
+  const previewBody = modalRoot.querySelector("[data-menu-image-preview-body]");
   const image = modalRoot.querySelector("[data-menu-image-preview]");
-  const level = modalRoot.querySelector("[data-menu-image-zoom-level]");
-  const zoomIn = modalRoot.querySelector("[data-menu-image-zoom-in]");
-  const zoomOut = modalRoot.querySelector("[data-menu-image-zoom-out]");
-  const reset = modalRoot.querySelector("[data-menu-image-zoom-reset]");
   let zoom = 1;
-  const updateZoom = () => {
+  let drag = null;
+
+  previewBody.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const nextZoom = Math.max(1, Math.min(3, zoom + (event.deltaY < 0 ? 0.25 : -0.25)));
+    if (nextZoom === zoom) return;
+    const bounds = previewBody.getBoundingClientRect();
+    const offsetX = event.clientX - bounds.left;
+    const offsetY = event.clientY - bounds.top;
+    const imageX = previewBody.scrollLeft + offsetX;
+    const imageY = previewBody.scrollTop + offsetY;
+    const scale = nextZoom / zoom;
+    zoom = nextZoom;
     image.style.width = `${Math.round(zoom * 100)}%`;
-    level.textContent = `${Math.round(zoom * 100)}%`;
-    zoomOut.disabled = zoom <= 1;
-    zoomIn.disabled = zoom >= 3;
-    reset.disabled = zoom === 1;
+    previewBody.scrollLeft = imageX * scale - offsetX;
+    previewBody.scrollTop = imageY * scale - offsetY;
+  }, { passive: false });
+
+  previewBody.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, scrollLeft: previewBody.scrollLeft, scrollTop: previewBody.scrollTop };
+    previewBody.setPointerCapture(event.pointerId);
+    previewBody.classList.add("is-panning");
+    event.preventDefault();
+  });
+  previewBody.addEventListener("pointermove", (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    previewBody.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+    previewBody.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+  });
+  const stopPanning = (event) => {
+    if (!drag || (event && drag.pointerId !== event.pointerId)) return;
+    drag = null;
+    previewBody.classList.remove("is-panning");
   };
-  zoomIn.addEventListener("click", () => { zoom = Math.min(3, zoom + 0.25); updateZoom(); });
-  zoomOut.addEventListener("click", () => { zoom = Math.max(1, zoom - 0.25); updateZoom(); });
-  reset.addEventListener("click", () => { zoom = 1; updateZoom(); });
-  updateZoom();
+  previewBody.addEventListener("pointerup", stopPanning);
+  previewBody.addEventListener("pointercancel", stopPanning);
+  previewBody.addEventListener("lostpointercapture", stopPanning);
 }
 
 function openAddMenuImage() {
