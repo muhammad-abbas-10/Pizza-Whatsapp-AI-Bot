@@ -1133,7 +1133,24 @@ function renderMenuImageCard(image) {
 
 function openMenuImage(imageUrl, imageName) {
   if (!imageUrl) return;
-  showModal(`<div class="menu-image-preview"><div class="modal-head"><div><div class="request-number">MENU IMAGE</div><h2>${escapeHtml(imageName || "Menu image")}</h2></div><button class="btn icon-btn" type="button" data-close-modal aria-label="Close">×</button></div><div class="modal-body"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageName || "Menu image")}"></div></div>`, { label: imageName || "Menu image", className: "menu-image-preview-modal" });
+  showModal(`<div class="menu-image-preview"><div class="modal-head"><div><div class="request-number">MENU IMAGE</div><h2>${escapeHtml(imageName || "Menu image")}</h2></div><div class="menu-image-preview-actions"><button class="btn icon-btn menu-image-zoom-button" type="button" data-menu-image-zoom-out aria-label="Zoom out">−</button><output class="menu-image-zoom-level" data-menu-image-zoom-level aria-live="polite">100%</output><button class="btn icon-btn menu-image-zoom-button" type="button" data-menu-image-zoom-in aria-label="Zoom in">+</button><button class="btn btn-sm menu-image-zoom-reset" type="button" data-menu-image-zoom-reset>Reset</button><button class="btn icon-btn" type="button" data-close-modal aria-label="Close">×</button></div></div><div class="modal-body" data-menu-image-preview-body><img data-menu-image-preview src="${escapeHtml(imageUrl)}" alt="${escapeHtml(imageName || "Menu image")}"></div></div>`, { label: imageName || "Menu image", className: "menu-image-preview-modal" });
+  const image = modalRoot.querySelector("[data-menu-image-preview]");
+  const level = modalRoot.querySelector("[data-menu-image-zoom-level]");
+  const zoomIn = modalRoot.querySelector("[data-menu-image-zoom-in]");
+  const zoomOut = modalRoot.querySelector("[data-menu-image-zoom-out]");
+  const reset = modalRoot.querySelector("[data-menu-image-zoom-reset]");
+  let zoom = 1;
+  const updateZoom = () => {
+    image.style.width = `${Math.round(zoom * 100)}%`;
+    level.textContent = `${Math.round(zoom * 100)}%`;
+    zoomOut.disabled = zoom <= 1;
+    zoomIn.disabled = zoom >= 3;
+    reset.disabled = zoom === 1;
+  };
+  zoomIn.addEventListener("click", () => { zoom = Math.min(3, zoom + 0.25); updateZoom(); });
+  zoomOut.addEventListener("click", () => { zoom = Math.max(1, zoom - 0.25); updateZoom(); });
+  reset.addEventListener("click", () => { zoom = 1; updateZoom(); });
+  updateZoom();
 }
 
 function openAddMenuImage() {
