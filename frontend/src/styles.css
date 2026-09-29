@@ -1822,14 +1822,16 @@ body {
 .menu-page .menu-gallery {
   position: sticky;
   top: 96px;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 128px);
   overflow: hidden;
   background: #13161c;
   border-color: #212631;
   border-radius: 16px;
   box-shadow: 0 12px 30px -18px rgba(0,0,0,.75);
 }
-.menu-page .menu-gallery .panel-head { min-height: 70px; padding: 16px 18px; border-bottom-color: #212631; }
+.menu-page .menu-gallery .panel-head { flex: 0 0 auto; min-height: 70px; padding: 16px 18px; border-bottom-color: #212631; }
 .menu-page .menu-gallery .panel-title { color: #fff; font-size: 14px; }
 .menu-page .menu-gallery .panel-subtitle { color: #8b949e; font-size: 9px; }
 .menu-page .menu-image-count {
@@ -1850,7 +1852,21 @@ body {
   font-size: 9px;
 }
 .menu-page .menu-image-head-actions .ui-icon { width: 13px; height: 13px; }
-.menu-page .menu-gallery .panel-body { display: grid; gap: 12px; padding: 16px; }
+.menu-page .menu-gallery .panel-body {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 12px;
+  padding: 16px;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.menu-page .menu-gallery .panel-body::-webkit-scrollbar { width: 8px; }
+.menu-page .menu-gallery .panel-body::-webkit-scrollbar-track { background: #0e1116; }
+.menu-page .menu-gallery .panel-body::-webkit-scrollbar-thumb { background: #374151; border: 2px solid #13161c; border-radius: 999px; }
+.menu-page .menu-gallery .panel-body::-webkit-scrollbar-thumb:hover { background: #4b5563; }
 .menu-page .menu-image-card {
   min-width: 0;
   margin: 0;
