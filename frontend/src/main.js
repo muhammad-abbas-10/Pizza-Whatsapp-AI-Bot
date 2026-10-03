@@ -706,6 +706,7 @@ function bindDashboardDetailActions(type) {
   modalRoot.querySelectorAll("[data-view-customer]").forEach((button) => button.addEventListener("click", () => openCustomer(button.dataset.viewCustomer)));
   modalRoot.querySelectorAll("[data-resolve-request]").forEach((button) => button.addEventListener("click", () => confirmRequest(button.dataset.requestId, button.dataset.resolveRequest)));
   modalRoot.querySelectorAll("[data-retry-request]").forEach((button) => button.addEventListener("click", () => retryNotification(button)));
+  modalRoot.querySelectorAll("[data-open-handoff]").forEach((button) => button.addEventListener("click", () => openHandoffConversation(button.dataset.openHandoff)));
   modalRoot.querySelector("[data-retry-dashboard-detail]")?.addEventListener("click", () => openDashboardDetail(type));
 }
 
@@ -1006,6 +1007,7 @@ async function loadRequests(requestOptions = {}) {
   bindCommonActions();
   app.querySelectorAll("[data-resolve-request]").forEach((button) => button.addEventListener("click", () => confirmRequest(button.dataset.requestId, button.dataset.resolveRequest, button.dataset.resolveLabel)));
   app.querySelectorAll("[data-retry-request]").forEach((button) => button.addEventListener("click", () => retryNotification(button)));
+  app.querySelectorAll("[data-open-handoff]").forEach((button) => button.addEventListener("click", () => openHandoffConversation(button.dataset.openHandoff)));
 }
 
 function renderRequestCard(request, currency) {
@@ -1013,13 +1015,14 @@ function renderRequestCard(request, currency) {
   const deliveryStatus = request.notification_delivery_status || (request.notification_sent ? "sent" : request.notification_error ? "failed" : null);
   const notificationRetryable = request.status !== "pending" && deliveryStatus === "failed" && Boolean(request.notification_event_id);
   const humanHandoff = request.request_type === "human_handoff";
+  const handoffStatus = request.handoff_status === "active" ? "Human active" : request.handoff_status === "waiting" ? "Waiting for staff" : "Resolved";
   const typeLabel = ({ cancel_order: "Cancellation request", modification: "Order modification", delivery: "Delivery issue", human_handoff: "Customer complaint / staff handoff" })[request.request_type] || "Customer request";
   return `<article class="request-card"><div class="request-card-top"><div class="request-number">REQUEST #${escapeHtml(request.id)}</div>${badge(request.status)}</div><div class="request-type">${escapeHtml(typeLabel)}</div>
     <div class="request-question">${escapeHtml(request.question)}</div>
     <div class="request-facts"><div><div class="fact-label">Customer</div><div class="fact-value">${escapeHtml(request.customer_name || "Unnamed")}<br><span class="subtle">${escapeHtml(request.customer_phone)}</span></div></div><div><div class="fact-label">Order</div><div class="fact-value">${request.order_id ? `#${escapeHtml(request.order_id)}<br>${escapeHtml(itemSummary(request.order_items, 1))}` : "Not linked"}</div></div><div><div class="fact-label">Total</div><div class="fact-value">${request.order_total ? escapeHtml(money(request.order_total, currency)) : "—"}</div></div><div><div class="fact-label">Delivery</div><div class="fact-value">${escapeHtml(request.delivery_address || (request.order_type ? statusLabel(request.order_type) : "—"))}</div></div><div><div class="fact-label">Requested</div><div class="fact-value">${escapeHtml(relativeTime(request.created_at))}</div></div><div><div class="fact-label">Notification</div><div class="fact-value">${deliveryStatus === "sent" ? '<span class="success-text">Delivered</span>' : deliveryStatus === "failed" ? '<span class="danger-text">Failed</span>' : deliveryStatus === "processing" ? "Processing" : deliveryStatus === "pending" ? "Queued" : deliveryStatus === "superseded" ? "Superseded" : "Not sent"}</div></div></div>
     ${request.request_type === "cancel_order" && !cancellable && request.status === "pending" ? `<div class="notification-failure">Order #${escapeHtml(request.order_id || "?")} can no longer be cancelled at status ${escapeHtml(statusLabel(request.order_status))}. The backend will reject approval.</div>` : ""}
     ${deliveryStatus === "failed" ? `<div class="notification-failure">Customer notification failed: ${escapeHtml(request.event_notification_error || request.notification_error || "Delivery failed")}</div>` : ""}
-    <div class="request-actions">${request.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}${request.status === "pending" ? humanHandoff ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-resolve-label="Mark resolved" data-request-id="${escapeHtml(request.id)}">Mark resolved</button><button class="btn btn-danger btn-sm" data-resolve-request="deny" data-resolve-label="Dismiss" data-request-id="${escapeHtml(request.id)}">Dismiss</button>` : `${cancellable ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>` : ""}<button class="btn btn-danger btn-sm" data-resolve-request="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>` : notificationRetryable ? `<button class="btn btn-sm" data-retry-request="${escapeHtml(request.id)}">Retry notification</button>` : ""}<span class="subtle" style="margin-left:auto">${escapeHtml(dateTime(request.created_at))}</span></div></article>`;
+    <div class="request-actions">${request.order_id ? `<button class="btn btn-sm" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}${humanHandoff ? `<button class="btn btn-primary btn-sm" data-open-handoff="${escapeHtml(request.id)}">Open conversation${request.status === "pending" ? ` · ${escapeHtml(handoffStatus)}` : ""}</button>` : request.status === "pending" ? `${cancellable ? `<button class="btn btn-primary btn-sm" data-resolve-request="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>` : ""}<button class="btn btn-danger btn-sm" data-resolve-request="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>` : notificationRetryable ? `<button class="btn btn-sm" data-retry-request="${escapeHtml(request.id)}">Retry notification</button>` : ""}<span class="subtle" style="margin-left:auto">${escapeHtml(dateTime(request.created_at))}</span></div></article>`;
 }
 
 function confirmRequest(requestId, decision, actionLabel) {
@@ -1065,6 +1068,102 @@ async function retryNotification(button) {
     toast(result.notification?.delivery_status === "sent" ? "Customer notification delivered." : "Customer notification is processing.");
     loadCurrentPage();
   } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = original; }
+}
+
+function handoffSpeaker(message) {
+  if (message.direction === "staff") return message.staff_username ? `Staff · ${message.staff_username}` : "Staff";
+  if (message.direction === "bot") return "Bot";
+  return "Customer";
+}
+
+function handoffDeliveryLabel(message) {
+  if (message.direction !== "staff") return "Received";
+  return ({ pending: "Queued", processing: "Sending", sent: "Sent", failed: "Failed to send" })[message.delivery_status] || "Queued";
+}
+
+function renderHandoffMessages(messages, recentContext, requestId) {
+  const live = Array.isArray(messages) ? messages : [];
+  if (live.length) {
+    return `<div class="handoff-thread">${live.map((message) => `<article class="handoff-message handoff-message-${escapeHtml(message.direction)}"><div class="handoff-message-meta"><span>${escapeHtml(handoffSpeaker(message))}</span><span>${escapeHtml(dateTime(message.created_at))}</span></div><div class="handoff-message-text">${escapeHtml(message.message_text)}</div><div class="handoff-message-status ${message.delivery_status === "failed" ? "danger-text" : ""}">${escapeHtml(handoffDeliveryLabel(message))}${message.last_error ? ` · ${escapeHtml(message.last_error)}` : ""}${message.direction === "staff" && message.delivery_status === "failed" ? ` <button class="btn btn-sm" data-retry-handoff-message="${escapeHtml(message.id)}" data-handoff-request="${escapeHtml(requestId)}">Retry</button>` : ""}</div></article>`).join("")}</div>`;
+  }
+  const context = Array.isArray(recentContext) ? recentContext : [];
+  if (!context.length) return `<div class="muted">No messages have been recorded for this handoff yet.</div>`;
+  return `<div class="handoff-context"><div class="subtle" style="margin-bottom:8px">Recent bot context before staff takeover</div>${context.map((entry) => `<article class="handoff-message handoff-message-${escapeHtml(entry.role === "customer" ? "customer" : "bot")}"><div class="handoff-message-meta"><span>${escapeHtml(entry.role === "customer" ? "Customer" : "Bot")}</span></div><div class="handoff-message-text">${escapeHtml(entry.text || "")}</div></article>`).join("")}</div>`;
+}
+
+async function openHandoffConversation(requestId) {
+  modalLoading("Loading handoff conversation");
+  try {
+    const data = await api(`/admin/requests/${requestId}`, { forceRefresh: true });
+    const request = data.request;
+    if (request.request_type !== "human_handoff") throw new Error("This request is not a human handoff");
+    const isOpen = request.status === "pending";
+    const stateLabel = request.handoff_status === "active" ? "Human active" : isOpen ? "Waiting for staff" : "Resolved";
+    const conversation = data.conversation || {};
+    showModal(`<div class="modal-head"><div><div class="request-number">HUMAN HANDOFF #${escapeHtml(request.id)} · ${escapeHtml(stateLabel)}</div><h2>${escapeHtml(request.customer_name || "Unnamed customer")}</h2><div class="subtle">${escapeHtml(request.customer_phone)}</div></div><button class="btn icon-btn" data-close-modal aria-label="Close">×</button></div><div class="modal-body stack handoff-modal"><div class="detail-grid"><div class="detail-block"><div class="fact-label">Reason</div><div class="fact-value">${escapeHtml(request.question)}</div></div><div class="detail-block"><div class="fact-label">Related order</div><div class="fact-value">${request.order_id ? `#${escapeHtml(request.order_id)} · ${escapeHtml(statusLabel(request.order_status))}` : "Not linked"}</div></div><div class="detail-block"><div class="fact-label">Requested</div><div class="fact-value">${escapeHtml(dateTime(request.created_at))}</div></div><div class="detail-block"><div class="fact-label">Taken by</div><div class="fact-value">${escapeHtml(request.human_started_by_username || "Not yet assigned")}</div></div></div><div><div class="panel-title" style="margin-bottom:10px">Conversation</div>${renderHandoffMessages(conversation.messages, conversation.recent_context, request.id)}</div>${isOpen ? `<form id="handoff-reply-form" class="handoff-reply-form"><label class="fact-label" for="handoff-reply">Reply to customer</label><textarea class="textarea" id="handoff-reply" maxlength="500" required placeholder="Type a WhatsApp reply…"></textarea><div class="handoff-reply-actions"><span class="subtle">This sends through the restaurant WhatsApp account.</span><button class="btn btn-primary" type="submit">Send</button></div></form>` : `<div class="muted">This handoff has ended. Future customer messages are handled by the bot.</div>`}</div><div class="modal-foot">${request.order_id ? `<button class="btn" data-view-order="${escapeHtml(request.order_id)}">View order</button>` : ""}<span style="flex:1"></span>${isOpen ? `<button class="btn btn-danger" data-end-handoff="${escapeHtml(request.id)}">End human handoff</button>` : ""}<button class="btn" data-close-modal>Close</button></div>`, { label: "Human handoff conversation", className: "handoff-conversation-modal" });
+
+    modalRoot.querySelectorAll("[data-view-order]").forEach((button) => button.addEventListener("click", () => openOrder(button.dataset.viewOrder)));
+    modalRoot.querySelectorAll("[data-retry-handoff-message]").forEach((button) => button.addEventListener("click", async (event) => {
+      const retry = event.currentTarget;
+      const original = retry.textContent;
+      retry.disabled = true;
+      retry.textContent = "Retrying…";
+      try {
+        await api(`/admin/requests/${retry.dataset.handoffRequest}/messages/${retry.dataset.retryHandoffMessage}/retry`, { method: "POST" });
+        toast("Staff reply sent.", "success");
+        openHandoffConversation(requestId);
+      } catch (error) {
+        toast(error.message, "error");
+        retry.disabled = false;
+        retry.textContent = original;
+      }
+    }));
+    modalRoot.querySelector("[data-end-handoff]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = "Ending…";
+      try {
+        await api(`/admin/requests/${button.dataset.endHandoff}/end-handoff`, { method: "POST" });
+        toast("Human handoff ended. Future customer messages will return to the bot.", "success");
+        closeModal();
+        loadCurrentPage();
+        refreshActivity().catch(() => {});
+      } catch (error) {
+        toast(error.message, "error");
+        button.disabled = false;
+        button.textContent = "End human handoff";
+      }
+    });
+    const form = modalRoot.querySelector("#handoff-reply-form");
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("[type='submit']");
+      const textarea = form.querySelector("#handoff-reply");
+      const message = textarea.value.trim();
+      if (!message) return;
+      const clientMessageId = form.dataset.clientMessageId || crypto.randomUUID();
+      form.dataset.clientMessageId = clientMessageId;
+      button.disabled = true;
+      button.textContent = "Sending…";
+      try {
+        const result = await api(`/admin/requests/${request.id}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ message, client_message_id: clientMessageId }),
+          timeoutMs: 30000,
+        });
+        delete form.dataset.clientMessageId;
+        toast(result.delivery_status === "sent" ? "WhatsApp message sent." : "WhatsApp message is sending.", "success");
+        openHandoffConversation(requestId);
+      } catch (error) {
+        toast(`${error.message} The message was kept with its actual delivery state; refresh the conversation before sending a different reply.`, "error");
+        button.disabled = false;
+        button.textContent = "Send";
+      }
+    });
+  } catch (error) {
+    toast(error.message, "error");
+    closeModal();
+  }
 }
 
 async function loadCustomers(requestOptions = {}) {

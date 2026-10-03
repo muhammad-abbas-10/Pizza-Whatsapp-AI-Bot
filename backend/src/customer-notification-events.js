@@ -14,6 +14,7 @@ function publicEvent(row) {
     order_id: row.order_id,
     order_status: row.order_status,
     decision: row.decision,
+    conversation_message_id: row.conversation_message_id || null,
     delivery_status: row.delivery_status,
     attempts: Number(row.attempts || 0),
     provider_message_id: row.provider_message_id || null,
@@ -26,7 +27,7 @@ function publicEvent(row) {
 
 async function loadCustomerNotificationEvent(pool, eventId) {
   const { rows } = await pool.query(
-    `SELECT id, request_id, event_type, order_id, order_status, decision,
+    `SELECT id, request_id, event_type, order_id, order_status, decision, conversation_message_id,
             delivery_status, attempts, provider_message_id, last_error,
             created_at, updated_at, sent_at
      FROM customer_notification_events

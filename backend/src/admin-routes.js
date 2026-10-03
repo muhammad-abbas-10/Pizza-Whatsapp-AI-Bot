@@ -42,6 +42,7 @@ const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9
 const ADDRESS_CLARIFICATION_EVENT = "admin_address_clarification";
 const ADDRESS_CLARIFICATION_STATUSES = ["received", "preparing"];
 const MAX_ADMIN_MESSAGE_LENGTH = 500;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function setPrivateCache(res, maxAgeSeconds, staleWhileRevalidateSeconds = 0) {
   const stale = staleWhileRevalidateSeconds > 0
@@ -54,6 +55,25 @@ function setPrivateCache(res, maxAgeSeconds, staleWhileRevalidateSeconds = 0) {
 function latestTimestamp(...values) {
   const timestamps = values.filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
   return timestamps.length ? new Date(Math.max(...timestamps)).toISOString() : null;
+}
+
+function handoffStatus(request) {
+  if (request?.request_type !== "human_handoff") return null;
+  if (request.status !== "pending") return "resolved";
+  return request.human_started_at ? "active" : "waiting";
+}
+
+function staffMessageValidationError(message, clientMessageId) {
+  if (typeof message !== "string") return "Message is required";
+  const trimmed = message.trim();
+  if (!trimmed) return "Message is required";
+  if (trimmed.length > MAX_ADMIN_MESSAGE_LENGTH) {
+    return `Message must be ${MAX_ADMIN_MESSAGE_LENGTH} characters or fewer`;
+  }
+  if (!UUID_PATTERN.test(String(clientMessageId || ""))) {
+    return "A valid client message id is required";
+  }
+  return null;
 }
 
 function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
@@ -519,6 +539,9 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
           r.id, r.request_type, r.question, r.status, r.admin_note,
           r.created_at, r.resolved_at, r.notification_sent, r.notification_error,
           r.notification_attempts, r.last_notification_attempt_at,
+          r.human_started_at, r.human_ended_at,
+          started_by.username AS human_started_by_username,
+          ended_by.username AS human_ended_by_username,
           c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
           o.id AS order_id, o.status AS order_status, o.total AS order_total,
           o.items AS order_items, o.delivery_address, o.order_type,
@@ -529,6 +552,8 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
           COUNT(*) OVER() AS total_count
         FROM admin_requests r
         JOIN customers c ON c.id = r.customer_id
+        LEFT JOIN admin_users started_by ON started_by.id = r.human_started_by_admin_user_id
+        LEFT JOIN admin_users ended_by ON ended_by.id = r.human_ended_by_admin_user_id
         LEFT JOIN orders o ON o.id = r.order_id
         LEFT JOIN LATERAL (
           SELECT e.id, e.delivery_status, e.last_error
@@ -544,7 +569,10 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
       );
 
       const total = result.rows.length ? Number(result.rows[0].total_count) : 0;
-      const requests = result.rows.map(({ total_count, ...request }) => request);
+      const requests = result.rows.map(({ total_count, ...request }) => ({
+        ...request,
+        handoff_status: handoffStatus(request),
+      }));
       return res.json({ success: true, requests, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
     } catch (error) {
       console.error("List admin requests error:", error);
@@ -564,6 +592,9 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
           r.id, r.request_type, r.question, r.status, r.admin_note,
           r.created_at, r.resolved_at, r.notification_sent, r.notification_error,
           r.notification_attempts, r.last_notification_attempt_at,
+          r.human_started_at, r.human_ended_at,
+          started_by.username AS human_started_by_username,
+          ended_by.username AS human_ended_by_username,
           c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
           o.id AS order_id, o.status AS order_status, o.total AS order_total,
           o.items AS order_items, o.delivery_address, o.delivery_name, o.order_type,
@@ -573,6 +604,8 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
           latest_event.last_error AS event_notification_error
         FROM admin_requests r
         JOIN customers c ON c.id = r.customer_id
+        LEFT JOIN admin_users started_by ON started_by.id = r.human_started_by_admin_user_id
+        LEFT JOIN admin_users ended_by ON ended_by.id = r.human_ended_by_admin_user_id
         LEFT JOIN orders o ON o.id = r.order_id
         LEFT JOIN LATERAL (
           SELECT e.id, e.delivery_status, e.last_error
@@ -587,10 +620,262 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
       if (rows.length === 0) {
         return res.status(404).json({ success: false, message: "Request not found" });
       }
-      return res.json({ success: true, request: rows[0] });
+      const request = rows[0];
+      const [conversation, session] = await Promise.all([
+        pool.query(
+          `SELECT cm.id, cm.direction, cm.message_text, cm.delivery_status,
+                  cm.provider_message_id, cm.last_error, cm.sent_at, cm.created_at,
+                  staff.username AS staff_username
+           FROM conversation_messages cm
+           JOIN admin_requests owner
+             ON owner.id = cm.handoff_request_id
+            AND owner.customer_id = cm.customer_id
+           LEFT JOIN admin_users staff ON staff.id = cm.staff_admin_user_id
+           WHERE owner.id = $1
+           ORDER BY cm.created_at ASC, cm.id ASC
+           LIMIT 500`,
+          [requestId]
+        ),
+        pool.query(
+          `SELECT recent_messages FROM conversation_sessions WHERE customer_id = $1`,
+          [request.customer_id]
+        ),
+      ]);
+      return res.json({
+        success: true,
+        request: { ...request, handoff_status: handoffStatus(request) },
+        conversation: {
+          messages: conversation.rows,
+          recent_context: session.rows[0]?.recent_messages || [],
+        },
+      });
     } catch (error) {
       console.error("Get admin request error:", error);
       return res.status(500).json({ success: false, message: "Failed to load request" });
+    }
+  });
+
+  // Send an authenticated human reply through the same durable outbox used for
+  // customer status notifications. The browser never supplies a phone number or
+  // customer id; the locked handoff request is the sole authority for both.
+  app.post("/admin/requests/:id/messages", async (req, res) => {
+    const requestId = Number(req.params.id);
+    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const clientMessageId = String(req.body?.client_message_id || "");
+    const validationError = staffMessageValidationError(message, clientMessageId);
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid request id" });
+    }
+    if (validationError) return res.status(400).json({ success: false, message: validationError });
+
+    const client = await pool.connect();
+    let committed = false;
+    let released = false;
+    let event;
+    let conversationMessage;
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query(
+        `SELECT r.*, c.whatsapp_phone
+         FROM admin_requests r
+         JOIN customers c ON c.id = r.customer_id
+         WHERE r.id = $1
+         FOR UPDATE OF r, c`,
+        [requestId]
+      );
+      if (!rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ success: false, message: "Request not found" });
+      }
+      const handoff = rows[0];
+      if (handoff.request_type !== "human_handoff") {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: "Staff messages are only available for human handoffs" });
+      }
+
+      const existing = await client.query(
+        `SELECT cm.*, e.id AS event_id
+         FROM conversation_messages cm
+         LEFT JOIN customer_notification_events e ON e.conversation_message_id = cm.id
+         WHERE cm.client_message_id = $1
+         FOR UPDATE OF cm`,
+        [clientMessageId]
+      );
+      if (existing.rows.length) {
+        conversationMessage = existing.rows[0];
+        if (String(conversationMessage.handoff_request_id) !== String(requestId)
+          || String(conversationMessage.customer_id) !== String(handoff.customer_id)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "This message belongs to another conversation" });
+        }
+        if (!conversationMessage.event_id) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "The saved staff message has no delivery event" });
+        }
+        event = (await client.query(
+          `SELECT * FROM customer_notification_events WHERE id = $1 FOR UPDATE`,
+          [conversationMessage.event_id]
+        )).rows[0];
+      } else {
+        if (handoff.status !== "pending") {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "This human handoff has already ended" });
+        }
+        await client.query(
+          `UPDATE admin_requests
+           SET human_started_at = COALESCE(human_started_at, NOW()),
+               human_started_by_admin_user_id = COALESCE(human_started_by_admin_user_id, $1)
+           WHERE id = $2`,
+          [req.admin.user_id, requestId]
+        );
+        conversationMessage = (await client.query(
+          `INSERT INTO conversation_messages (
+             customer_id, handoff_request_id, direction, message_text,
+             client_message_id, staff_admin_user_id, delivery_status
+           ) VALUES ($1, $2, 'staff', $3, $4, $5, 'pending')
+           RETURNING *`,
+          [handoff.customer_id, requestId, message, clientMessageId, req.admin.user_id]
+        )).rows[0];
+        event = (await client.query(
+          `INSERT INTO customer_notification_events (
+             request_id, idempotency_key, event_type, source, customer_id,
+             conversation_message_id, admin_user_id
+           ) VALUES ($1, $2, 'staff_message', 'admin_dashboard', $3, $4, $5)
+           RETURNING *`,
+          [
+            clientMessageId,
+            `handoff_message:${conversationMessage.id}`,
+            handoff.customer_id,
+            conversationMessage.id,
+            req.admin.user_id,
+          ]
+        )).rows[0];
+      }
+
+      await client.query("COMMIT");
+      committed = true;
+      client.release();
+      released = true;
+
+      const delivery = await deliverEvent(event.id);
+      const deliveredMessage = (await pool.query(
+        `SELECT id, direction, message_text, delivery_status, provider_message_id,
+                last_error, sent_at, created_at, staff_admin_user_id
+         FROM conversation_messages WHERE id = $1`,
+        [conversationMessage.id]
+      )).rows[0] || conversationMessage;
+      const failed = delivery.lifecycle === "failed";
+      return res.status(failed ? 502 : 200).json({
+        success: !failed,
+        delivery_status: deliveredMessage.delivery_status,
+        message: deliveredMessage,
+        notification: delivery.event || publicEvent(event),
+      });
+    } catch (error) {
+      if (!committed) await client.query("ROLLBACK").catch(() => {});
+      console.error("Send staff handoff message error:", error);
+      return res.status(500).json({ success: false, message: "Failed to send staff message" });
+    } finally {
+      if (!released) client.release();
+    }
+  });
+
+  app.post("/admin/requests/:id/messages/:messageId/retry", async (req, res) => {
+    const requestId = Number(req.params.id);
+    const messageId = Number(req.params.messageId);
+    if (!Number.isInteger(requestId) || requestId <= 0 || !Number.isInteger(messageId) || messageId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid handoff message" });
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT e.id AS event_id
+         FROM conversation_messages cm
+         JOIN admin_requests r
+           ON r.id = cm.handoff_request_id AND r.customer_id = cm.customer_id
+         JOIN customer_notification_events e ON e.conversation_message_id = cm.id
+         WHERE r.id = $1
+           AND cm.id = $2
+           AND cm.direction = 'staff'
+           AND cm.delivery_status = 'failed'
+           AND e.event_type = 'staff_message'`,
+        [requestId, messageId]
+      );
+      if (!rows.length) return res.status(404).json({ success: false, message: "Failed staff message not found" });
+      const delivery = await deliverEvent(rows[0].event_id);
+      const message = (await pool.query(
+        `SELECT id, direction, message_text, delivery_status, provider_message_id,
+                last_error, sent_at, created_at, staff_admin_user_id
+         FROM conversation_messages WHERE id = $1`,
+        [messageId]
+      )).rows[0];
+      const failed = delivery.lifecycle === "failed";
+      return res.status(failed ? 502 : 200).json({
+        success: !failed,
+        delivery_status: message?.delivery_status || delivery.lifecycle,
+        message,
+        notification: delivery.event,
+      });
+    } catch (error) {
+      console.error("Retry staff handoff message error:", error);
+      return res.status(500).json({ success: false, message: "Failed to retry staff message" });
+    }
+  });
+
+  app.post("/admin/requests/:id/end-handoff", async (req, res) => {
+    const requestId = Number(req.params.id);
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid request id" });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query(
+        `SELECT * FROM admin_requests WHERE id = $1 FOR UPDATE`,
+        [requestId]
+      );
+      if (!rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ success: false, message: "Request not found" });
+      }
+      const request = rows[0];
+      if (request.request_type !== "human_handoff") {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: "This is not a human handoff" });
+      }
+      if (request.status === "pending") {
+        await client.query(
+          `UPDATE admin_requests
+           SET status = 'approved', resolved_at = NOW(),
+               human_ended_at = NOW(), human_ended_by_admin_user_id = $1,
+               resolved_by_phone = NULL, resolved_by_message_id = $2
+           WHERE id = $3`,
+          [req.admin.user_id, `dashboard-handoff-end:${crypto.randomUUID()}`, requestId]
+        );
+        await client.query(
+          `UPDATE conversation_sessions
+           SET awaiting_human = EXISTS (
+                 SELECT 1 FROM admin_requests pending
+                 WHERE pending.customer_id = $1
+                   AND pending.request_type = 'human_handoff'
+                   AND pending.status = 'pending'
+               ),
+               updated_at = NOW()
+           WHERE customer_id = $1`,
+          [request.customer_id]
+        );
+      }
+      await client.query("COMMIT");
+      return res.json({
+        success: true,
+        already_ended: request.status !== "pending",
+        handoff_status: "resolved",
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("End human handoff error:", error);
+      return res.status(500).json({ success: false, message: "Failed to end human handoff" });
+    } finally {
+      client.release();
     }
   });
 
@@ -645,15 +930,25 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
         // Resolving it must not cancel or otherwise mutate an order.
         await client.query(
           `UPDATE admin_requests
-           SET status = $1, admin_note = $2, resolved_at = NOW()
-           WHERE id = $3`,
-          [decision, admin_note?.trim() || null, requestId]
+           SET status = $1, admin_note = $2, resolved_at = NOW(),
+               human_ended_at = NOW(), human_ended_by_admin_user_id = $3,
+               resolved_by_phone = NULL, resolved_by_message_id = $4
+           WHERE id = $5`,
+          [
+            decision,
+            admin_note?.trim() || null,
+            req.admin.user_id,
+            `dashboard-handoff-resolution:${eventRequestId}`,
+            requestId,
+          ]
         );
         await client.query(
           `UPDATE conversation_sessions
            SET awaiting_human = EXISTS (
                  SELECT 1 FROM admin_requests pending
-                 WHERE pending.customer_id = $1 AND pending.status = 'pending'
+                 WHERE pending.customer_id = $1
+                   AND pending.request_type = 'human_handoff'
+                   AND pending.status = 'pending'
                ),
                updated_at = NOW()
            WHERE customer_id = $1`,
@@ -1013,6 +1308,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
                 SELECT r.id, r.request_type, r.question, r.status, r.admin_note,
                   r.created_at, r.resolved_at, r.notification_sent, r.notification_error,
                   r.notification_attempts, r.last_notification_attempt_at,
+                  r.human_started_at,
                   c.id AS customer_id, c.name AS customer_name, c.whatsapp_phone AS customer_phone,
                   o.id AS order_id, o.status AS order_status, o.total AS order_total,
                   o.items AS order_items, o.delivery_address, o.order_type,
@@ -1105,6 +1401,7 @@ function registerAdminRoutes(app, pool, { dispatchEvent } = {}) {
           })),
           pending_requests: (aggregate.pending_requests_detail || []).map((request) => ({
             ...request,
+            handoff_status: handoffStatus(request),
             id: String(request.id),
             customer_id: String(request.customer_id),
             order_id: request.order_id == null ? null : String(request.order_id),
