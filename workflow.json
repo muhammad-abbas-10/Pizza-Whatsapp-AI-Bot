@@ -364,7 +364,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH appended AS (\n  SELECT COALESCE(recent_messages, '[]'::jsonb)\n         || jsonb_build_array(\n              jsonb_build_object('role', 'customer', 'text', $2::text),\n              jsonb_build_object('role', 'bot', 'text', $3::text)\n            ) AS msgs\n  FROM conversation_sessions\n  WHERE customer_id = $1::bigint\n  FOR UPDATE\n),\ntrimmed AS (\n  SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb) AS msgs\n  FROM appended,\n       LATERAL jsonb_array_elements(appended.msgs) WITH ORDINALITY AS t(elem, idx)\n  WHERE idx > (SELECT jsonb_array_length(msgs) FROM appended) - 12\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET recent_messages = (SELECT msgs FROM trimmed),\n      awaiting_feedback_order_id = CASE\n        WHEN EXISTS (\n          SELECT 1 FROM feedback f\n          WHERE f.order_id = cs.awaiting_feedback_order_id\n            AND f.customer_id = cs.customer_id\n        ) THEN NULL\n        ELSE cs.awaiting_feedback_order_id\n      END,\n      updated_at = NOW()\n  WHERE cs.customer_id = $1::bigint\n  RETURNING cs.id\n),\nactive_handoff AS (\n  SELECT r.id AS handoff_request_id, cs.customer_id\n  FROM conversation_sessions cs\n  JOIN admin_requests r\n    ON r.customer_id = cs.customer_id\n   AND r.request_type = 'human_handoff'\n   AND r.status = 'pending'\n  WHERE cs.customer_id = $1::bigint\n    AND cs.awaiting_human = TRUE\n  ORDER BY r.id DESC\n  LIMIT 1\n),\nhandoff_messages AS (\n  INSERT INTO conversation_messages (\n    customer_id, handoff_request_id, direction, message_text,\n    source_message_id, delivery_status, sent_at\n  )\n  SELECT h.customer_id, h.handoff_request_id, 'customer', mb.message_text,\n         mb.message_id, 'received', NULL\n  FROM message_buffer mb\n  CROSS JOIN active_handoff h\n  WHERE mb.customer_phone = $5::text\n    AND mb.batch_key = $4::text\n    AND mb.processed = FALSE\n  UNION ALL\n  SELECT h.customer_id, h.handoff_request_id, 'bot', $3::text,\n         'bot:' || $4::text, 'sent', NOW()\n  FROM active_handoff h\n  WHERE NULLIF(BTRIM($3::text), '') IS NOT NULL\n  ON CONFLICT (source_message_id) DO NOTHING\n  RETURNING id\n),\nbuffer_finalized AS (\n  UPDATE message_buffer mb\n  SET processed = TRUE,\n      processed_at = NOW()\n  WHERE mb.customer_phone = $5::text\n    AND mb.batch_key = $4::text\n    AND mb.processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING mb.message_id\n),\nmessages_recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT bf.message_id, $5::text, NOW()\n  FROM buffer_finalized bf\n  WHERE bf.message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING\n  RETURNING message_id\n)\nSELECT\n  EXISTS (SELECT 1 FROM session_updated) AS session_updated,\n  (SELECT COUNT(*)::int FROM handoff_messages) AS handoff_messages_recorded,\n  (SELECT COUNT(*)::int FROM buffer_finalized) AS buffered_messages_finalized,\n  (SELECT COUNT(*)::int FROM messages_recorded) AS message_ids_recorded;",
+        "query": "WITH appended AS (\n  SELECT COALESCE(recent_messages, '[]'::jsonb)\n         || jsonb_build_array(\n              jsonb_build_object('role', 'customer', 'text', $2::text),\n              jsonb_build_object('role', 'bot', 'text', $3::text)\n            ) AS msgs\n  FROM conversation_sessions\n  WHERE customer_id = $1::bigint\n  FOR UPDATE\n),\ntrimmed AS (\n  SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb) AS msgs\n  FROM appended,\n       LATERAL jsonb_array_elements(appended.msgs) WITH ORDINALITY AS t(elem, idx)\n  WHERE idx > (SELECT jsonb_array_length(msgs) FROM appended) - 12\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET recent_messages = (SELECT msgs FROM trimmed),\n      awaiting_feedback_order_id = CASE\n        WHEN EXISTS (\n          SELECT 1 FROM feedback f\n          WHERE f.order_id = cs.awaiting_feedback_order_id\n            AND f.customer_id = cs.customer_id\n        ) THEN NULL\n        ELSE cs.awaiting_feedback_order_id\n      END,\n      updated_at = NOW()\n  WHERE cs.customer_id = $1::bigint\n  RETURNING cs.id\n),\nactive_handoff AS (\n  SELECT r.id AS handoff_request_id, cs.customer_id\n  FROM conversation_sessions cs\n  JOIN admin_requests r\n    ON r.customer_id = cs.customer_id\n   AND r.request_type = 'human_handoff'\n   AND r.status = 'pending'\n  WHERE cs.customer_id = $1::bigint\n    AND cs.awaiting_human = TRUE\n  ORDER BY r.id DESC\n  LIMIT 1\n),\nhandoff_messages AS (\n  INSERT INTO conversation_messages (\n    customer_id, handoff_request_id, direction, message_text,\n    source_message_id, delivery_status, sent_at\n  )\n  SELECT h.customer_id, h.handoff_request_id, 'customer', mb.message_text,\n         mb.message_id, 'received', NULL\n  FROM message_buffer mb\n  CROSS JOIN active_handoff h\n  WHERE mb.customer_phone = $5::text\n    AND mb.batch_key = $4::text\n    AND mb.processed = FALSE\n  UNION ALL\n  SELECT h.customer_id, h.handoff_request_id, 'bot', $3::text,\n         'bot:' || $4::text, 'sent', NOW()\n  FROM active_handoff h\n  WHERE NULLIF(BTRIM($3::text), '') IS NOT NULL\n  ON CONFLICT (source_message_id) DO NOTHING\n  RETURNING id\n),\nbuffer_finalized AS (\n  UPDATE message_buffer mb\n  SET processed = TRUE,\n      processed_at = NOW()\n  WHERE mb.customer_phone = $5::text\n    AND mb.batch_key = $4::text\n    AND mb.processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING mb.id, mb.message_id\n),\nmessages_recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT bf.message_id, $5::text, NOW()\n  FROM buffer_finalized bf\n  WHERE bf.message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING\n  RETURNING message_id\n),\nqueue_state AS (\n  SELECT COUNT(*)::int AS remaining\n  FROM message_buffer mb\n  WHERE mb.customer_phone = $5::text\n    AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND NOT EXISTS (SELECT 1 FROM buffer_finalized bf WHERE bf.id = mb.id)\n)\nSELECT\n  EXISTS (SELECT 1 FROM session_updated) AS session_updated,\n  (SELECT COUNT(*)::int FROM handoff_messages) AS handoff_messages_recorded,\n  (SELECT COUNT(*)::int FROM buffer_finalized) AS buffered_messages_finalized,\n  (SELECT COUNT(*)::int FROM messages_recorded) AS message_ids_recorded,\n  (SELECT remaining FROM queue_state) AS queued_messages_remaining,\n  CASE\n    WHEN (SELECT remaining FROM queue_state) > 100 THEN 15\n    WHEN (SELECT remaining FROM queue_state) > 20 THEN 5\n    ELSE 2\n  END AS queue_wait_seconds;",
         "options": {
           "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Claim Latest Customer Turn').item.json.combined_text || '', $json.reply_text || $('Claim Latest Customer Turn').item.json.stored_reply_text || '', $('Claim Latest Customer Turn').item.json.batch_key, $('Normalize Incoming Message').item.json.customer_phone ] }}"
         }
@@ -387,7 +387,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH accepted AS (\n  INSERT INTO message_buffer (\n    message_id, customer_phone, message_text, message_type, received_at,\n    processed, batch_key, batch_claimed_at, processed_at\n  )\n  SELECT $1::text, $2::text, $3::text, $4::text, NOW(), FALSE, NULL, NULL, NULL\n  WHERE NOT EXISTS (\n    SELECT 1 FROM processed_messages WHERE message_id = $1::text\n  )\n  ON CONFLICT (message_id) WHERE message_id IS NOT NULL DO UPDATE\n  SET received_at = NOW(),\n      message_text = EXCLUDED.message_text,\n      message_type = EXCLUDED.message_type,\n      batch_key = NULL,\n      batch_claimed_at = NULL\n  WHERE message_buffer.processed = FALSE\n    AND message_buffer.received_at < NOW() - INTERVAL '60 seconds'\n    AND (message_buffer.batch_claimed_at IS NULL\n         OR message_buffer.batch_claimed_at < NOW() - INTERVAL '60 seconds')\n  RETURNING id, message_id, received_at\n)\nSELECT\n  EXISTS (SELECT 1 FROM accepted) AS accepted,\n  (SELECT id::text FROM accepted) AS buffer_id,\n  (SELECT message_id FROM accepted) AS message_id,\n  (SELECT received_at FROM accepted) AS received_at;",
+        "query": "WITH accepted AS (\n  INSERT INTO message_buffer (\n    message_id, customer_phone, message_text, message_type, received_at,\n    processed, batch_key, batch_claimed_at, processed_at\n  )\n  SELECT $1::text, $2::text, $3::text, $4::text, NOW(), FALSE, NULL, NULL, NULL\n  WHERE NOT EXISTS (\n    SELECT 1 FROM processed_messages WHERE message_id = $1::text\n  )\n  ON CONFLICT (message_id) WHERE message_id IS NOT NULL DO UPDATE\n  SET received_at = NOW(),\n      message_text = EXCLUDED.message_text,\n      message_type = EXCLUDED.message_type,\n      batch_key = NULL,\n      batch_claimed_at = NULL\n  WHERE message_buffer.processed = FALSE\n    AND message_buffer.replied_at IS NULL\n    AND message_buffer.received_at < NOW() - INTERVAL '10 minutes'\n    AND (message_buffer.batch_claimed_at IS NULL\n         OR message_buffer.batch_claimed_at < NOW() - INTERVAL '10 minutes')\n  RETURNING id, message_id, received_at\n)\nSELECT\n  EXISTS (SELECT 1 FROM accepted) AS accepted,\n  (SELECT id::text FROM accepted) AS buffer_id,\n  (SELECT message_id FROM accepted) AS message_id,\n  (SELECT received_at FROM accepted) AS received_at;",
         "options": {
           "queryReplacement": "={{ [ $('Normalize Incoming Message').item.json.message_id, $('Normalize Incoming Message').item.json.customer_phone, $('Normalize Incoming Message').item.json.message_text, $('Normalize Incoming Message').item.json.message_type ] }}"
         }
@@ -449,7 +449,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH serialized AS (\n  SELECT pg_advisory_xact_lock(hashtextextended('customer-turn:' || $1::text, 0))\n), current_row AS (\n  SELECT mb.* FROM message_buffer mb CROSS JOIN serialized\n  WHERE mb.id = $2::bigint AND mb.customer_phone = $1::text\n), active_batch AS (\n  SELECT EXISTS (SELECT 1 FROM message_buffer mb\n    WHERE mb.customer_phone = $1::text AND mb.processed = FALSE\n      AND mb.batch_key IS NOT NULL\n      AND mb.batch_claimed_at >= NOW() - INTERVAL '60 seconds') AS present\n), latest_available AS (\n  SELECT MAX(mb.id) AS id FROM message_buffer mb\n  WHERE mb.customer_phone = $1::text AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND (mb.batch_key IS NULL OR mb.batch_claimed_at < NOW() - INTERVAL '60 seconds')\n), decision AS (\n  SELECT CASE\n    WHEN NOT EXISTS (SELECT 1 FROM current_row WHERE processed = FALSE) THEN 'superseded'\n    WHEN EXISTS (SELECT 1 FROM current_row WHERE batch_key IS NOT NULL AND batch_claimed_at >= NOW() - INTERVAL '60 seconds') THEN 'superseded'\n    WHEN (SELECT present FROM active_batch) THEN 'busy'\n    WHEN (SELECT id FROM latest_available) IS DISTINCT FROM (SELECT id FROM current_row) THEN 'superseded'\n    ELSE 'ready' END AS mode\n), claimed AS (\n  UPDATE message_buffer mb\n  SET batch_key = $3::text, batch_claimed_at = NOW()\n  WHERE mb.customer_phone = $1::text AND mb.processed = FALSE AND mb.message_id IS NOT NULL\n    AND (mb.batch_key IS NULL OR mb.batch_claimed_at < NOW() - INTERVAL '60 seconds')\n    AND (SELECT mode FROM decision) = 'ready'\n  RETURNING mb.id, mb.message_id, mb.message_text, mb.received_at, mb.reply_text, mb.replied_at\n)\nSELECT d.mode, $3::text AS batch_key,\n  (SELECT string_agg(c.message_text, E'\\n' ORDER BY c.id) FROM claimed c) AS combined_text,\n  (SELECT COUNT(*)::int FROM claimed) AS message_count,\n  (SELECT jsonb_agg(c.message_id ORDER BY c.id) FROM claimed c) AS message_ids,\n  COALESCE((SELECT COUNT(*) > 0 AND BOOL_AND(c.replied_at IS NOT NULL) FROM claimed c), FALSE) AS reply_already_sent,\n  (SELECT c.reply_text FROM claimed c WHERE c.replied_at IS NOT NULL ORDER BY c.id DESC LIMIT 1) AS stored_reply_text,\n  (SELECT c.message_text FROM claimed c ORDER BY c.id DESC LIMIT 1) AS latest_text,\n  (SELECT EXTRACT(EPOCH FROM (MAX(c.received_at) - MIN(c.received_at))) FROM claimed c) AS batch_span_seconds\nFROM decision d;",
+        "query": "WITH serialized AS MATERIALIZED (\n  SELECT pg_advisory_xact_lock(hashtextextended('customer-turn:' || $1::text, 0))\n),\ncurrent_row AS MATERIALIZED (\n  SELECT mb.*\n  FROM message_buffer mb\n  CROSS JOIN serialized\n  WHERE mb.id = $2::bigint\n    AND mb.customer_phone = $1::text\n),\nactive_batch AS MATERIALIZED (\n  SELECT EXISTS (\n    SELECT 1\n    FROM message_buffer mb\n    CROSS JOIN serialized\n    WHERE mb.customer_phone = $1::text\n      AND mb.processed = FALSE\n      AND mb.batch_key IS NOT NULL\n      AND mb.batch_claimed_at >= NOW() - INTERVAL '10 minutes'\n  ) AS present\n),\npending AS MATERIALIZED (\n  SELECT mb.*\n  FROM message_buffer mb\n  CROSS JOIN serialized\n  WHERE mb.customer_phone = $1::text\n    AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND (mb.batch_key IS NULL\n         OR mb.batch_claimed_at < NOW() - INTERVAL '10 minutes')\n),\nlatest_available AS (\n  SELECT MAX(id) AS id FROM pending\n),\nquiet_state AS (\n  SELECT COALESCE(MAX(received_at) <= NOW() - INTERVAL '2 seconds', FALSE) AS quiet\n  FROM pending\n),\ndecision AS (\n  SELECT CASE\n    WHEN NOT EXISTS (SELECT 1 FROM current_row WHERE processed = FALSE)\n      THEN 'superseded'\n    WHEN EXISTS (\n      SELECT 1 FROM current_row\n      WHERE batch_key IS NOT NULL\n        AND batch_claimed_at >= NOW() - INTERVAL '10 minutes'\n    )\n      THEN 'superseded'\n    WHEN (SELECT id FROM latest_available) IS DISTINCT FROM (SELECT id FROM current_row)\n      THEN 'superseded'\n    WHEN (SELECT present FROM active_batch)\n      THEN 'busy'\n    WHEN NOT (SELECT quiet FROM quiet_state)\n      THEN 'busy'\n    ELSE 'ready'\n  END AS mode\n),\nrecovery_anchor AS (\n  SELECT COALESCE(batch_key, 'reply-row:' || id::text) AS recovery_key\n  FROM pending\n  WHERE replied_at IS NOT NULL\n  ORDER BY replied_at, id\n  LIMIT 1\n),\ncandidate_messages AS MATERIALIZED (\n  SELECT p.*\n  FROM pending p\n  WHERE (\n      EXISTS (SELECT 1 FROM recovery_anchor)\n      AND p.replied_at IS NOT NULL\n      AND COALESCE(p.batch_key, 'reply-row:' || p.id::text) =\n          (SELECT recovery_key FROM recovery_anchor)\n    )\n    OR (\n      NOT EXISTS (SELECT 1 FROM recovery_anchor)\n      AND p.replied_at IS NULL\n    )\n),\nranked_candidates AS (\n  SELECT c.*,\n         ROW_NUMBER() OVER (ORDER BY c.id) AS message_number,\n         SUM(LEAST(CHAR_LENGTH(COALESCE(c.message_text, '')), 4096))\n           OVER (ORDER BY c.id ROWS UNBOUNDED PRECEDING)\n         + ROW_NUMBER() OVER (ORDER BY c.id) - 1 AS cumulative_characters\n  FROM candidate_messages c\n),\nclaimable AS MATERIALIZED (\n  SELECT r.id\n  FROM ranked_candidates r\n  WHERE r.message_number <= 20\n    AND (r.cumulative_characters <= 8192 OR r.message_number = 1)\n),\nclaimed AS (\n  UPDATE message_buffer mb\n  SET batch_key = $3::text,\n      batch_claimed_at = NOW()\n  FROM claimable c\n  WHERE mb.id = c.id\n    AND (SELECT mode FROM decision) = 'ready'\n  RETURNING mb.id, mb.message_id, mb.message_text, mb.received_at,\n            mb.reply_text, mb.replied_at\n),\nsafe_claimed AS (\n  SELECT c.*,\n         CASE\n           WHEN CHAR_LENGTH(COALESCE(c.message_text, '')) > 4096\n             THEN LEFT(COALESCE(c.message_text, ''), 4000)\n                  || E'\\n[Message shortened for AI safety]'\n           ELSE COALESCE(c.message_text, '')\n         END AS safe_message_text\n  FROM claimed c\n)\nSELECT d.mode,\n       $3::text AS batch_key,\n       (SELECT string_agg(c.safe_message_text, E'\\n' ORDER BY c.id) FROM safe_claimed c)\n         AS combined_text,\n       (SELECT COUNT(*)::int FROM safe_claimed) AS message_count,\n       COALESCE((SELECT SUM(CHAR_LENGTH(c.safe_message_text))::int FROM safe_claimed c), 0)\n         AS combined_character_count,\n       (SELECT jsonb_agg(c.message_id ORDER BY c.id) FROM safe_claimed c) AS message_ids,\n       COALESCE((\n         SELECT COUNT(*) > 0 AND BOOL_AND(c.replied_at IS NOT NULL)\n         FROM safe_claimed c\n       ), FALSE) AS reply_already_sent,\n       (SELECT c.reply_text\n        FROM safe_claimed c\n        WHERE c.replied_at IS NOT NULL\n        ORDER BY c.id DESC\n        LIMIT 1) AS stored_reply_text,\n       (SELECT c.safe_message_text FROM safe_claimed c ORDER BY c.id DESC LIMIT 1)\n         AS latest_text,\n       (SELECT EXTRACT(EPOCH FROM (MAX(c.received_at) - MIN(c.received_at)))\n        FROM safe_claimed c) AS batch_span_seconds,\n       (SELECT COUNT(*)::int\n        FROM pending p\n        WHERE NOT EXISTS (SELECT 1 FROM claimable c WHERE c.id = p.id))\n         AS queued_message_count,\n       COALESCE((SELECT COUNT(*) FROM pending), 0)::int AS pending_message_count,\n       COALESCE((SELECT COUNT(*) FROM pending), 0) > 20\n         OR COALESCE((SELECT SUM(LEAST(CHAR_LENGTH(COALESCE(message_text, '')), 4096))\n                      FROM pending), 0) > 8192 AS burst_limit_reached\nFROM decision d;",
         "options": {
           "queryReplacement": "={{ [ $('Normalize Incoming Message').item.json.customer_phone, $('Insert Message to Buffer').item.json.buffer_id, $('Normalize Incoming Message').item.json.message_id ] }}"
         }
@@ -854,7 +854,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH customer AS (\n  INSERT INTO customers (whatsapp_phone, name, updated_at)\n  VALUES ($1::text, NULLIF(BTRIM($2::text), ''), NOW())\n  ON CONFLICT (whatsapp_phone) DO UPDATE SET\n    name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name), updated_at = NOW()\n  RETURNING id\n), session_updated AS (\n  INSERT INTO conversation_sessions (customer_id, recent_messages, updated_at)\n  SELECT id, jsonb_build_array(\n    jsonb_build_object('role', 'customer', 'text', $3::text),\n    jsonb_build_object('role', 'bot', 'text', $4::text)\n  ), NOW()\n  FROM customer\n  ON CONFLICT (customer_id) DO UPDATE SET\n  recent_messages = (\n    SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb)\n    FROM jsonb_array_elements(\n      COALESCE(conversation_sessions.recent_messages, '[]'::jsonb)\n      || EXCLUDED.recent_messages\n    ) WITH ORDINALITY AS history(elem, idx)\n    WHERE idx > jsonb_array_length(\n      COALESCE(conversation_sessions.recent_messages, '[]'::jsonb)\n      || EXCLUDED.recent_messages\n    ) - 12\n  ), updated_at = NOW()\n  RETURNING id\n), finalized AS (\n  UPDATE message_buffer\n  SET reply_text = $4::text, replied_at = NOW(), processed = TRUE, processed_at = NOW()\n  WHERE customer_phone = $1::text AND batch_key = $5::text AND processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING message_id\n), recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT message_id, $1::text, NOW() FROM finalized WHERE message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING RETURNING message_id\n)\nSELECT EXISTS (SELECT 1 FROM session_updated) AS session_updated,\n       (SELECT COUNT(*)::int FROM finalized) AS messages_finalized,\n       (SELECT COUNT(*)::int FROM recorded) AS ids_recorded;",
+        "query": "WITH customer AS (\n  INSERT INTO customers (whatsapp_phone, name, updated_at)\n  VALUES ($1::text, NULLIF(BTRIM($2::text), ''), NOW())\n  ON CONFLICT (whatsapp_phone) DO UPDATE SET\n    name = COALESCE(NULLIF(EXCLUDED.name, ''), customers.name), updated_at = NOW()\n  RETURNING id\n), session_updated AS (\n  INSERT INTO conversation_sessions (customer_id, recent_messages, updated_at)\n  SELECT id, jsonb_build_array(\n    jsonb_build_object('role', 'customer', 'text', $3::text),\n    jsonb_build_object('role', 'bot', 'text', $4::text)\n  ), NOW()\n  FROM customer\n  ON CONFLICT (customer_id) DO UPDATE SET\n  recent_messages = (\n    SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb)\n    FROM jsonb_array_elements(\n      COALESCE(conversation_sessions.recent_messages, '[]'::jsonb)\n      || EXCLUDED.recent_messages\n    ) WITH ORDINALITY AS history(elem, idx)\n    WHERE idx > jsonb_array_length(\n      COALESCE(conversation_sessions.recent_messages, '[]'::jsonb)\n      || EXCLUDED.recent_messages\n    ) - 12\n  ), updated_at = NOW()\n  RETURNING id\n), finalized AS (\n  UPDATE message_buffer\n  SET reply_text = $4::text, replied_at = NOW(), processed = TRUE, processed_at = NOW()\n  WHERE customer_phone = $1::text AND batch_key = $5::text AND processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING id, message_id\n), recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT message_id, $1::text, NOW() FROM finalized WHERE message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING RETURNING message_id\n), queue_state AS (\n  SELECT COUNT(*)::int AS remaining\n  FROM message_buffer mb\n  WHERE mb.customer_phone = $1::text\n    AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND NOT EXISTS (SELECT 1 FROM finalized f WHERE f.id = mb.id)\n)\nSELECT EXISTS (SELECT 1 FROM session_updated) AS session_updated,\n       (SELECT COUNT(*)::int FROM finalized) AS messages_finalized,\n       (SELECT COUNT(*)::int FROM recorded) AS ids_recorded,\n       (SELECT remaining FROM queue_state) AS queued_messages_remaining,\n       CASE\n         WHEN (SELECT remaining FROM queue_state) > 100 THEN 15\n         WHEN (SELECT remaining FROM queue_state) > 20 THEN 5\n         ELSE 2\n       END AS queue_wait_seconds;",
         "options": {
           "queryReplacement": "={{ [ $('Normalize Incoming Message').item.json.customer_phone, $('Normalize Incoming Message').item.json.customer_name, $('Claim Latest Customer Turn').item.json.combined_text, $('Route Simple Messages').item.json.reply_text, $('Claim Latest Customer Turn').item.json.batch_key ] }}"
         }
@@ -1747,7 +1747,7 @@
       ],
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH active_handoff AS (\n  SELECT r.id AS handoff_request_id, cs.customer_id\n  FROM conversation_sessions cs\n  JOIN admin_requests r\n    ON r.customer_id = cs.customer_id\n   AND r.request_type = 'human_handoff'\n   AND r.status = 'pending'\n  WHERE cs.customer_id = $1::bigint\n    AND cs.awaiting_human = TRUE\n  ORDER BY r.id DESC\n  LIMIT 1\n  FOR UPDATE OF cs, r\n),\nincoming AS (\n  SELECT mb.id, mb.message_id, mb.message_text\n  FROM message_buffer mb\n  WHERE mb.customer_phone = $2::text\n    AND mb.batch_key = $3::text\n    AND mb.processed = FALSE\n  ORDER BY mb.id\n),\nrecorded AS (\n  INSERT INTO conversation_messages (\n    customer_id, handoff_request_id, direction, message_text,\n    source_message_id, delivery_status\n  )\n  SELECT h.customer_id, h.handoff_request_id, 'customer', i.message_text,\n         i.message_id, 'received'\n  FROM incoming i\n  CROSS JOIN active_handoff h\n  ON CONFLICT (source_message_id) DO NOTHING\n  RETURNING id\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET recent_messages = (\n        SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb)\n        FROM jsonb_array_elements(\n          COALESCE(cs.recent_messages, '[]'::jsonb)\n          || COALESCE((\n            SELECT jsonb_agg(jsonb_build_object('role', 'customer', 'text', i.message_text) ORDER BY i.id)\n            FROM incoming i\n          ), '[]'::jsonb)\n        ) WITH ORDINALITY AS history(elem, idx)\n        WHERE idx > jsonb_array_length(\n          COALESCE(cs.recent_messages, '[]'::jsonb)\n          || COALESCE((\n            SELECT jsonb_agg(jsonb_build_object('role', 'customer', 'text', i.message_text) ORDER BY i.id)\n            FROM incoming i\n          ), '[]'::jsonb)\n        ) - 12\n      ),\n      updated_at = NOW()\n  FROM active_handoff h\n  WHERE cs.customer_id = h.customer_id\n  RETURNING cs.id\n),\nbuffer_finalized AS (\n  UPDATE message_buffer mb\n  SET processed = TRUE, processed_at = NOW()\n  WHERE mb.customer_phone = $2::text\n    AND mb.batch_key = $3::text\n    AND mb.processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING mb.message_id\n),\nmessages_recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT bf.message_id, $2::text, NOW()\n  FROM buffer_finalized bf\n  WHERE bf.message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING\n  RETURNING message_id\n)\nSELECT EXISTS (SELECT 1 FROM active_handoff)\n         AND EXISTS (SELECT 1 FROM session_updated) AS handoff_active,\n       (SELECT COUNT(*)::int FROM recorded) AS customer_messages_recorded,\n       (SELECT COUNT(*)::int FROM buffer_finalized) AS buffered_messages_finalized,\n       (SELECT COUNT(*)::int FROM messages_recorded) AS message_ids_recorded;",
+        "query": "WITH active_handoff AS (\n  SELECT r.id AS handoff_request_id, cs.customer_id\n  FROM conversation_sessions cs\n  JOIN admin_requests r\n    ON r.customer_id = cs.customer_id\n   AND r.request_type = 'human_handoff'\n   AND r.status = 'pending'\n  WHERE cs.customer_id = $1::bigint\n    AND cs.awaiting_human = TRUE\n  ORDER BY r.id DESC\n  LIMIT 1\n  FOR UPDATE OF cs, r\n),\nincoming AS (\n  SELECT mb.id, mb.message_id, mb.message_text\n  FROM message_buffer mb\n  WHERE mb.customer_phone = $2::text\n    AND mb.batch_key = $3::text\n    AND mb.processed = FALSE\n  ORDER BY mb.id\n),\nrecorded AS (\n  INSERT INTO conversation_messages (\n    customer_id, handoff_request_id, direction, message_text,\n    source_message_id, delivery_status\n  )\n  SELECT h.customer_id, h.handoff_request_id, 'customer', i.message_text,\n         i.message_id, 'received'\n  FROM incoming i\n  CROSS JOIN active_handoff h\n  ON CONFLICT (source_message_id) DO NOTHING\n  RETURNING id\n),\nsession_updated AS (\n  UPDATE conversation_sessions cs\n  SET recent_messages = (\n        SELECT COALESCE(jsonb_agg(elem ORDER BY idx), '[]'::jsonb)\n        FROM jsonb_array_elements(\n          COALESCE(cs.recent_messages, '[]'::jsonb)\n          || COALESCE((\n            SELECT jsonb_agg(jsonb_build_object('role', 'customer', 'text', i.message_text) ORDER BY i.id)\n            FROM incoming i\n          ), '[]'::jsonb)\n        ) WITH ORDINALITY AS history(elem, idx)\n        WHERE idx > jsonb_array_length(\n          COALESCE(cs.recent_messages, '[]'::jsonb)\n          || COALESCE((\n            SELECT jsonb_agg(jsonb_build_object('role', 'customer', 'text', i.message_text) ORDER BY i.id)\n            FROM incoming i\n          ), '[]'::jsonb)\n        ) - 12\n      ),\n      updated_at = NOW()\n  FROM active_handoff h\n  WHERE cs.customer_id = h.customer_id\n  RETURNING cs.id\n),\nbuffer_finalized AS (\n  UPDATE message_buffer mb\n  SET processed = TRUE, processed_at = NOW()\n  WHERE mb.customer_phone = $2::text\n    AND mb.batch_key = $3::text\n    AND mb.processed = FALSE\n    AND EXISTS (SELECT 1 FROM session_updated)\n  RETURNING mb.id, mb.message_id\n),\nmessages_recorded AS (\n  INSERT INTO processed_messages (message_id, customer_phone, processed_at)\n  SELECT bf.message_id, $2::text, NOW()\n  FROM buffer_finalized bf\n  WHERE bf.message_id IS NOT NULL\n  ON CONFLICT (message_id) DO NOTHING\n  RETURNING message_id\n),\nqueue_state AS (\n  SELECT COUNT(*)::int AS remaining\n  FROM message_buffer mb\n  WHERE mb.customer_phone = $2::text\n    AND mb.processed = FALSE\n    AND mb.message_id IS NOT NULL\n    AND NOT EXISTS (SELECT 1 FROM buffer_finalized bf WHERE bf.id = mb.id)\n)\nSELECT EXISTS (SELECT 1 FROM active_handoff)\n         AND EXISTS (SELECT 1 FROM session_updated) AS handoff_active,\n       (SELECT COUNT(*)::int FROM recorded) AS customer_messages_recorded,\n       (SELECT COUNT(*)::int FROM buffer_finalized) AS buffered_messages_finalized,\n       (SELECT COUNT(*)::int FROM messages_recorded) AS message_ids_recorded,\n       (SELECT remaining FROM queue_state) AS queued_messages_remaining,\n       CASE\n         WHEN (SELECT remaining FROM queue_state) > 100 THEN 15\n         WHEN (SELECT remaining FROM queue_state) > 20 THEN 5\n         ELSE 2\n       END AS queue_wait_seconds;",
         "options": {
           "queryReplacement": "={{ [ $('Upsert Customer and Session').item.json.customer_id, $('Normalize Incoming Message').item.json.customer_phone, $('Claim Latest Customer Turn').item.json.batch_key ] }}"
         }
@@ -1826,6 +1826,54 @@
         },
         "options": {}
       }
+    },
+    {
+      "id": "a11f486c-a18d-4b26-bb6c-eab34952c3ab",
+      "name": "Queued Customer Messages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3290,
+        1220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6da43723-94f1-46c8-89f5-1791828dfa6e",
+              "leftValue": "={{ Number($json.queued_messages_remaining || 0) > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8b85e151-8bad-445e-9fa3-60d65dc1cfb1",
+      "name": "Throttle Queued Customer Messages",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3510,
+        1160
+      ],
+      "parameters": {
+        "amount": "={{ Math.max(2, Number($json.queue_wait_seconds || 2)) }}"
+      },
+      "webhookId": "e3aa1748-6f13-45df-8b2b-0ce90e1d7799"
     }
   ],
   "pinData": {},
@@ -2648,7 +2696,13 @@
     },
     "Human Handoff Turn Recorded?": {
       "main": [
-        [],
+        [
+          {
+            "node": "Queued Customer Messages?",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Awaiting Feedback Response?",
@@ -2675,6 +2729,51 @@
           }
         ]
       ]
+    },
+    "Finalize Customer Turn": {
+      "main": [
+        [
+          {
+            "node": "Queued Customer Messages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Simple Reply": {
+      "main": [
+        [
+          {
+            "node": "Queued Customer Messages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queued Customer Messages?": {
+      "main": [
+        [
+          {
+            "node": "Throttle Queued Customer Messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Throttle Queued Customer Messages": {
+      "main": [
+        [
+          {
+            "node": "Claim Latest Customer Turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -2682,7 +2781,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "9b61033a-47df-4823-ad70-11bac82f8811",
+  "versionId": "104d2bb6-c620-428e-bfe0-adee2d77799c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "6998a274d9a8cd3fce2ab752d130672ae6124f7b05aecf297ee5a82201ba7afa"

@@ -47,7 +47,10 @@ function staticTests() {
   const record = node("Record Active Human Handoff Turn").parameters.query;
   assert(record.includes("conversation_messages"));
   assert(record.includes("processed = TRUE"));
-  assert.deepEqual(workflow.connections["Human Handoff Turn Recorded?"].main[0], []);
+  assert.equal(
+    workflow.connections["Human Handoff Turn Recorded?"].main[0][0].node,
+    "Queued Customer Messages?",
+  );
 
   const finalized = node("Finalize Customer Turn").parameters.query;
   assert(finalized.includes("active_handoff"));

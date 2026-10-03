@@ -395,3 +395,7 @@ workflow.connections["Staff Message Event?"] = {
 
 fs.writeFileSync(workflowPath, `${JSON.stringify(workflow, null, 2)}\n`);
 console.log(`Updated ${path.basename(workflowPath)} with durable two-way human handoff handling.`);
+
+// Human-handoff upgrades replace turn-finalization SQL. Re-apply the burst
+// hardening so running this older feature upgrader cannot remove queue draining.
+require("./upgrade-message-burst-workflow").upgradeMessageBurstWorkflow();

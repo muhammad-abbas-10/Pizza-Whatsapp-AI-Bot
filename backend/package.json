@@ -48,6 +48,8 @@
     "test:deal-selection": "node scripts/test-deal-selection-contract.js",
     "test:deal-selection-db": "node scripts/test-deal-selection-db.js",
     "test:human-handoff": "node scripts/test-human-handoff.js",
+    "test:message-burst": "node scripts/test-message-burst.js",
+    "workflow:message-burst": "node scripts/upgrade-message-burst-workflow.js",
     "audit:ordering": "node scripts/audit-ordering-ambiguity.js"
   },
   "keywords": [],
